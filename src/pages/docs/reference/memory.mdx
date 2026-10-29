@@ -45,10 +45,11 @@ mutation, so programs carry no lifetime, borrow or `mut` annotations.
   then stored behind a pointer). Freeing is deterministic. An array type iterated through an
   `Iterable<T>` (a value or a bound: `sum(xs)` with `sum(xs: Iterable<i64>)`) counts as shared
   for the whole program, since its iterator holds the array; nothing else about it changes.
-  Naming an object again inside one function does not share it: `const me = this`, or a
+- Naming an object again inside one function does not share it: `const me = this`, or a
   closure that captures `this` and is only called where it is created
-  ([Captures](/docs/reference/functions/#captures)), refers to the same object without a count (unless a
-  conflict elsewhere in the program makes them share; see [Captures](/docs/reference/functions/#captures)).
+  ([Captures](/docs/reference/functions/#captures)), refers to the same object without a count
+  (unless a conflict elsewhere in the program makes them share; see
+  [Captures](/docs/reference/functions/#captures)).
 - **Calls borrow**: passing an object to a function lends it, so `log(user); save(user);` costs
   nothing. The compiler infers per parameter whether the callee reads it, modifies it, or keeps
   it. A parameter the body stores or returns takes ownership: a caller that does not use its
@@ -80,49 +81,9 @@ mutation, so programs carry no lifetime, borrow or `mut` annotations.
   entry is deleted or a map goes.
   Releasing an object of a type that can be a weak key, or be reached from a weak map's keys and
   values, costs two more instructions when it frees the object; other types are unaffected.
-- **Evaluation order is JS's**: operands and arguments run left to right, and one read before a
-  later operand's call keeps the value it had (`f(o.v, o.change())` passes the old `o.v`). The
-  target of an assignment is evaluated before its right-hand side: a call at its root runs
-  once, first (`get().v = f()`, `m.get(k)!.v = f()`). An assignment or compound assignment to
-  a field of a class object, or of an object literal another name refers to (`const keep = o.inner`), reached through a place writes to the object its target named
-  before the right-hand side ran: in `o.inner.v = f()` or `o.inner.v += f()`, when `f`
-  replaces `o.inner`, the old object gets the value and the new one keeps its own, as in JS.
-  This holds however deep the target is (`o.a.b.c.v = f()` when `f` replaces `o.a` and
-  something else still refers to the old `o.a`). An old object nothing else refers to is freed
-  by `f`, and the write is dropped with it. **Known differences:** when `f` frees the old
-  object and then installs a new one at the same place (`o.inner = null; o.inner = new P()`),
-  the allocator may give the new object the freed address; the write then goes to the new
-  object, where Node writes to the unreachable old one
-  ([#825](https://github.com/velt-lang/velt/issues/825)); the same holds for an array
-  element whose array the right-hand side replaces
-  ([#820](https://github.com/velt-lang/velt/issues/820)).
-- **An object literal nothing else refers to is stored inside its holder** (an object
-  literal or a class object), so an assignment into it whose right-hand side may replace it
-  is an error
-  ([#876](https://github.com/velt-lang/velt/issues/876)): in `o.inner.v = f()` with
-  `o = { inner: { v: 1 } }`, where `f` (or a function it calls) assigns a new object to
-  `o.inner` or to `o`, and no other name refers to an object of that type, Node writes to the
-  old object, which nothing can see any more, and Velt would write to the new one. The fix
-  computes the value first, which runs the same in TypeScript: `const v = f(); o.inner.v = v;`.
-  The check looks at what the right-hand side may run: reads, arithmetic and new values
-  compile as written, and so do calls that assign neither the field holding the object (that
-  field of that object type: assigning `b.vel` does not replace `b.pos`) nor one holding a
-  holder above it. A callback written in the call (`rows.map((r) => r.n)`) or held in a
-  constant counts as itself, `null` as nothing, and a function's own callback parameter as
-  what its callers pass, unless the function is itself used as a value (`fs.map((f) => f())`);
-  any other function value counts as any function the program uses as a value. A method call
-  through a base class or interface counts as every method of that name, and an `await` as
-  anything in the program. A generic function's field of type `T` counts as the type the call
-  passes for `T`, or, where that is not known, as any type the program passes as a type
-  argument. Code that runs without being called counts as called: a class's `toString()`,
-  `toJSON()`, `__inspect()` and own `clone()` when the right-hand side formats, serialises or
-  copies a value that may hold that class (`String(x)`, `[x].join()`, `JSON.stringify`,
-  `console.log`, `x.clone()`), its `[Symbol.dispose]()` wherever such a value is dropped, the
-  body of any generator in the program at each `next()`, `for...of` or spread over a
-  generator, and initializers evaluated where they are used. A variable of the function that
-  no closure captures (not a parameter) is replaced only by an assignment in the right-hand
-  side itself, so a function that reassigns a variable of its own (`s = apply(s, t)`) does not
-  count.
+- **Evaluation order is JS's**: see [Evaluation order](#evaluation-order) below.
+- An object literal nothing else refers to is stored inside its holder: see
+  [Object literals inside their holder](#object-literals-inside-their-holder) below.
 
 ```ts
 class Box {
@@ -142,6 +103,65 @@ copy.v = 0;
 console.log(a.v, b.v, copy.v);  // 6 6 0
 console.log(a == b, a == copy); // true false: `==` compares objects by identity
 ```
+
+### Evaluation order
+
+Evaluation order is JS's: operands and arguments run left to right, and one read before a later
+operand's call keeps the value it had (`f(o.v, o.change())` passes the old `o.v`). The target of
+an assignment is evaluated before its right-hand side: a call at its root runs once, first
+(`get().v = f()`, `m.get(k)!.v = f()`).
+
+An assignment or compound assignment to a field of a class object, or of an object literal
+another name refers to (`const keep = o.inner`), reached through a place writes to the object its
+target named before the right-hand side ran: in `o.inner.v = f()` or `o.inner.v += f()`, when `f`
+replaces `o.inner`, the old object gets the value and the new one keeps its own, as in JS. This
+holds however deep the target is (`o.a.b.c.v = f()` when `f` replaces `o.a` and something else
+still refers to the old `o.a`). An old object nothing else refers to is freed by `f`, and the
+write is dropped with it.
+
+**Known differences:** when `f` frees the old object and then installs a new one at the same
+place (`o.inner = null; o.inner = new P()`), the allocator may give the new object the freed
+address; the write then goes to the new object, where Node writes to the unreachable old one
+([#825](https://github.com/velt-lang/velt/issues/825)); the same holds for an array element
+whose array the right-hand side replaces ([#820](https://github.com/velt-lang/velt/issues/820)).
+
+### Object literals inside their holder
+
+An object literal nothing else refers to is stored inside its holder (an object literal or a
+class object), so an assignment into it whose right-hand side may replace it is an error
+([#876](https://github.com/velt-lang/velt/issues/876)): in `o.inner.v = f()` with
+`o = { inner: { v: 1 } }`, where `f` (or a function it calls) assigns a new object to `o.inner`
+or to `o`, and no other name refers to an object of that type, Node writes to the old object,
+which nothing can see any more, and Velt would write to the new one. The fix computes the value
+first, which runs the same in TypeScript: `const v = f(); o.inner.v = v;`.
+
+The check looks at what the right-hand side may run: reads, arithmetic and new values compile as
+written, and so do calls that assign neither the field holding the object (that field of that
+object type: assigning `b.vel` does not replace `b.pos`) nor one holding a holder above it. What
+a call may run counts as follows:
+
+- A callback written in the call (`rows.map((r) => r.n)`) or held in a constant counts as
+  itself, `null` as nothing, and a function's own callback parameter as what its callers pass,
+  unless the function is itself used as a value (`fs.map((f) => f())`); any other function
+  value counts as any function the program uses as a value.
+- A method call through a base class or interface counts as every method of that name, and an
+  `await` as anything in the program.
+- A generic function's field of type `T` counts as the type the call passes for `T`, or, where
+  that is not known, as any type the program passes as a type argument.
+
+Code that runs without being called counts as called:
+
+- a class's `toString()`, `toJSON()`, `__inspect()` and own `clone()` when the right-hand side
+  formats, serialises or copies a value that may hold that class (`String(x)`, `[x].join()`,
+  `JSON.stringify`, `console.log`, `x.clone()`);
+- its `[Symbol.dispose]()` wherever such a value is dropped;
+- the body of any generator in the program at each `next()`, `for...of` or spread over a
+  generator;
+- initializers evaluated where they are used.
+
+A variable of the function that no closure captures (not a parameter) is replaced only by an
+assignment in the right-hand side itself, so a function that reassigns a variable of its own
+(`s = apply(s, t)`) does not count.
 
 ## Mutation is inferred
 
@@ -189,13 +209,17 @@ binding, or as a closure capture. `append(xs, xs)`, `append(g.rows[0], g.rows[1]
 `xs.forEach((x) => { xs.push(x); })` are errors
 (``cannot use `xs` here: this call may modify it through another argument``). Reading a number
 is fine (`xs.push(xs.length)`), and distinct fields are disjoint (`f(this.a, this.b)`). This rule
-is what lets the compiler assume no aliasing for values with a single owner, like Rust. Two
-variables that refer to the same object (`const ys = xs; append(xs, ys)`) are allowed and work
-as in JS: the type is then reference-counted, and the compiler makes no such assumption for it.
-So is a closure argument that takes over a variable another argument only borrows
+is what lets the compiler assume no aliasing for values with a single owner, like Rust.
+
+Two variables that refer to the same object (`const ys = xs; append(xs, ys)`) are allowed and
+work as in JS: the type is then reference-counted, and the compiler makes no such assumption for
+it. So is a closure argument that takes over a variable another argument only borrows
 (`derive(parts, () => parts.length)` where `derive` keeps the closure): the closure shares it.
+
 `m.with(f)` gives `f` the locked value; when `m` is a `shared` handle, that value is not part of
-`m`'s place, so a callback may read what sits next to it (`this.m.with((v) => { v.n += this.step; })`), while one that changes the object holding `m` is still an error.
+`m`'s place, so a callback may read what sits next to it
+(`this.m.with((v) => { v.n += this.step; })`), while one that changes the object holding `m` is
+still an error.
 
 ```ts error
 function append(a: i64[], b: i64[]) {
@@ -339,7 +363,11 @@ class Step {
 }                               // dispose a, dispose b, dispose c, dispose d
 ```
 
-Not supported yet: the `Disposable` / `AsyncDisposable` interfaces and `DisposableStack` (a
-`using` value needs a class or struct type with the method), `using` in `for (… of …)` heads,
-and calling `[Symbol.dispose]()` through an interface or a type parameter (the value's own drop
-would run the hook again).
+<Callout kind="warn" title="Not supported yet">
+
+The `Disposable` / `AsyncDisposable` interfaces and `DisposableStack` (a `using` value needs a
+class or struct type with the method), `using` in `for (… of …)` heads, and calling
+`[Symbol.dispose]()` through an interface or a type parameter (the value's own drop would run
+the hook again).
+
+</Callout>

@@ -6,6 +6,8 @@ category: "Language reference"
 order: 90
 ---
 
+import { Callout } from '@/components/mdx';
+
 # Async and concurrency
 
 ## Async functions
@@ -116,93 +118,152 @@ Promises behave like JavaScript's, at Rust's cost:
   on a task like an `async main`, so they run as in Node: up to their first `await` when
   created, and what they queued once `main` returns. A promise created outside async code (for example in a synchronous
   `main`) starts when it is awaited or spawned.
-- After `main` returns (a synchronous one, an `async` one, or the top level), the process runs
-  while something can still happen, as in Node: a listening [server](/docs/std/http/), a pending
-  [timer](/docs/std/timers/) (`setTimeout`, `setInterval`) unless it is `unref()`ed, and tasks
-  and promises that run or wait for a timer or I/O (`sleep`, a socket, a file, a child
-  process). Spawned tasks are waited for like that too. What waits only for other promises or
-  tasks that can never settle it (a `resolve` nobody calls any more, a channel nobody sends on)
-  does not keep the process alive: once nothing else is left, the program ends with exit code
-  0, also when `async main` itself waits for such a promise. When the top level waits at such
-  an `await`, the program ends as Node's does: `Warning: Detected unsettled top-level await at <file>:<line>` on stderr (without Node's copy of the source line) and exit code 13. That
-  includes the cleanup of an async generator a top-level `for await` left early, which is
-  awaited at the loop: Velt's warning always names the loop's line. Node's names the statement
-  that leaves the loop when that statement is not under an `if` (a `break`, `continue` or
-  `throw` directly in the body, also inside a plain block, with a label, or after an `if`
-  statement), and the loop when it is (`if (x) break;`, a `break` in an `else`,
-  `if (x) throw e;`) or when a call in the body throws; Velt differs in the first case
-  ([#1437](https://github.com/velt-lang/velt/issues/1437)). `process.exit()` and an uncaught error end the process at once.
 - An async call owns its arguments: an argument variable used again afterwards is shared with
   the promise (objects) or copied (numbers, strings), otherwise moved, because the promise may
   outlive the caller's frame.
-- **A promise is a shared value**, as in JavaScript: `const q = p`, storing a promise in a
-  `Map`, an array or a field and reading it out (`m.get(k)`, `arr[i]`, `entry.p`), and handing
-  it to `then` while keeping it, all give other holders of the same promise. Every holder may
-  await it, and each gets the result: an object result is the same object for every awaiter
-  (`(await p) === (await q)`), a string or a number is copied. A rejection reaches every
-  awaiter. The awaiters of a pending promise resume in the order they started waiting, as in
-  Node. Dropping a holder never cancels the promise; it is reported as an unhandled rejection
-  only when every holder dropped it without awaiting it. A promise that is never shared costs
-  what it did before; a shared one costs a small side record and one share of the result per
-  `await`. A shared promise is driven on the task that shares it:
-  - A promise passed as an argument of a spawned call (`spawn(f(p))`) moves to the new task, so
-    using it afterwards is an error; pass another holder (`const q = p; spawn(f(q))`) to await
-    it on both tasks.
-  - Another holder of a shared promise that goes to another task (`const q = p; spawn(f(q))`,
-    `spawn(q)`, a promise read from a `Map`, `ch.send(q)`, a [timer](/docs/std/timers/) callback
-    capturing it, which runs as a task of its own, a `Promise.all` or `Promise.race` over it) is
-    awaited there through a copy. So is one inside a value that goes there while it is still
-    used here (an object, an array or a closure passed to a spawned call or sent over a
-    channel): the task gets a copy of the value, whose promises are other holders. The promise
-    still runs on its own task, and the other task gets the result transferred like a `spawn`
-    argument (moved, or copied while the first task still uses it), so `(await p) === (await q)`
-    holds only on one task. On the other task the holder is a promise of that task: it may be
-    shared again there, and handed on to a third task in turn.
-  - The holders of a pending promise are queued when it settles, in the order they started
-    waiting, as Node queues a promise's reactions: a `Promise.race` over a holder takes it before
-    a promise that settles later.
 - A `using` variable may be the receiver or an argument of an async call only when the call is
   awaited where it is made (`await r.read()`): it is disposed at the end of its block, which a
-  stored or returned promise could outlive (``an async call that keeps it must be awaited here``), and it cannot go to `spawn` at all. An `await using` variable may be shared with a
+  stored or returned promise could outlive (```an async call that keeps it must be awaited
+  here```), and it cannot go to `spawn` at all. An `await using` variable may be shared with a
   stored promise: the block awaits its `[Symbol.asyncDispose]()` when it ends.
-- Values handed to `spawn` (and captured by an HTTP handler, sent over a channel, or settled on
-  a promise from another task) go to another thread. What the program no longer references
-  anywhere else moves as it is; an object it still shares is deep-copied for the task (like a
-  structured clone), so threads never share reference counts. As with a structured clone, an
-  object the value reaches more than once is copied once (`p.x === p.y` still holds in the
-  task) and a cycle is copied as a cycle. A view of an object (an `any` converted to an object
-  type, [Types](/docs/reference/types/)) is copied with its object: the task writes to its copy, and the
-  object here, converted again, is a view of this thread's object. That includes the receiver of
-  `spawn(obj.method())` (also through a base-class reference or an interface value) and what a
-  closure or interface value passed to the task reaches. A closure the caller still uses
-  afterwards is copied too, with what it captures (also a variable it assigns), so the task and
-  the caller each run their own copy. A closure handed on for the last time that captures only
-  values nothing else references (an HTTP handler capturing a disposable resource, say) goes to
-  the task as it is. `spawn(async () => …)` and `spawn((async () => …)())` hand the captured
-  values themselves to the task, so a captured resource the program no longer uses moves and
-  its `[Symbol.dispose]()` runs once, on the task. Each call of an async closure that may run
-  on another thread otherwise gets its own copy of what the closure captured, except a resource
-  without `clone()`, which the call shares with the closure (it is released once, after both).
-  An async closure that stays on its task shares what it captured with every call instead, as
-  in JavaScript ([Functions](/docs/reference/functions/#captures)). So `spawn(f())` through an
-  async closure value `f` gives the task a copy of `f`, and stops the program
-  (``panic: cannot copy …``) when `f` captured such a resource.
-- A value owning a `[Symbol.dispose]` resource is copied by its class's own `clone()` method
-  ([Classes](/docs/reference/classes/)), so each copy releases its own resource; what the returned object
-  still shares with the original (a shallow `clone()`) is deep-copied in turn, and a `clone()`
-  that returns `this` stops the program. Classes without a resource are copied field by
-  field, whatever their `clone()` does. One without `clone()` cannot
-  be copied: passing it to `spawn` and using it afterwards is an error ("`r` is still used
-  after `spawn`, so the task would get a copy, …"), and so is passing one an object still
-  holds (`spawn(serve(this.conn))`: "`this.conn` stays where it is held, …"); pass the last
-  reference, give the class a `clone()`, or share it with `shared(new Mutex(conn))` (a class
-  is shared behind a [`Mutex`](#thread-safety)). The same holds for a value sent on a
-  channel (`ch.send(r)`, `ch.trySend(r)`, or a function that passes its parameter on to one:
-  "`r` is still used after `send`, so the receiving task would get a copy, …"), and for such
-  a value inside an object, array or tuple literal built for the task or the channel
-  (`ch.send({ conns })`). A function that sends its parameter only on some paths is checked
-  as if it always sent it, like a `spawn` inside an `if`. When another reference is only found at run time
-  (the value is also in an array, say), the program stops with ``panic: cannot copy a `Conn` for another thread …``.
+
+### When the program ends
+
+After `main` returns (a synchronous one, an `async` one, or the top level), the process runs
+while something can still happen, as in Node:
+
+- a listening [server](/docs/std/http/);
+- a pending [timer](/docs/std/timers/) (`setTimeout`, `setInterval`) unless it is `unref()`ed;
+- tasks and promises that run or wait for a timer or I/O (`sleep`, a socket, a file, a child
+  process). Spawned tasks are waited for like that too.
+
+What waits only for other promises or tasks that can never settle it (a `resolve` nobody calls
+any more, a channel nobody sends on) does not keep the process alive: once nothing else is left,
+the program ends with exit code 0, also when `async main` itself waits for such a promise.
+`process.exit()` and an uncaught error end the process at once.
+
+When the top level waits at such an `await`, the program ends as Node's does: `Warning: Detected
+unsettled top-level await at <file>:<line>` on stderr (without Node's copy of the source line)
+and exit code 13. That includes the cleanup of an async generator a top-level `for await` left
+early, which is awaited at the loop. Velt's warning always names the loop's line. Node's names:
+
+- the statement that leaves the loop when that statement is not under an `if` (a `break`,
+  `continue` or `throw` directly in the body, also inside a plain block, with a label, or after
+  an `if` statement);
+- the loop when it is (`if (x) break;`, a `break` in an `else`, `if (x) throw e;`) or when a
+  call in the body throws.
+
+Velt differs in the first case ([#1437](https://github.com/velt-lang/velt/issues/1437)).
+
+### Shared promises
+
+**A promise is a shared value**, as in JavaScript: `const q = p`, storing a promise in a `Map`,
+an array or a field and reading it out (`m.get(k)`, `arr[i]`, `entry.p`), and handing it to
+`then` while keeping it, all give other holders of the same promise.
+
+Every holder may await it, and each gets the result: an object result is the same object for
+every awaiter (`(await p) === (await q)`), a string or a number is copied. A rejection reaches
+every awaiter. The awaiters of a pending promise resume in the order they started waiting, as in
+Node.
+
+Dropping a holder never cancels the promise; it is reported as an unhandled rejection only when
+every holder dropped it without awaiting it. A promise that is never shared costs what it did
+before; a shared one costs a small side record and one share of the result per `await`.
+
+#### Shared promises and tasks
+
+A shared promise is driven on the task that shares it:
+
+- A promise passed as an argument of a spawned call (`spawn(f(p))`) moves to the new task, so
+  using it afterwards is an error; pass another holder (`const q = p; spawn(f(q))`) to await
+  it on both tasks.
+- Another holder of a shared promise that goes to another task (`const q = p; spawn(f(q))`,
+  `spawn(q)`, a promise read from a `Map`, `ch.send(q)`, a [timer](/docs/std/timers/) callback
+  capturing it, which runs as a task of its own, a `Promise.all` or `Promise.race` over it) is
+  awaited there through a copy. So is one inside a value that goes there while it is still
+  used here (an object, an array or a closure passed to a spawned call or sent over a
+  channel): the task gets a copy of the value, whose promises are other holders.
+- The holders of a pending promise are queued when it settles, in the order they started
+  waiting, as Node queues a promise's reactions: a `Promise.race` over a holder takes it before
+  a promise that settles later.
+
+The promise still runs on its own task, and the other task gets the result transferred like a
+`spawn` argument (moved, or copied while the first task still uses it), so
+`(await p) === (await q)` holds only on one task. On the other task the holder is a promise of
+that task: it may be shared again there, and handed on to a third task in turn.
+
+### Values sent to another thread
+
+Values handed to `spawn` (and captured by an HTTP handler, sent over a channel, or settled on a
+promise from another task) go to another thread. What the program no longer references anywhere
+else moves as it is; an object it still shares is deep-copied for the task (like a structured
+clone), so threads never share reference counts. As with a structured clone, an object the value
+reaches more than once is copied once (`p.x === p.y` still holds in the task) and a cycle is
+copied as a cycle.
+
+```ts
+class Counter {
+  n = 0;
+}
+
+async function bump(c: Counter): Promise<number> {
+  c.n++;
+  return c.n;
+}
+
+async function main() {
+  const c = new Counter();
+  const t = spawn(bump(c));
+  console.log(await t, c.n); // 1 0
+}
+```
+
+A view of an object (an `any` converted to an object type, [Types](/docs/reference/types/)) is
+copied with its object: the task writes to its copy, and the object here, converted again, is a
+view of this thread's object. That includes the receiver of `spawn(obj.method())` (also through
+a base-class reference or an interface value) and what a closure or interface value passed to
+the task reaches.
+
+A closure the caller still uses afterwards is copied too, with what it captures (also a variable
+it assigns), so the task and the caller each run their own copy. A closure handed on for the
+last time that captures only values nothing else references (an HTTP handler capturing a
+disposable resource, say) goes to the task as it is. `spawn(async () => …)` and
+`spawn((async () => …)())` hand the captured values themselves to the task, so a captured
+resource the program no longer uses moves and its `[Symbol.dispose]()` runs once, on the task.
+
+Each call of an async closure that may run on another thread otherwise gets its own copy of what
+the closure captured, except a resource without `clone()`, which the call shares with the
+closure (it is released once, after both). An async closure that stays on its task shares what
+it captured with every call instead, as in JavaScript
+([Functions](/docs/reference/functions/#captures)). So `spawn(f())` through an async closure
+value `f` gives the task a copy of `f`, and stops the program (```panic: cannot copy …```) when
+`f` captured such a resource.
+
+### Resources sent to another thread
+
+A value owning a `[Symbol.dispose]` resource is copied by its class's own `clone()` method
+([Classes](/docs/reference/classes/)), so each copy releases its own resource; what the returned
+object still shares with the original (a shallow `clone()`) is deep-copied in turn, and a
+`clone()` that returns `this` stops the program. Classes without a resource are copied field by
+field, whatever their `clone()` does.
+
+One without `clone()` cannot be copied:
+
+- passing it to `spawn` and using it afterwards is an error ("`r` is still used after `spawn`,
+  so the task would get a copy, …");
+- so is passing one an object still holds (`spawn(serve(this.conn))`: "`this.conn` stays where
+  it is held, …").
+
+Pass the last reference, give the class a `clone()`, or share it with
+`shared(new Mutex(conn))` (a class is shared behind a [`Mutex`](#thread-safety)).
+
+The same holds for a value sent on a channel (`ch.send(r)`, `ch.trySend(r)`, or a function that
+passes its parameter on to one: "`r` is still used after `send`, so the receiving task would get
+a copy, …"), and for such a value inside an object, array or tuple literal built for the task or
+the channel (`ch.send({ conns })`). A function that sends its parameter only on some paths is
+checked as if it always sent it, like a `spawn` inside an `if`. When another reference is only
+found at run time (the value is also in an array, say), the program stops with ```panic: cannot
+copy a `Conn` for another thread …```.
 
 ## Combinators
 
@@ -493,232 +554,353 @@ An async closure that never leaves its task may: its calls run as started promis
 task, one at a time between `await`s, so they share what it captured as in JavaScript
 ([Functions](/docs/reference/functions/#captures)). Share state between tasks with:
 
-- `shared(x)`, which gives a `shared<T>`: an atomically reference-counted value. Assigning,
-  passing or capturing it adds a reference (so does `.clone()`); it is never deep-copied. For
-  64-bit integers, `.add(n)`, `.get()` and `.set(v)` are atomic; `.add(n)` returns the new value.
-  Any other `shared<T>` (one that holds no `Mutex`) never changes, so every task reads it at
-  once, without a lock, like the `T` it holds: `s[i]` and `s.length` on a string, array or
-  typed array, `for (const x of s)` (also over a `Map`, `Set` or typed array), a field or getter (`s.name`, `s.size` of a `Map`), `T`'s methods
-  (`s.includes(x)`, `s.get(k)`), and `s` passed where a `T` is expected (`count(s)` for
-  `count(xs: u8[])`). An index, a length or a field reads the value in place, and so does a
-  method of it and a function the value or a part of it is passed to, also the callbacks it
-  passes them to (`s.items.some((x) => x.ok)`) and its loops over arrays and maps (the
-  compiler builds a copy of the function that reads them without counting them). What keeps
-  the value or a part of it gets a copy: a parameter that keeps its argument (an `async`
-  function's, a stored one), a variable bound to a part (`const ps = s.ports`), a method's
-  result that is a part of it (`s.get(k)` of a `shared<Map<string, Item>>`), and a call
-  through a function value. Such a copy is another object: `s.get("k") === s.items[2]` and
-  `s.items.find((x) => x.v == 2) === s.items[2]` are `false`, where JavaScript compares the
-  shared object with itself. A change to a part is refused where the compiler follows how it
-  got there: through a variable bound or assigned to it, a `for…of` loop over the value (or
-  over what a method of it returns, such as `s.values()`), a conditional, what a method or
-  getter of it returns (`s.m.get(k)!.v = 1`), a closure at any depth, a function changing it,
-  and through a container holding it (`[s.items[0]]`, `xs.slice()`, an object's field, also
-  destructured or nested; the container's own slots may change). A new object built from a
-  number or string read out of the value (`new Item(s.head.v)`), or a `map` result, holds no
-  part of it and may change. `subarray()` and `buffer` of a shared typed array are
-  refused too: in JavaScript all of them reach the shared value itself. Not yet followed (a
-  change lands on a copy, #1405): a part returned by a function or closure (other than a method
-  or getter of the value: generic, static and interface functions, another object's method), a
-  spread or `Array.from` copy, a `map` whose callback returns its element or a part of it (`xs.map((x) => x)`,
-  `xs.map((x) => x.tags)`),
-  a generator, an `await`, `any` or `Reflect`, and a container filled with `push` / `set`. Change a copy (`.clone()`, `s.ports.slice()`) instead.
-  `console.log(s)`, `[...s]`, `Object.keys(s)` and `JSON.stringify(s)` read the value inside
-  as well. A value of
-  `T` that holds a class with subclasses or with a `clone()` of its own is not read like this
-  (copying it would run that method on objects other threads read): `.clone()` the `shared`
-  and pass it on as a `shared<T>`. While the value or a part of it is read while code runs (a
-  call it is passed to, a loop over it, a method it is the receiver of, a later argument),
-  giving the variable that holds the handle another one is refused where it would be for an
-  array (the loop's body, a closure passed to the same call); where it is allowed (a closure
-  kept in a variable, a module `let` another function reassigns, a field or element holding
-  the handle), the read keeps the box it started with alive, as JavaScript keeps the old array.
-  Changing the value is an error (``cannot modify a `shared<number[]>`: a shared value is read-only …``), and so is passing it or a part of it (`s.m.get(k)!`) to a function that may
-  change it, also one that keeps its argument (an `async` function, a generator, a parameter
-  it stores) or changes what it returns (`st.m.get(k)!.v = 1`), or to a function value, and
-  calling a method of it that changes it (also one returning the value it changes, such as
-  `fill` or a method ending in `return this`): share a `Mutex` instead.
+- [`shared(x)`](#sharedx), which gives a `shared<T>`: an atomically reference-counted value,
+  read by every task at once without a lock.
+- [`shared(new RwLock<T>(x))`](#rwlock) for state read far more often than written.
+- [`shared(new Mutex<T>(x))`](#mutex) with `m.with((v) => …)`: a synchronous lock.
 
-  ```ts
-  async function count(xs: shared<u8[]>, b: u8): Promise<i64> {
-    return countIn(xs, b);
-  }
+### `shared(x)`
 
-  function countIn(xs: u8[], b: u8): i64 {
-    let n: i64 = 0;
-    for (let i: usize = 0; i < xs.length; i++) {
-      if (xs[i] == b) {
-        n++;
-      }
+`shared(x)` gives a `shared<T>`: an atomically reference-counted value. Assigning, passing or
+capturing it adds a reference (so does `.clone()`); it is never deep-copied. For 64-bit
+integers, `.add(n)`, `.get()` and `.set(v)` are atomic; `.add(n)` returns the new value.
+
+`shared(x)` is a thread boundary like `spawn`, and it takes `x` itself: a variable used after it
+went into `shared(...)` (also inside `new Mutex(o)`, a literal or a constructor call there) is
+an error ("`o` is still used after `shared(...)`; `shared` takes the value itself …"): use it
+through the `shared` value from then on, or pass `o.clone()`. A reference the compiler cannot
+see (the object is also in an array, say) gets a copy at run time, and a resource without
+`clone()` then stops the program.
+
+A function value in it, and an HTTP handler, may be called from several threads at once, and
+each call gets its own copy of what the function captured, so a captured resource needs a
+`clone()`: capturing one without it there is an error ("this function captures `store`, and it
+handles HTTP requests, …"), or, when the function arrives through a parameter, ```panic: a
+function value that captured a `Store` is shared between threads …``` where the `shared` or the
+server is made. Capture a `shared(new Mutex(store))` instead to use one
+resource from every call.
+
+#### Reading a shared value
+
+Any other `shared<T>` (one that holds no `Mutex`) never changes, so every task reads it at once,
+without a lock, like the `T` it holds:
+
+- `s[i]` and `s.length` on a string, array or typed array;
+- `for (const x of s)` (also over a `Map`, `Set` or typed array);
+- a field or getter (`s.name`, `s.size` of a `Map`);
+- `T`'s methods (`s.includes(x)`, `s.get(k)`);
+- `s` passed where a `T` is expected (`count(s)` for `count(xs: u8[])`);
+- `console.log(s)`, `[...s]`, `Object.keys(s)` and `JSON.stringify(s)`, which read the value
+  inside as well.
+
+An index, a length or a field reads the value in place, and so does a method of it and a
+function the value or a part of it is passed to, also the callbacks it passes them to
+(`s.items.some((x) => x.ok)`) and its loops over arrays and maps (the compiler builds a copy of
+the function that reads them without counting them).
+
+```ts
+async function count(xs: shared<u8[]>, b: u8): Promise<i64> {
+  return countIn(xs, b);
+}
+
+function countIn(xs: u8[], b: u8): i64 {
+  let n: i64 = 0;
+  for (let i: usize = 0; i < xs.length; i++) {
+    if (xs[i] == b) {
+      n++;
     }
-    return n;
   }
+  return n;
+}
 
-  async function main() {
-    const data = shared([1 as u8, 2, 1, 3, 1]);
-    const ones = spawn(count(data, 1));
-    const threes = spawn(count(data, 3));
-    console.log(await ones, await threes, data.length, data[0]);
+async function main() {
+  const data = shared([1 as u8, 2, 1, 3, 1]);
+  const ones = spawn(count(data, 1));
+  const threes = spawn(count(data, 3));
+  console.log(await ones, await threes, data.length, data[0]);
+}
+```
+
+What keeps the value or a part of it gets a copy: a parameter that keeps its argument (an
+`async` function's, a stored one), a variable bound to a part (`const ps = s.ports`), a method's
+result that is a part of it (`s.get(k)` of a `shared<Map<string, Item>>`), and a call through a
+function value. Such a copy is another object: `s.get("k") === s.items[2]` and
+`s.items.find((x) => x.v == 2) === s.items[2]` are `false`, where JavaScript compares the shared
+object with itself.
+
+A value of `T` that holds a class with subclasses or with a `clone()` of its own is not read
+like this (copying it would run that method on objects other threads read): `.clone()` the
+`shared` and pass it on as a `shared<T>`.
+
+While the value or a part of it is read while code runs (a call it is passed to, a loop over it,
+a method it is the receiver of, a later argument), giving the variable that holds the handle
+another one is refused where it would be for an array (the loop's body, a closure passed to the
+same call). Where it is allowed (a closure kept in a variable, a module `let` another function
+reassigns, a field or element holding the handle), the read keeps the box it started with alive,
+as JavaScript keeps the old array.
+
+#### A shared value is read-only
+
+Changing the value is an error
+(```cannot modify a `shared<number[]>`: a shared value is read-only …```), and so are:
+
+- passing it or a part of it (`s.m.get(k)!`) to a function that may change it, also one that
+  keeps its argument (an `async` function, a generator, a parameter it stores) or changes what
+  it returns (`st.m.get(k)!.v = 1`), or to a function value;
+- calling a method of it that changes it (also one returning the value it changes, such as
+  `fill` or a method ending in `return this`).
+
+Share a `Mutex` instead.
+
+A change to a part is refused where the compiler follows how it got there:
+
+- through a variable bound or assigned to it;
+- a `for…of` loop over the value (or over what a method of it returns, such as `s.values()`);
+- a conditional;
+- what a method or getter of it returns (`s.m.get(k)!.v = 1`);
+- a closure at any depth;
+- a function changing it;
+- a container holding it (`[s.items[0]]`, `xs.slice()`, an object's field, also destructured or
+  nested; the container's own slots may change).
+
+A new object built from a number or string read out of the value (`new Item(s.head.v)`), or a
+`map` result, holds no part of it and may change. `subarray()` and `buffer` of a shared typed
+array are refused too: in JavaScript all of them reach the shared value itself.
+
+<Callout kind="warn" title="Not supported yet">
+
+Refusing a change to a part reached through the following; the change lands on a copy instead
+(#1405): a part returned by a function or closure (other than a method or getter of the value:
+generic, static and interface functions, another object's method), a spread or `Array.from`
+copy, a `map` whose callback returns its element or a part of it (`xs.map((x) => x)`,
+`xs.map((x) => x.tags)`), a generator, an `await`, `any` or `Reflect`, and a container filled
+with `push` / `set`. Change a copy (`.clone()`, `s.ports.slice()`) instead.
+
+</Callout>
+
+### `RwLock`
+
+`shared(new RwLock<T>(x))` is for state read far more often than written: `rw.read((v) => …)`
+runs the callback while other tasks run theirs on other threads, and `rw.write((v) => …)` runs
+it alone, exactly as `with` does (a writer that has waited a while holds new readers back, so
+writers don't starve). Both follow [`with`'s rules](#mutex) below (synchronous, results leave
+the lock as copies of what the value holds).
+
+```ts
+class Catalog {
+  prices: number[] = [];
+}
+
+function total(c: Catalog): number {
+  let t = 0;
+  for (const p of c.prices) {
+    t += p;
   }
-  ```
-- `shared(new RwLock<T>(x))` for state read far more often than written: `rw.read((v) => …)`
-  runs the callback while other tasks run theirs on other threads, and `rw.write((v) => …)`
-  runs it alone, exactly as `with` does (a writer that has waited a while holds new readers
-  back, so writers don't starve). While nobody writes, readers on different threads touch no
-  memory they share, so reads scale with the cores; while writes come often, readers still run
-  at once between writes. With several tasks reading it is usually faster than a `Mutex`; on
-  one task, or with tiny callbacks and rare writes on many, a `Mutex` can be faster (#1395).
-  Both follow `with`'s rules below (synchronous, results leave the lock as copies of what the
-  value holds). A `read` callback cannot change the value: one that may (it assigns to it, or
-  passes it to a function that changes it) is an error ("the function passed to `read` modifies
-  the locked value"), so `read` takes a function literal or a named function, whose body the
-  compiler checks, not a function value. Readers share the value without copying or counting
-  it, also what they keep while the callback runs (a sorted listing of its objects, a value a method returns); a
-  write to it through such a reference stops the program (``panic: cannot modify a value an `RwLock` holds inside its `read` callback …``). What a `read` returns is a copy of what it
-  shares with the value (an element, a `slice()`, a `Map.get`), never the value's object
-  itself. A `read` callback cannot lock anything else exclusively: a `with` or `write` in it is
-  an error (for every `RwLock`, also one whose `read` takes the lock exclusively), and one it
-  reaches through a function it calls, a function value or what locks inside std (a promise's
-  resolver, clearing a timer) stops the program: the callback shares the value without
-  counting it, which the inner callback could not tell from what it changes. Return what you
-  need and lock after `read`, or count with a `shared<i64>` (`.add(n)`). Nor can it start a
-  promise or task, which would outlive it (that stops the program too). A function value the
-  callback calls is checked as it runs (a write to the value through it stops the program).
-  Inside the callback, an object of a type the value holds can be changed when the callback
-  made it, or when it is the caller's: a place rooted in a variable the callback literal
-  captured from code outside any `read` callback, its fields and elements at any depth, a
-  variable of the callback bound to one of them and never given another value (`const x = out[0]`, `for (const o of set)`), what a method or function called on one of them returns
-  when given nothing of the value (`out.at(0)!.tags.push("t")`), and a method or function
-  called with one of them to change it (`out.push(x)`, `seen.add(x)`, `m.set(k, x)`, `mine.v = x`, `out[0].tags.push("t")`, `sortItems(out)`). What the callback stores there from the caller's own variables and
-  containers is that same object, as in JavaScript (`out.push(out[0])`, `out[0] = a`,
-  `out2.push(out.pop()!)`, `a.splice(1, 0, a[0])`), also inside an array or object the callback
-  made (`g.push([out[0]])`) and as what a closure it made captures (`fs.push(() => out[0].v)`);
-  anything else it did not make itself is a copy (an element of the value, what a function
-  returns, a closure capturing a part of the value). An array or object the callback made that
-  holds objects of the value's types is the caller's once stored there: the callback can still
-  read it through its own variables, but a write through them stops the program, as for the
-  value's own (store it once it is complete). One whose type the value cannot hold, and a
-  function value, that the callback still uses after storing it is stored as a copy. So is a
-  container of the callback's own whose type the value cannot hold, or a `Map` or `Set` of its
-  own, holding objects of the value's types, given to a method or function that changes the
-  caller's containers (`mvBag(out, bag)`, `bag.moveTo(out)`): that call gets a copy, so what it
-  moves into `out` is a copy and `bag` keeps what it held. An array of its own given to such a
-  function (`mv(out, list)`, moving `list`'s elements into `out`) loses what the function
-  moved, as in JavaScript, and stays the callback's own when the function did not keep it. What it
-  removes or replaces there is freed once the outermost `read` returns, so a variable still
-  holding it stays valid. Any other object of such a type cannot be told from the value's own,
-  so a write to it stops the program: one a function given the value's objects returns
-  (`pick(s).tags.push("t")`), a function value the callback calls reaches, or a closure made
-  inside the callback captures (`s.items.forEach((it) => out.push(it))`).
-  Reads of other `RwLock`s nest, in any order. A value that holds function
-  or interface values, objects of a class hierarchy, weak references or promises is read under
-  the exclusive lock instead.
+  return t;
+}
 
-  ```ts
-  class Catalog {
-    prices: number[] = [];
-  }
+async function report(cat: shared<RwLock<Catalog>>): Promise<number> {
+  return cat.read((c) => total(c));
+}
 
-  function total(c: Catalog): number {
-    let t = 0;
-    for (const p of c.prices) {
-      t += p;
-    }
-    return t;
-  }
+async function main() {
+  const cat = shared(new RwLock<Catalog>(new Catalog()));
+  cat.write((c) => {
+    c.prices.push(2, 3);
+  });
+  const a = spawn(report(cat));
+  const b = spawn(report(cat));
+  console.log(await a, await b);
+}
+```
 
-  async function report(cat: shared<RwLock<Catalog>>): Promise<number> {
-    return cat.read((c) => total(c));
-  }
+While nobody writes, readers on different threads touch no memory they share, so reads scale
+with the cores; while writes come often, readers still run at once between writes. With several
+tasks reading it is usually faster than a `Mutex`; on one task, or with tiny callbacks and rare
+writes on many, a `Mutex` can be faster (#1395).
 
-  async function main() {
-    const cat = shared(new RwLock<Catalog>(new Catalog()));
-    cat.write((c) => {
-      c.prices.push(2, 3);
-    });
-    const a = spawn(report(cat));
-    const b = spawn(report(cat));
-    console.log(await a, await b);
-  }
-  ```
-- `shared(new Mutex<T>(x))` with `m.with((v) => …)`: a synchronous lock. The callback gets the
-  value itself (assigning `v` updates it), returns a result, and must not be async. Its value
-  is read only there: a value holding a `Mutex` cannot be printed, written as JSON or
-  converted to `any`, `unknown` or `object` (``cannot convert a `shared<Mutex<C>>` to `any`: it holds a lock``), all of which would read it without the lock, also not through a type
-  parameter (a generic function printing its `T` is refused where it is called with one). Nothing
-  crosses the lock by reference, since other threads use the value as soon as it is released:
-  - The result leaves the lock like a value going to another task: an object the callback made
-    moves out, a part of the protected value comes out as a copy (`m.with((v) => v.inner)` is
-    a snapshot; change the value inside the callback). A part that owns a resource without
-    `clone()` cannot be copied, so returning one is an error.
-  - So does a part of the value the callback stores into something it captured
-    (`out.push(v.inner)` pushes a copy, `last = v.inner` assigns one), and an outside object it
-    stores into the value (`v.items.push(item)` stores a copy; `item` stays outside, so using
-    it after the `with` is an error, "`item` is still used after `with` stored it in the
-    locked value": store `item.clone()` to keep using `item`; a struct whose fields are plain
-    values, strings and `shared` values and are never assigned, such as a `TcpStream` or a
-    `WebSocket`, may still be used, since its copy reaches the same shared objects) — also when a function or
-    method the callback calls does the storing (`v.giveTo(out)` gives the method a copy of the
-    value). A resource without `clone()` cannot be copied, so the value gets the object itself:
-    using the variable afterwards is an error ("`conn` is still used after `with` stored it in
-    the locked value"), and so is storing one from a field or an element, which keeps it too
-    (give the type a `clone()`, or move it into the value). An object
-    stored from one place in the value to another, or from one outside object to another, stays
-    the same object. A call that stores a part of an argument it also changes cannot be given a
-    copy, and is an error ("this call may store a part of the locked value outside it, and also
-    changes that argument"): return the part from `with` instead. A function value the
-    callback calls with the value (`step(v)`, a helper's parameter) gets the value itself, so
-    its changes land in it: the closures it may be are checked like the callback. One whose
-    body cannot be found (a field, an array element) may not be given both the value and
-    something outside the lock. The callback itself is a closure written where it is passed, a
-    named function (`m.with(update)`), or a variable or helper parameter bound to those, and
-    is checked as above. One found only through a field, an array element, a `Map` value or a
-    generic factory (`this.m.with(this.reducer)`, `for (const op of ops) m.with(op)`) may be
-    any closure or function taking the value's type (a generic one through each of its
-    instantiations), except the closures written as `with`'s argument: each of them is
-    checked, without being changed. When the value is an object value and one of them would
-    store across the lock or make a promise from the value, the call is an error naming that
-    function ("the function passed to `with` comes from an object's field, and may be a
-    closure that stores a part of the locked `State` outside it …"); otherwise the call is
-    accepted as written.
-  - A variable the callback only reads, and that the function does not use after the `with`
-    (nor again in a loop around it), goes into the lock with the callback: what the callback
-    stores of it into the value is not copied (`const batch = parse(input); m.with((db) => apply(db, batch))` stores `batch`'s own objects). An object it shares with another
-    variable is still copied. Nothing changes in what the program sees; only the copies go.
-  - A promise made from the value runs after the lock is released. One that only reads what it
-    is given gets a copy, like a spawned call (`m.with((v) => save(v.name))`,
-    `m.with((v) => read(v))`: `read` sees the value as it was; a copy of a resource without
-    `clone()` cannot be made, which is an error naming it). The copy is a deep copy of what
-    the promise is given, made while the lock is held — the whole value for `read(v)` — so
-    pass only the parts the work needs (`read(v.config)`) when the value is large; strings are
-    never copied. Storing a part outside costs a copy of that part the same way. A promise
-    that changes what it is given is an error, whether the callback returns, stores or drops
-    it, or a function it calls starts it (`m.with((v) => bump(v))`: "this `Promise<…>` uses
-    the locked value, and would run after
-    `with` releases the lock"): take what the work needs out of the value, await outside
-    `with`, and store the result with another `with`. A function value whose body is not
-    visible may not return a promise either; through a generic helper
-    (`function run<T>(m, fs: ((s: S) => T)[]): T`) that is reported where `T` is a promise.
-  - A function value stored in the value must not have captured a resource without `clone()`
-    (the program stops when the lock is released). Calling one that returns or starts a
-    promise (`m.with((f) => f())`) is an error when a synchronous closure of its type captured
-    objects: the promise would use them after the lock is released. An async closure there is
-    fine, since each call gets its own copy of what it captured.
-  - The callback cannot use module state (module-level `let`s and kept constants), directly
-    or through a function it calls, a field initializer, or a `toString()`, `toJSON()` or
-    `[Symbol.dispose]()` method that std or a drop calls ([Module state](/docs/reference/variables/#module-state)).
+#### Rules for `read` callbacks
 
-`shared(x)` is a thread boundary like `spawn`, and it takes `x` itself: a variable used after
-it went into `shared(...)` (also inside `new Mutex(o)`, a literal or a constructor call there)
-is an error ("`o` is still used after `shared(...)`; `shared` takes the value itself …"):
-use it through the `shared` value from then on, or pass `o.clone()`. A reference the compiler
-cannot see (the object is also in an array, say) gets a copy at run time, and a resource
-without `clone()` then stops the program. A function value in it, and an HTTP handler, may be
-called from several threads at once, and each call gets its own copy of what the function
-captured, so a captured resource needs a `clone()`: capturing one without it there is an
-error ("this function captures `store`, and it handles HTTP requests, …"), or, when the
-function arrives through a parameter, ``panic: a function value that captured a `Store` is shared between threads …`` where the `shared` or the server is made. Capture a
-`shared(new Mutex(store))` instead to use one resource from every call.
+A `read` callback cannot change the value: one that may (it assigns to it, or passes it to a
+function that changes it) is an error ("the function passed to `read` modifies the locked
+value"), so `read` takes a function literal or a named function, whose body the compiler checks,
+not a function value.
+
+Readers share the value without copying or counting it, also what they keep while the callback
+runs (a sorted listing of its objects, a value a method returns); a write to it through such a
+reference stops the program
+(```panic: cannot modify a value an `RwLock` holds inside its `read` callback …```). What a
+`read` returns is a copy of what it shares with the value (an element, a `slice()`, a
+`Map.get`), never the value's object itself.
+
+A `read` callback cannot lock anything else exclusively: a `with` or `write` in it is an error
+(for every `RwLock`, also one whose `read` takes the lock exclusively), and one it reaches
+through a function it calls, a function value or what locks inside std (a promise's resolver,
+clearing a timer) stops the program: the callback shares the value without counting it, which
+the inner callback could not tell from what it changes. Return what you need and lock after
+`read`, or count with a `shared<i64>` (`.add(n)`).
+
+Nor can it start a promise or task, which would outlive it (that stops the program too). A
+function value the callback calls is checked as it runs (a write to the value through it stops
+the program). Reads of other `RwLock`s nest, in any order. A value that holds function or
+interface values, objects of a class hierarchy, weak references or promises is read under the
+exclusive lock instead.
+
+#### Objects a `read` callback may change
+
+Inside the callback, an object of a type the value holds can be changed when the callback made
+it, or when it is the caller's:
+
+- a place rooted in a variable the callback literal captured from code outside any `read`
+  callback, its fields and elements at any depth;
+- a variable of the callback bound to one of them and never given another value
+  (`const x = out[0]`, `for (const o of set)`);
+- what a method or function called on one of them returns when given nothing of the value
+  (`out.at(0)!.tags.push("t")`);
+- a method or function called with one of them to change it (`out.push(x)`, `seen.add(x)`,
+  `m.set(k, x)`, `mine.v = x`, `out[0].tags.push("t")`, `sortItems(out)`).
+
+What the callback stores there from the caller's own variables and containers is that same
+object, as in JavaScript (`out.push(out[0])`, `out[0] = a`, `out2.push(out.pop()!)`,
+`a.splice(1, 0, a[0])`), also inside an array or object the callback made (`g.push([out[0]])`)
+and as what a closure it made captures (`fs.push(() => out[0].v)`); anything else it did not
+make itself is a copy (an element of the value, what a function returns, a closure capturing a
+part of the value).
+
+An array or object the callback made that holds objects of the value's types is the caller's
+once stored there: the callback can still read it through its own variables, but a write
+through them stops the program, as for the value's own (store it once it is complete). One whose
+type the value cannot hold, and a function value, that the callback still uses after storing it
+is stored as a copy.
+
+So is a container of the callback's own whose type the value cannot hold, or a `Map` or `Set` of
+its own, holding objects of the value's types, given to a method or function that changes the
+caller's containers (`mvBag(out, bag)`, `bag.moveTo(out)`): that call gets a copy, so what it
+moves into `out` is a copy and `bag` keeps what it held. An array of its own given to such a
+function (`mv(out, list)`, moving `list`'s elements into `out`) loses what the function moved,
+as in JavaScript, and stays the callback's own when the function did not keep it. What it
+removes or replaces there is freed once the outermost `read` returns, so a variable still
+holding it stays valid.
+
+Any other object of such a type cannot be told from the value's own, so a write to it stops the
+program: one a function given the value's objects returns (`pick(s).tags.push("t")`), a function
+value the callback calls reaches, or a closure made inside the callback captures
+(`s.items.forEach((it) => out.push(it))`).
+
+### `Mutex`
+
+`shared(new Mutex<T>(x))` with `m.with((v) => …)` is a synchronous lock. The callback gets the
+value itself (assigning `v` updates it), returns a result, and must not be async.
+
+```ts
+class Stats {
+  hits = 0;
+}
+
+async function hit(m: shared<Mutex<Stats>>): Promise<void> {
+  m.with((s) => {
+    s.hits++;
+  });
+}
+
+async function main() {
+  const m = shared(new Mutex<Stats>(new Stats()));
+  const a = spawn(hit(m));
+  const b = spawn(hit(m));
+  await a;
+  await b;
+  console.log(m.with((s) => s.hits)); // 2
+}
+```
+
+Its value is read only there: a value holding a `Mutex` cannot be printed, written as JSON or
+converted to `any`, `unknown` or `object`
+(```cannot convert a `shared<Mutex<C>>` to `any`: it holds a lock```), all of which would read
+it without the lock, also not through a type parameter (a generic function printing its `T` is
+refused where it is called with one).
+
+#### What crosses the lock
+
+Nothing crosses the lock by reference, since other threads use the value as soon as it is
+released. The result leaves the lock like a value going to another task: an object the callback
+made moves out, a part of the protected value comes out as a copy (`m.with((v) => v.inner)` is a
+snapshot; change the value inside the callback). A part that owns a resource without `clone()`
+cannot be copied, so returning one is an error.
+
+So does a part of the value the callback stores into something it captured (`out.push(v.inner)`
+pushes a copy, `last = v.inner` assigns one), and an outside object it stores into the value
+(`v.items.push(item)` stores a copy; `item` stays outside, so using it after the `with` is an
+error, "`item` is still used after `with` stored it in the locked value": store `item.clone()`
+to keep using `item`). Both hold also when a function or method the callback calls does the
+storing (`v.giveTo(out)` gives the method a copy of the value).
+
+A struct whose fields are plain values, strings and `shared` values and are never assigned, such
+as a `TcpStream` or a `WebSocket`, may still be used after it was stored, since its copy reaches
+the same shared objects. A resource without `clone()` cannot be copied, so the value gets the
+object itself: using the variable afterwards is an error ("`conn` is still used after `with`
+stored it in the locked value"), and so is storing one from a field or an element, which keeps
+it too (give the type a `clone()`, or move it into the value).
+
+An object stored from one place in the value to another, or from one outside object to another,
+stays the same object. A call that stores a part of an argument it also changes cannot be given
+a copy, and is an error ("this call may store a part of the locked value outside it, and also
+changes that argument"): return the part from `with` instead.
+
+A variable the callback only reads, and that the function does not use after the `with` (nor
+again in a loop around it), goes into the lock with the callback: what the callback stores of it
+into the value is not copied (`const batch = parse(input); m.with((db) => apply(db, batch))`
+stores `batch`'s own objects). An object it shares with another variable is still copied.
+Nothing changes in what the program sees; only the copies go.
+
+#### Which functions `with` takes
+
+A function value the callback calls with the value (`step(v)`, a helper's parameter) gets the
+value itself, so its changes land in it: the closures it may be are checked like the callback.
+One whose body cannot be found (a field, an array element) may not be given both the value and
+something outside the lock.
+
+The callback itself is a closure written where it is passed, a named function
+(`m.with(update)`), or a variable or helper parameter bound to those, and is checked as above.
+One found only through a field, an array element, a `Map` value or a generic factory
+(`this.m.with(this.reducer)`, `for (const op of ops) m.with(op)`) may be any closure or function
+taking the value's type (a generic one through each of its instantiations), except the closures
+written as `with`'s argument: each of them is checked, without being changed.
+
+When the value is an object value and one of them would store across the lock or make a promise
+from the value, the call is an error naming that function ("the function passed to `with` comes
+from an object's field, and may be a closure that stores a part of the locked `State` outside it
+…"); otherwise the call is accepted as written.
+
+#### Promises made under the lock
+
+A promise made from the value runs after the lock is released. One that only reads what it is
+given gets a copy, like a spawned call (`m.with((v) => save(v.name))`, `m.with((v) => read(v))`:
+`read` sees the value as it was; a copy of a resource without `clone()` cannot be made, which is
+an error naming it).
+
+The copy is a deep copy of what the promise is given, made while the lock is held — the whole
+value for `read(v)` — so pass only the parts the work needs (`read(v.config)`) when the value is
+large; strings are never copied. Storing a part outside costs a copy of that part the same way.
+
+A promise that changes what it is given is an error, whether the callback returns, stores or
+drops it, or a function it calls starts it (`m.with((v) => bump(v))`: "this `Promise<…>` uses
+the locked value, and would run after `with` releases the lock"): take what the work needs out
+of the value, await outside `with`, and store the result with another `with`. A function value
+whose body is not visible may not return a promise either; through a generic helper
+(`function run<T>(m, fs: ((s: S) => T)[]): T`) that is reported where `T` is a promise.
+
+A function value stored in the value must not have captured a resource without `clone()` (the
+program stops when the lock is released). Calling one that returns or starts a promise
+(`m.with((f) => f())`) is an error when a synchronous closure of its type captured objects: the
+promise would use them after the lock is released. An async closure there is fine, since each
+call gets its own copy of what it captured.
+
+#### Module state under the lock
+
+The callback cannot use module state (module-level `let`s and kept constants), directly or
+through a function it calls, a field initializer, or a `toString()`, `toJSON()` or
+`[Symbol.dispose]()` method that std or a drop calls
+([Module state](/docs/reference/variables/#module-state)).
 
 ## Errors
 
@@ -779,23 +961,33 @@ async function main() {
   argument, a return value). An array literal without an expected type still takes its element
   type from its first element, so mixed arrays need a type:
   `const ps: Promise<string, Timeout>[] = [work(), rejectAfter(50)]`.
-- A promise nobody can await reports its error as uncaught (`Uncaught <Type>: <message>`, exit
-  code 1), like an unhandled rejection: a task spawned as a statement (`spawn(f());`, or
-  `spawn(p);` of a stored promise), a spawned task whose handle was dropped without being
-  awaited (when the task rejects, or when the handle is dropped after it did), and a stored
-  promise that rejects after it was dropped unawaited. As in Node, a stored promise that
-  rejects while its owner does not wait for it is reported too, once the callbacks queued
-  before have run (the microtask queue is drained), even though the owner still holds it:
-  `const p = f(); await sleep(10); await p;` ends the process at the rejection if `f` rejects
-  first. Awaiting it (or chaining `catch`, or handing it to a combinator) before then handles
-  it. A promise or handle handed to a
-  combinator (`Promise.race`, `all`, `any`) is handled, and so is a `scope.spawn` child, whose
-  error fails its `taskScope`. A stored promise handed to another task (`spawn(use(p))`, a
-  channel) is that task's to await: if it rejects, the error is reported once, by the task that
-  holds it then (or as that task's own error), not by the task that started it.
-- Only the first uncaught error is reported, as in Node, which stops at it: when tasks on
-  different workers fail at the same moment, the process ends with one report (which one goes
-  first depends on the scheduling).
+- A promise nobody can await reports its error as uncaught: see
+  [Uncaught rejections](#uncaught-rejections).
+
+### Uncaught rejections
+
+A promise nobody can await reports its error as uncaught (`Uncaught <Type>: <message>`, exit
+code 1), like an unhandled rejection:
+
+- a task spawned as a statement (`spawn(f());`, or `spawn(p);` of a stored promise);
+- a spawned task whose handle was dropped without being awaited (when the task rejects, or when
+  the handle is dropped after it did);
+- a stored promise that rejects after it was dropped unawaited.
+
+As in Node, a stored promise that rejects while its owner does not wait for it is reported too,
+once the callbacks queued before have run (the microtask queue is drained), even though the
+owner still holds it: `const p = f(); await sleep(10); await p;` ends the process at the
+rejection if `f` rejects first. Awaiting it (or chaining `catch`, or handing it to a combinator)
+before then handles it.
+
+A promise or handle handed to a combinator (`Promise.race`, `all`, `any`) is handled, and so is
+a `scope.spawn` child, whose error fails its `taskScope`. A stored promise handed to another task
+(`spawn(use(p))`, a channel) is that task's to await: if it rejects, the error is reported once,
+by the task that holds it then (or as that task's own error), not by the task that started it.
+
+Only the first uncaught error is reported, as in Node, which stops at it: when tasks on
+different workers fail at the same moment, the process ends with one report (which one goes
+first depends on the scheduling).
 
 ## `new Promise`
 

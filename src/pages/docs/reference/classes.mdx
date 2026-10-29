@@ -7,6 +7,8 @@ order: 60
 navTitle: "Classes"
 ---
 
+import { Callout } from '@/components/mdx';
+
 # Classes, structs, interfaces and generics
 
 Every object has a compile-time shape (a fixed layout), so a field access is one load: no
@@ -14,268 +16,13 @@ hidden classes and no runtime shape checks.
 
 ## Classes
 
-- **Class expressions** bound to a variable, `const Point = class { … };` (also `let`, `export const`, with `extends` / `implements`, at module level or in a function), declare the class
+- **Class expressions** bound to a variable, `const Point = class { … };` (also `let`, `export
+  const`, with `extends` / `implements`, at module level or in a function), declare the class
   `Point`: an anonymous class takes the variable's name, as in JavaScript (`console.log` shows
   `Point { … }`). A class expression may have its own name only when it is the variable's
-  (`const Point = class Point { … }`); another one is an error (``a named class expression must have the name of the variable it initializes``). Class expressions elsewhere (an argument,
-  a return value, `new (class { … })()`) are not supported yet.
-- Fields need a type (`count: i64 = 0`), or an initializer that states one (`count = 0`,
-  `done = false`, `items = new Map<string, i64>()`). A field without a default must be assigned
-  in the `constructor`. A `declare` field (`declare readonly code?: string;`, TypeScript's field
-  without an emitted initializer) is declared like one without `declare`; it cannot have an
-  initializer. `new C(…)` allocates the object on the heap and constructs it in
-  JavaScript's order: a class's field initializers run once its base class is constructed
-  (right after `super(…)` returns, or after the inherited constructor when the class has no
-  constructor of its own), in declaration order, before the rest of its constructor body. So for
-  `class D extends B`: the arguments, B's initializers, B's constructor body, D's initializers,
-  D's constructor body. `new` throws whatever the initializers and constructors throw
-  ([Errors](/docs/reference/errors/#throwing)); a constructor's `throws` clause covers the initializers it
-  runs (those of its class and of the classes between it and the next constructor up).
-  Initializers may construct their own class or classes whose initializers construct it back
-  (`next: Node | null = more() ? new Node() : null`); a `new` in such a cycle throws what every
-  class in the cycle's initializers throws. Before its initializer runs (for example in an
-  overridden method that a base constructor calls) a field reads as zero or empty (`0`, `false`,
-  `""`, an empty array); reading a field that holds an object there (a class instance, a `Map`) is
-  unsound today ([#349](https://github.com/velt-lang/velt/issues/349)).
-  A field declared from an integer literal (`count = 0`) holds a JS number, like
-  `let count = 0` ([Numbers](/docs/reference/types/#numbers)).
-- **Parameter properties**: `constructor(private readonly name: string, public age: i64) {}`
-  declares the fields and assigns them, as in TypeScript (`protected` is accepted there and
-  means public: there are no `protected` members). As TypeScript emits them (ES2022 class
-  fields), they are the class's first fields, before the declared ones, which decides the key
-  order of `console.log` and `JSON.stringify`; the constructor assigns them first (after
-  `super(…)`), so they are set after the class's field initializers ran:
-
-  ```ts
-  function log(s: string): i64 {
-    console.log(s);
-    return 1;
-  }
-  class Point {
-    label: i64 = log("label");
-    constructor(public x: f64, public y: f64) {
-      log("constructor");
-    }
-  }
-  console.log(JSON.stringify(new Point(1, 2))); // label, constructor, {"x":1,"y":2,"label":1}
-  ```
-- **Private and protected constructors** (TypeScript's rules): `private constructor(…)` can be
-  called (`new C(…)`) only inside the class body: its methods, static methods, field
-  initializers and the closures in them. Such a class cannot be extended
-  (``cannot extend `C`: its constructor is private``); a public static method is the usual way
-  to create one. `protected constructor(…)` may also be called inside the bodies of subclasses
-  (`super(…)` in their constructors, or `new C(…)`). Elsewhere `new C` is an error:
-  ``the constructor of `C` is private: only the body of `C` can call `new C(...)` `` (or
-  ``… is protected: only `C` and its subclasses can …``). A subclass without a constructor of
-  its own inherits its base's, with the same rule. `JSON.parse<C>` (and `v.as<C>()`) cannot
-  decode such a class, alone or inside another type, since decoding fills the fields without
-  running a constructor; `JSON.stringify` writes it as usual
-  ([`velt:json`](/docs/std/json/)).
-- **Single inheritance**: `class B extends A`. The base's fields are a prefix of the subclass
-  layout, so upcasts are free. A subclass may declare an inherited field again with the same
-  type and an initializer of its own (`class Dog extends Animal { kind: string = "dog" }`): it is
-  the same field, which the subclass's initializer sets after the base class's, in its turn among
-  the subclass's initializers. A subclass without a constructor of its own inherits its
-  base's. Redefining a base method requires `override`, except a method of a standard-library
-  class (`toString()` in a subclass of `Error`), which TypeScript code redefines without it;
-  `super.m()` calls the base version. An override may give a parameter a default of its own: a
-  call that leaves the argument out takes the default of the method that runs, also through a
-  base-class type (`const s: Shape = new Square(); s.scale()` uses `Square`'s), through a
-  method value (`const f = s.scale; f()`, `s.scale.bind(s)`) and when the argument is
-  `undefined`, as in JavaScript. Such a call goes through a second vtable slot whose entry in
-  each class applies that class's own default, so a call passing every argument costs the same
-  as before.
-  There are no abstract classes.
-- **`super(…)`**: the constructor of a subclass calls `super(…)`, as in TypeScript, also when
-  the base class has no constructor (`super();`). Statements may come before it as long as they
-  don't use `this` or `super.x`
-  (``'super' must be called before accessing 'this' in the constructor of a derived class``) or
-  `return`; they run first, then the call's arguments, the base constructor, this class's field
-  initializers and parameter properties, and the rest of the body. This holds also when the
-  class has initialized fields or parameter properties, which are set right after `super(…)`
-  returns, as in JavaScript (TypeScript 4.6+):
-
-  ```ts
-  class Shape {
-    constructor(public name: string) {}
-  }
-  class Square extends Shape {
-    sides: i64 = 4;
-    constructor(size: f64) {
-      if (size <= 0) {
-        throw new Error("size must be positive");
-      }
-      const name = `square ${size}`;
-      super(name);
-      console.log(this.name, this.sides); // square 2 4
-    }
-  }
-  new Square(2);
-  ```
-
-  The call runs exactly once on every path: a statement of the constructor's body, or one in
-  each branch of an `if` / `else` (nested `if`s too), as TypeScript accepts it; not in an `if`
-  without `else`, a `try`, `switch`, loop or closure, and not part of an expression. The field
-  initializers run right after the call, in either branch, and every field must be initialized,
-  so a path that skips the call or makes it twice is an error, where TypeScript only fails at
-  run time. A class with parameter properties, or with field initializers when no base class has
-  a constructor, needs the call as a statement of the body itself (choose its arguments with a
-  conditional: `super(c ? a : b)`).
-
-  ```ts
-  class Named {
-    constructor(public name: string) {}
-  }
-  class Tagged extends Named {
-    tag: string = "t";
-    constructor(short: boolean) {
-      if (short) {
-        super("s");
-      } else {
-        super("long");
-      }
-      console.log(this.name, this.tag); // s t
-    }
-  }
-  new Tagged(true);
-  ```
-
-  When a constructor throws (before `super(…)`, in the base constructor or in a field
-  initializer), `new` frees the object it allocated, dropping the fields that were set,
-  without running the class's `[Symbol.dispose]()`: like JavaScript, nothing disposes an
-  object `new` never returned.
-- **Dispatch**: a method that is never overridden is called directly (and can be inlined). Only
-  overridden methods go through a vtable, and only where the static type is a base class. A
-  call on an object whose class is known from where it was allocated (`const s: Shape = new Square()`) is usually made direct while the object has not been passed on.
-- **Members**: `private` (usable only inside the declaring type's body, including closures,
-  functions and classes declared in its methods, but not in subclasses: ``` `x` is private ```; the standard library's own modules may
-  use the private members of its types, which is how std types build each other's handles
-  (this covers `private` only: a `#x` name is usable only in its class's body, in std too);
-  `console.log` shows private fields, as Node shows a TypeScript `private` field, except
-  zero-sized ones such as std's `runtime` markers),
-  `public` (the default), `readonly`
-  fields (assignable only in the constructor), `static` methods, and
-  `static readonly NAME: T = …;` constants (`Account.LIMIT`, `Math.PI`), evaluated like
-  [module constants](/docs/reference/variables/#module-state) (once, with the class, when the program
-  modifies, takes over or compares one, or its value is not a constant), and `static` fields
-  (`static count: number = 0;`), which are [module state](/docs/reference/variables/#module-state) like a
-  module-level `let`: initialized once, where the class is declared, in source order with the
-  class's `static { … }` blocks, and assigned through their class (`Counter.count++`, or
-  `++this.count` in a static method of `Counter`) and read through a subclass (`Sub.count`).
-  Assigning one through a subclass (`Sub.count = 5`, or `this.count = v` in a static method
-  called on a subclass) is an error: in JavaScript it creates a static field of the subclass
-  itself, which Velt does not support yet; assign `Counter.count`. `static { … }` blocks run
-  once, where the class is declared, as in JavaScript (`this` in one is not supported yet: name
-  the class, `Counter.count`; a `return` in one is an error, as in TypeScript). A class declared
-  inside a function or block can't have `static` fields that are not `readonly` or `static`
-  blocks yet: JavaScript evaluates them each time the declaration runs, Velt once.
-  `protected` members don't exist (only a constructor can be `protected`). Static and
-  instance members are separate namespaces, as in TypeScript: a subclass's `static m()` doesn't
-  hide an inherited instance method `m()`, and a class below it can still `override` that method.
-  Static methods are inherited, as in TypeScript: with `class B extends A {}`, `B.f()` calls
-  `A`'s `static f()` (unless `B` declares a `static f` of its own, in its body or in an
-  `extend B` block), keeping its visibility (a `private static` one stays usable only in `A`'s
-  body). The statics of `extend` blocks are inherited the same way: `B.f()` looks at `B`'s own
-  statics, then `B`'s `extend` statics, then each base class's statics and `extend` statics,
-  nearest first. Instance methods of an `extend A` block apply to subclasses too: `new B().m()`
-  finds `m` in `B` and its bases' bodies, then in `B`'s `extend` blocks, then in each base
-  class's, nearest first, and `super.m()` in `B` finds `A`'s. An `extend` method is not
-  virtual, so a subclass cannot redefine one (in its body or in an `extend` block of its own):
-  ``` `m` is an `extend` method of `A` and cannot be redefined in a subclass yet ``` (a call
-  through an `A` would run the `extend` method). This covers std's too: `bytes()` and
-  `arrayBuffer()` and the `body` getter of `Response` and `Request` are `extend` methods (#1133 lifts the restriction). A static method of a generic class is called without type arguments
-  (`Box.wrap(4)` for `class Box<T> { static wrap(n: number): number }`): a class type parameter
-  the static's signature doesn't use (in TypeScript statics can't use them) needs no inference,
-  also a bounded one (`class Box<T extends Named>`).
-  In a static method, `this` is the class the method was called on, as in TypeScript: with
-  `class A { static kind() { return "A"; } static hello() { return "hello " + this.kind(); } }`
-  and `class B extends A { static kind() { return "B"; } }`, `B.hello()` is `"hello B"`.
-  `this.f()` calls a static method and `this.NAME` reads a `static readonly` constant (own or
-  inherited); other uses of `this` there are an error (``` `this` in a static method can only
-  be used to call or read its class's static members ```). `super.f()` in a static method calls
-  the base class's static `f`, with `this` unchanged. These calls are resolved at compile time:
-  a static method using `this` or `super` is compiled once per class below its own that can
-  run it, so there is no dispatch at run time. As in TypeScript, the body is typed once, with
-  the declaring class's members: when `class DogShelter extends Shelter` overrides
-  `static create(): Animal` with `static create(): Dog`, `this.create()` in `Shelter`'s statics
-  is an `Animal` also when they run for `DogShelter` (which calls `DogShelter.create`), and a
-  `static kind(): 2` overriding `static kind(): number` gives a `number` there. A subclass
-  static whose type doesn't convert to the one it overrides is an error naming the subclass
-  (``` `B.kind` has type `string`, which does not convert to `f64` of the member it
-  overrides ```, noted ``in `B`'s copy of `A.run` ``). `this.f` passed where a function with
-  more parameters is expected is wrapped like `C.f` (`["a"].map(this.plain)`).
-  A static method is also a value: `const f = C.kind`, `xs.map(C.double)` (passing it where a
-  function with more parameters is expected calls it with the leading arguments, as for any
-  named function). One using `this` or `super` is not (``` `C.hello` uses `this` or `super`, so
-  it cannot be used as a value ```): TypeScript accepts it, but JavaScript calls the function
-  with `this` undefined, so `this.kind()` would throw a `TypeError`. Call it, or wrap the call:
-  `() => C.hello()`.
-- **ES private names** (`#x`, ES2022): fields (`#count = 0`, `readonly #id: string`), methods
-  (`#check()`), accessors (`get #v()` / `set #v(v)`, `this.#v++` uses both) and statics
-  (`static #make()`, `static readonly #K = …`, used as `C.#make()` inside the body). `o.#x`
-  names the member that the class whose body the code is in declares, on any instance of that
-  class or a subclass, not only `this` (a function or class declared in a method is in the body
-  too; where class bodies nest, the innermost one declaring `#x`, so a nested class's own `#x`
-  shadows the outer one's: `o.#x` on an outer-class value there is ``property `#x` cannot be
-  accessed on type `Outer` within this class because it is shadowed by another private
-  identifier with the same spelling``, TypeScript's TS18014); elsewhere, also in a subclass, it is an error (``
-  property `#x` is not accessible outside class `A` because it has a private name ``, also for
-  an accessor: reading `o.#v`, assigning `o.#v = 1` or updating `o.#v += 1` reports it once). A
-  subclass may declare its own `#x`: a second field, not a redeclaration, and a base class
-  method keeps using the base's. A `#m` method is never virtual (a direct call) and overrides
-  nothing (`override #m` is an error). `#x in o` is a brand check: it is `o instanceof C`, `C`
-  the class declaring `#x`, and narrows like `instanceof`. As in TypeScript, `o` must not be
-  possibly null (``the right operand of `in` may be null``; JavaScript throws a `TypeError` for
-  `null`): test `o !== null && #x in o`. Nor may it possibly be a primitive (`A | string`: ``the
-  right operand of `in` may be a primitive``, TypeScript's TS2322); narrow it first
-  (`typeof o !== "string" && #x in o`). A union of objects (`A | number[]`) is fine. Private names exist only in class
-  bodies: not in interfaces, object types, structs, `extend` blocks or parameters, and not
-  with `private` / `public`. At run time `#x` and `private x` cost the same (an ordinary field
-  slot, a direct call); they differ where Node differs:
-
-  | | `#x` | `private x` |
-  |---|---|---|
-  | `console.log`, template literals | hidden: `A { y: 2 }` | shown |
-  | `JSON.stringify` | skipped | written |
-  | `JSON.parse<C>` | error: decoding cannot set it | error, the same |
-  | `Object.keys` | skipped | listed |
-  | `{ ...o }` | skipped | copied, unless private to another type |
-  | `x.clone()` | copied | copied |
-  | name space | `#x` and `x` coexist; a subclass may reuse `#x` | one name per class chain |
-
-  ```ts
-  class Counter {
-    #count = 0;
-    label: string = "clicks";
-    inc(): number {
-      this.#count++;
-      return this.#count;
-    }
-    static isCounter(o: Counter | string): boolean {
-      return typeof o !== "string" && #count in o;
-    }
-  }
-  const c = new Counter();
-  c.inc();
-  const n = c.inc();
-  console.log(c, n, JSON.stringify(c)); // Counter { label: 'clicks' } 2 {"label":"clicks"}
-  ```
-- **Getters and setters**: `get size(): T { … }` is read as a property (`x.size`) and cannot be
-  called or assigned; `set size(v: T) { … }` runs on `x.size = v`; with both, `x.size += 1`,
-  `x.size++` and `x.size ??= v` (also `||=`, `&&=`) use both, as in JS: `x` is evaluated once,
-  then the getter runs, then the right-hand side, then the setter (which `??=`, `||=` and `&&=`
-  skip when the old value decides). The setter runs on the object `x` named before the
-  getter and the right-hand side ran, even when one of them assigns another one to `x`. A getter may change its object (a signal recording who read it). As a value, `x.size = v` is `v` (converted to the setter's parameter type, but
-  non-null when `v` is; the getter is not read again; an object is shared, not copied) and `x.size ??= v` is the old value where it decides, else `v` (so
-  non-null when `v` is). Implementations and overrides of a
-  getter or setter must be accessors too. An override of only the getter of a base class's
-  `get`/`set` pair replaces the whole property, as in JS: writing it through the subclass is an
-  error (TypeScript's TS2540), and through the base class, an interface or an intersection it
-  stops with Node's `TypeError: Cannot set property n of #<S> which has only a getter`. Overriding only the setter is an error: the setter-only accessor would
-  hide the base getter (reads give `undefined` in JS), so override the getter too.
-  Getters cannot be `static` or `async`. A getter's
-  type may be inferred from its `return` like a method's
-  ([Return types](/docs/reference/functions/#return-types)); an interface getter writes it.
+  (`const Point = class Point { … }`); another one is an error (```a named class expression
+  must have the name of the variable it initializes```). Class expressions elsewhere (an
+  argument, a return value, `new (class { … })()`) are not supported yet.
 - Instances are references, as in JS ([Memory model](/docs/reference/memory/#values-and-references)):
   `const b = a` refers to the same object. `x.clone()` makes an independent deep copy of any
   class, struct or union (like `structuredClone`), except values owning a `[Symbol.dispose]`
@@ -337,6 +84,86 @@ const ok = a.deposit(100);      // dispatched to Savings.deposit
 console.log(ok, a.total, a.owner, Account.LIMIT);
 ```
 
+## Construction
+
+### Fields
+
+Fields need a type (`count: i64 = 0`), or an initializer that states one (`count = 0`,
+`done = false`, `items = new Map<string, i64>()`). A field declared from an integer literal
+(`count = 0`) holds a JS number, like `let count = 0` ([Numbers](/docs/reference/types/#numbers)). A field
+without a default must be assigned in the `constructor`.
+
+A `declare` field (`declare readonly code?: string;`, TypeScript's field without an emitted
+initializer) is declared like one without `declare`; it cannot have an initializer.
+
+### Order of construction
+
+`new C(…)` allocates the object on the heap and constructs it in JavaScript's order: a class's
+field initializers run once its base class is constructed (right after `super(…)` returns, or
+after the inherited constructor when the class has no constructor of its own), in declaration
+order, before the rest of its constructor body. So for `class D extends B`:
+
+1. the arguments,
+2. B's initializers,
+3. B's constructor body,
+4. D's initializers,
+5. D's constructor body.
+
+`new` throws whatever the initializers and constructors throw ([Errors](/docs/reference/errors/#throwing)); a
+constructor's `throws` clause covers the initializers it runs (those of its class and of the
+classes between it and the next constructor up). Initializers may construct their own class or
+classes whose initializers construct it back (`next: Node | null = more() ? new Node() :
+null`); a `new` in such a cycle throws what every class in the cycle's initializers throws.
+
+Before its initializer runs (for example in an overridden method that a base constructor calls)
+a field reads as zero or empty (`0`, `false`, `""`, an empty array); reading a field that holds
+an object there (a class instance, a `Map`) is unsound today
+([#349](https://github.com/velt-lang/velt/issues/349)).
+
+### Parameter properties
+
+`constructor(private readonly name: string, public age: i64) {}` declares the fields and
+assigns them, as in TypeScript (`protected` is accepted there and means public: there are no
+`protected` members).
+
+As TypeScript emits them (ES2022 class fields), they are the class's first fields, before the
+declared ones, which decides the key order of `console.log` and `JSON.stringify`. The
+constructor assigns them first (after `super(…)`), so they are set after the class's field
+initializers ran:
+
+```ts
+function log(s: string): i64 {
+  console.log(s);
+  return 1;
+}
+class Point {
+  label: i64 = log("label");
+  constructor(public x: f64, public y: f64) {
+    log("constructor");
+  }
+}
+console.log(JSON.stringify(new Point(1, 2))); // label, constructor, {"x":1,"y":2,"label":1}
+```
+
+### Private and protected constructors
+
+TypeScript's rules apply:
+
+- `private constructor(…)` can be called (`new C(…)`) only inside the class body: its methods,
+  static methods, field initializers and the closures in them. Such a class cannot be extended
+  (```cannot extend `C`: its constructor is private```); a public static method is the usual
+  way to create one.
+- `protected constructor(…)` may also be called inside the bodies of subclasses (`super(…)` in
+  their constructors, or `new C(…)`).
+
+Elsewhere `new C` is an error: ```the constructor of `C` is private: only the body of `C` can
+call `new C(...)` ``` (or ```… is protected: only `C` and its subclasses can …```). A subclass
+without a constructor of its own inherits its base's, with the same rule.
+
+`JSON.parse<C>` (and `v.as<C>()`) cannot decode such a class, alone or inside another type,
+since decoding fills the fields without running a constructor; `JSON.stringify` writes it as
+usual ([`velt:json`](/docs/std/json/)).
+
 A private constructor with static factory methods, and a protected one for a base class:
 
 ```ts
@@ -367,6 +194,114 @@ console.log(new Square(2.0).name);                                              
 // new Celsius(5.0) and new Shape("x") are errors here; so is `class Kelvin extends Celsius`.
 ```
 
+### `super(…)`
+
+The constructor of a subclass calls `super(…)`, as in TypeScript, also when the base class has
+no constructor (`super();`). Statements may come before it as long as they don't use `this` or
+`super.x` (```'super' must be called before accessing 'this' in the constructor of a derived
+class```) or `return`; they run first, then the call's arguments, the base constructor, this
+class's field initializers and parameter properties, and the rest of the body. This holds also
+when the class has initialized fields or parameter properties, which are set right after
+`super(…)` returns, as in JavaScript (TypeScript 4.6+):
+
+```ts
+class Shape {
+  constructor(public name: string) {}
+}
+class Square extends Shape {
+  sides: i64 = 4;
+  constructor(size: f64) {
+    if (size <= 0) {
+      throw new Error("size must be positive");
+    }
+    const name = `square ${size}`;
+    super(name);
+    console.log(this.name, this.sides); // square 2 4
+  }
+}
+new Square(2);
+```
+
+The call runs exactly once on every path: a statement of the constructor's body, or one in each
+branch of an `if` / `else` (nested `if`s too), as TypeScript accepts it; not in an `if` without
+`else`, a `try`, `switch`, loop or closure, and not part of an expression. The field
+initializers run right after the call, in either branch, and every field must be initialized,
+so a path that skips the call or makes it twice is an error, where TypeScript only fails at run
+time. A class with parameter properties, or with field initializers when no base class has a
+constructor, needs the call as a statement of the body itself (choose its arguments with a
+conditional: `super(c ? a : b)`).
+
+```ts
+class Named {
+  constructor(public name: string) {}
+}
+class Tagged extends Named {
+  tag: string = "t";
+  constructor(short: boolean) {
+    if (short) {
+      super("s");
+    } else {
+      super("long");
+    }
+    console.log(this.name, this.tag); // s t
+  }
+}
+new Tagged(true);
+```
+
+When a constructor throws (before `super(…)`, in the base constructor or in a field
+initializer), `new` frees the object it allocated, dropping the fields that were set, without
+running the class's `[Symbol.dispose]()`: like JavaScript, nothing disposes an object `new`
+never returned.
+
+## Inheritance
+
+`class B extends A` gives single inheritance. The base's fields are a prefix of the subclass
+layout, so upcasts are free. A subclass without a constructor of its own inherits its base's.
+There are no abstract classes.
+
+A subclass may declare an inherited field again with the same type and an initializer of its
+own (`class Dog extends Animal { kind: string = "dog" }`): it is the same field, which the
+subclass's initializer sets after the base class's, in its turn among the subclass's
+initializers.
+
+### Overriding methods
+
+Redefining a base method requires `override`, except a method of a standard-library class
+(`toString()` in a subclass of `Error`), which TypeScript code redefines without it;
+`super.m()` calls the base version.
+
+An override may give a parameter a default of its own: a call that leaves the argument out
+takes the default of the method that runs, also through a base-class type (`const s: Shape =
+new Square(); s.scale()` uses `Square`'s), through a method value (`const f = s.scale; f()`,
+`s.scale.bind(s)`) and when the argument is `undefined`, as in JavaScript. Such a call goes
+through a second vtable slot whose entry in each class applies that class's own default, so a
+call passing every argument costs the same as before.
+
+### Dispatch
+
+A method that is never overridden is called directly (and can be inlined). Only overridden
+methods go through a vtable, and only where the static type is a base class. A call on an
+object whose class is known from where it was allocated (`const s: Shape = new Square()`) is
+usually made direct while the object has not been passed on.
+
+### `extend` methods in subclasses
+
+Instance methods of an `extend A` block apply to subclasses too: `new B().m()` finds `m` in `B`
+and its bases' bodies, then in `B`'s `extend` blocks, then in each base class's, nearest
+first, and `super.m()` in `B` finds `A`'s.
+
+<Callout kind="warn" title="Not supported yet">
+
+Redefining an `extend` method in a subclass, in its body or in an
+`extend` block of its own. An `extend` method is not virtual, so a call through an `A` would
+run the `extend` method: ``` `m` is an `extend` method of `A` and cannot be redefined in a
+subclass yet ```. This covers std's too: `bytes()` and `arrayBuffer()` and the `body`
+getter of `Response` and `Request` are `extend` methods
+([#1133](https://github.com/velt-lang/velt/issues/1133) lifts the restriction).
+
+</Callout>
+
 ### Returning `this`
 
 ```ts
@@ -394,11 +329,13 @@ console.log(t.names, t.tags); // [ 'a', 'b' ] [ 'x' ]
   the method is called on: `register` called on a `Tagged` gives a `Tagged`, so chained calls
   keep the subclass's methods, as in TypeScript. An override returns `this` too: written
   (`override register(name: string): this`) or left out, when it returns `this` (or
-  `super.register(name)`). An override with another result type (`override register(name: string): Registry`) is TypeScript's error TS2416.
+  `super.register(name)`). An override with another result type (`override register(name:
+  string): Registry`) is TypeScript's error TS2416.
 - Such a method returns `this` (or the result of another `this`-returning method called on
-  `this`); returning another object of the class is TypeScript's error ``type `A` is not assignable to type `this` ``. The `this` type elsewhere in an instance method's signature or
-  body (a parameter `other: this`) is the declaring class. In a static method or outside a class
-  it is TS2526; in an interface it is not supported yet.
+  `this`); returning another object of the class is TypeScript's error ```type `A` is not
+  assignable to type `this` ```. The `this` type elsewhere in an instance method's signature
+  or body (a parameter `other: this`) is the declaring class. In a static method or outside a
+  class it is TS2526; in an interface it is not supported yet.
 
 ### `instanceof` downcasts
 
@@ -406,17 +343,20 @@ console.log(t.names, t.tags); // [ 'a', 'b' ] [ 'x' ]
 for a `C` and for instances of `C`'s subclasses. Where it holds, `x` reads as a `C`, with the
 same narrowing rules as for unions (`if`/`else`, early returns, `&&`, `||`, `!`, ternaries,
 until `x` is reassigned; a variable that a closure assigns is not narrowed, as
-[for `null`](/docs/reference/types/#null-and-undefined)). The same works on an interface value (a `Shape` holding a `Circle`),
-on `C | null` (true means not `null`) and on a union member whose class is a base of `C`, so
-`catch (e)` chains can tell error subclasses apart. A path of `readonly` fields
-(`node.left instanceof Num`) narrows too; a mutable field could change before it is read, so
-copy it into a local first. A field whose type is a `C` that may be `null` or `undefined`
-(`o.next instanceof Node` with `next?: Node | null`) is narrowed to `C` when the test is true,
-mutable or not, as `o.next != null` would (a read checks it again). Tests joined by `||` narrow to the nearest class they both imply:
-with `class S2 extends S`, `x instanceof S || x instanceof S2` reads `x` as an `S`, and with
-two subclasses `T1` and `T2` of `S`, `x instanceof T1 || x instanceof T2` does too (when `S` is
-not `x`'s own class). The test reads the class id in the object's vtable: one load and
-one comparison, whatever the depth of the hierarchy.
+[for `null`](/docs/reference/types/#null-and-undefined)). The test reads the class id in the object's
+vtable: one load and one comparison, whatever the depth of the hierarchy.
+
+The same works on an interface value (a `Shape` holding a `Circle`), on `C | null` (true means
+not `null`) and on a union member whose class is a base of `C`, so `catch (e)` chains can tell
+error subclasses apart. A path of `readonly` fields (`node.left instanceof Num`) narrows too; a
+mutable field could change before it is read, so copy it into a local first. A field whose type
+is a `C` that may be `null` or `undefined` (`o.next instanceof Node` with `next?: Node | null`)
+is narrowed to `C` when the test is true, mutable or not, as `o.next != null` would (a read
+checks it again).
+
+Tests joined by `||` narrow to the nearest class they both imply: with `class S2 extends S`,
+`x instanceof S || x instanceof S2` reads `x` as an `S`, and with two subclasses `T1` and `T2`
+of `S`, `x instanceof T1 || x instanceof T2` does too (when `S` is not `x`'s own class).
 
 - The narrowed type keeps the type arguments: a `Box<i64>` tested for
   `class Labeled<T> extends Box<T>` is a `Labeled<i64>`. A generic class whose type arguments
@@ -464,6 +404,257 @@ function describe(id: string): string {
 console.log(describe("a"), "/", describe("")); // missing a / timeout after 30ms
 ```
 
+## Members
+
+### Visibility
+
+- `public`: the default.
+- `private`: usable only inside the declaring type's body, including closures, functions and
+  classes declared in its methods, but not in subclasses: ``` `x` is private ```.
+- `#x`, an [ES private name](#es-private-names): usable only in its class's body.
+- `protected`: only a constructor can be `protected`
+  ([Private and protected constructors](#private-and-protected-constructors)); `protected`
+  members don't exist (on a [parameter property](#parameter-properties) it means public).
+
+`console.log` shows private fields, as Node shows a TypeScript `private` field, except
+zero-sized ones such as std's `runtime` markers. The standard library's own modules may use
+the private members of its types, which is how std types build each other's handles; this
+covers `private` only: a `#x` name is usable only in its class's body, in std too.
+
+### `readonly` fields
+
+A `readonly` field is assignable only in the constructor:
+
+```ts error
+class User {
+  readonly id: number;
+  constructor(id: number) {
+    this.id = id; // allowed: in the constructor
+  }
+  reset(): void {
+    this.id = 0; // error: `id` is readonly
+  }
+}
+```
+
+### Static constants and fields
+
+`static readonly NAME: T = …;` constants (`Account.LIMIT`, `Math.PI`) are evaluated like
+[module constants](/docs/reference/variables/#module-state): once, with the class, when the program
+modifies, takes over or compares one, or its value is not a constant.
+
+`static` fields (`static count: number = 0;`) are [module state](/docs/reference/variables/#module-state)
+like a module-level `let`: initialized once, where the class is declared, in source order with
+the class's [`static { … }` blocks](#static-blocks). They are assigned through their class
+(`Counter.count++`, or `++this.count` in a static method of `Counter`) and read through a
+subclass (`Sub.count`):
+
+```ts
+class Counter {
+  static readonly LIMIT: number = 10;
+  static count: number = 0;
+}
+class Sub extends Counter {}
+
+Counter.count++;                     // assign through the class
+console.log(Sub.count, Sub.LIMIT);   // 1 10: read through a subclass
+```
+
+<Callout kind="warn" title="Not supported yet">
+
+Assigning a static field through a subclass (`Sub.count = 5`, or
+`this.count = v` in a static method called on a subclass) is an error: in JavaScript it
+creates a static field of the subclass itself. Assign `Counter.count`.
+
+A class declared inside a function or block can't have `static` fields that are not
+`readonly`, or `static` blocks: JavaScript evaluates them each time the declaration runs,
+Velt once.
+
+</Callout>
+
+### Static blocks
+
+`static { … }` blocks run once, where the class is declared, as in JavaScript, in source order
+with the class's static fields. A `return` in one is an error, as in TypeScript.
+
+```ts
+class Plugins {
+  static names: string[] = [];
+  static {
+    Plugins.names.push("default");
+  }
+}
+console.log(Plugins.names); // [ 'default' ]
+```
+
+<Callout kind="warn" title="Not supported yet">
+
+`this` in a `static` block: name the class (`Counter.count`).
+
+</Callout>
+
+### Static inheritance
+
+`static` methods are called through their class. Static and instance members are separate
+namespaces, as in TypeScript: a subclass's `static m()` doesn't hide an inherited instance
+method `m()`, and a class below it can still `override` that method.
+
+Static methods are inherited, as in TypeScript: with `class B extends A {}`, `B.f()` calls
+`A`'s `static f()` (unless `B` declares a `static f` of its own, in its body or in an
+`extend B` block), keeping its visibility (a `private static` one stays usable only in `A`'s
+body). The statics of `extend` blocks are inherited the same way: `B.f()` looks at `B`'s own
+statics, then `B`'s `extend` statics, then each base class's statics and `extend` statics,
+nearest first.
+
+A static method of a generic class is called without type arguments (`Box.wrap(4)` for
+`class Box<T> { static wrap(n: number): number }`): a class type parameter the static's
+signature doesn't use (in TypeScript statics can't use them) needs no inference, also a
+bounded one (`class Box<T extends Named>`).
+
+### `this` and `super` in static methods
+
+In a static method, `this` is the class the method was called on, as in TypeScript:
+
+```ts
+class A {
+  static kind(): string {
+    return "A";
+  }
+  static hello(): string {
+    return "hello " + this.kind();
+  }
+}
+class B extends A {
+  static kind(): string {
+    return "B";
+  }
+}
+console.log(B.hello()); // hello B
+```
+
+`this.f()` calls a static method and `this.NAME` reads a `static readonly` constant (own or
+inherited); other uses of `this` there are an error (``` `this` in a static method can only be
+used to call or read its class's static members ```). `super.f()` in a static method calls the
+base class's static `f`, with `this` unchanged.
+
+These calls are resolved at compile time: a static method using `this` or `super` is compiled
+once per class below its own that can run it, so there is no dispatch at run time.
+
+As in TypeScript, the body is typed once, with the declaring class's members: when
+`class DogShelter extends Shelter` overrides `static create(): Animal` with
+`static create(): Dog`, `this.create()` in `Shelter`'s statics is an `Animal` also when they
+run for `DogShelter` (which calls `DogShelter.create`), and a `static kind(): 2` overriding
+`static kind(): number` gives a `number` there. A subclass static whose type doesn't convert to
+the one it overrides is an error naming the subclass (``` `B.kind` has type `string`, which
+does not convert to `f64` of the member it overrides ```, noted ```in `B`'s copy of `A.run` ```).
+
+### Statics as values
+
+A static method is also a value: `const f = C.kind`, `xs.map(C.double)` (passing it where a
+function with more parameters is expected calls it with the leading arguments, as for any
+named function). `this.f` passed that way in a static method is wrapped like `C.f`
+(`["a"].map(this.plain)`).
+
+```ts
+class C {
+  static double(x: number): number {
+    return x * 2;
+  }
+}
+const f = C.double;
+console.log(f(4), [1, 2].map(C.double)); // 8 [ 2, 4 ]
+```
+
+A static method using `this` or `super` is not a value (``` `C.hello` uses `this` or `super`,
+so it cannot be used as a value ```): TypeScript accepts it, but JavaScript calls the function
+with `this` undefined, so `this.kind()` would throw a `TypeError`. Call it, or wrap the call:
+`() => C.hello()`.
+
+## ES private names
+
+ES2022 private names (`#x`) work on fields (`#count = 0`, `readonly #id: string`), methods
+(`#check()`), accessors (`get #v()` / `set #v(v)`, `this.#v++` uses both) and statics
+(`static #make()`, `static readonly #K = …`, used as `C.#make()` inside the body).
+
+`o.#x` names the member that the class whose body the code is in declares, on any instance of
+that class or a subclass, not only `this`. A function or class declared in a method is in the
+body too. Where class bodies nest, it is the innermost one declaring `#x`, so a nested class's
+own `#x` shadows the outer one's: `o.#x` on an outer-class value there is ```property `#x`
+cannot be accessed on type `Outer` within this class because it is shadowed by another private
+identifier with the same spelling``` (TypeScript's TS18014).
+
+Elsewhere, also in a subclass, it is an error (```property `#x` is not accessible outside class
+`A` because it has a private name```), also for an accessor: reading `o.#v`, assigning
+`o.#v = 1` or updating `o.#v += 1` reports it once.
+
+A subclass may declare its own `#x`: a second field, not a redeclaration, and a base class
+method keeps using the base's. A `#m` method is never virtual (a direct call) and overrides
+nothing (`override #m` is an error).
+
+`#x in o` is a brand check: it is `o instanceof C`, `C` the class declaring `#x`, and narrows
+like `instanceof`. As in TypeScript, `o` must not be possibly null (```the right operand of
+`in` may be null```; JavaScript throws a `TypeError` for `null`): test
+`o !== null && #x in o`. Nor may it possibly be a primitive (`A | string`: ```the right operand
+of `in` may be a primitive```, TypeScript's TS2322); narrow it first
+(`typeof o !== "string" && #x in o`). A union of objects (`A | number[]`) is fine.
+
+Private names exist only in class bodies: not in interfaces, object types, structs, `extend`
+blocks or parameters, and not with `private` / `public`. At run time `#x` and `private x` cost
+the same (an ordinary field slot, a direct call); they differ where Node differs:
+
+| | `#x` | `private x` |
+|---|---|---|
+| `console.log`, template literals | hidden: `A { y: 2 }` | shown |
+| `JSON.stringify` | skipped | written |
+| `JSON.parse<C>` | error: decoding cannot set it | error, the same |
+| `Object.keys` | skipped | listed |
+| `{ ...o }` | skipped | copied, unless private to another type |
+| `x.clone()` | copied | copied |
+| name space | `#x` and `x` coexist; a subclass may reuse `#x` | one name per class chain |
+
+```ts
+class Counter {
+  #count = 0;
+  label: string = "clicks";
+  inc(): number {
+    this.#count++;
+    return this.#count;
+  }
+  static isCounter(o: Counter | string): boolean {
+    return typeof o !== "string" && #count in o;
+  }
+}
+const c = new Counter();
+c.inc();
+const n = c.inc();
+console.log(c, n, JSON.stringify(c)); // Counter { label: 'clicks' } 2 {"label":"clicks"}
+```
+
+## Getters and setters
+
+`get size(): T { … }` is read as a property (`x.size`) and cannot be called or assigned;
+`set size(v: T) { … }` runs on `x.size = v`. A getter's type may be inferred from its `return`
+like a method's ([Return types](/docs/reference/functions/#return-types)); an interface getter writes it.
+Getters cannot be `static` or `async`.
+
+With both, `x.size += 1`, `x.size++` and `x.size ??= v` (also `||=`, `&&=`) use both, as in JS:
+`x` is evaluated once, then the getter runs, then the right-hand side, then the setter (which
+`??=`, `||=` and `&&=` skip when the old value decides). The setter runs on the object `x`
+named before the getter and the right-hand side ran, even when one of them assigns another one
+to `x`. A getter may change its object (a signal recording who read it).
+
+As a value, `x.size = v` is `v` (converted to the setter's parameter type, but non-null when
+`v` is; the getter is not read again; an object is shared, not copied) and `x.size ??= v` is
+the old value where it decides, else `v` (so non-null when `v` is).
+
+Implementations and overrides of a getter or setter must be accessors too. An override of only
+the getter of a base class's `get`/`set` pair replaces the whole property, as in JS: writing it
+through the subclass is an error (TypeScript's TS2540), and through the base class, an
+interface or an intersection it stops with Node's
+`TypeError: Cannot set property n of #<S> which has only a getter`. Overriding only the setter
+is an error: the setter-only accessor would hide the base getter (reads give `undefined` in
+JS), so override the getter too.
+
 ## Structs
 
 `struct` declares an object type with the same members as a class (methods, getters,
@@ -504,54 +695,12 @@ console.log(p.len(), q.len());  // 4 4
   implements it only by declaring `implements` (or through an [`extend`](#extend) block), or
   by being an object literal where it is expected
   ([Object literals implementing interfaces](/docs/reference/types/#object-literals-implementing-interfaces)).
-- An interface with **only fields** (at least one, no methods, extending only such interfaces)
-  describes data: it is an object type, like `type User = { … }`, so object literals satisfy
-  it, field reads are loads and it has a JSON form. It converts to and from object types with
-  the same fields and stays the same object. `class C implements User` checks that the class
-  has the fields, but a class instance is not a `User` (it is shared by reference; build one
-  from its fields). As a bound, `<T extends HasId>` is satisfied by any type with the fields
-  (a struct, class or object type, not generic). An interface may refer to itself through a
-  field (`next?: Node`, `parent?: Category`, or a union such as `left: Tree`): such an object is
-  stored behind a pointer, like a class instance, so its size is finite. Like JavaScript,
-  `JSON.stringify` of an object that contains itself (`n.next = n`) fails: it panics with
-  "converting circular structure to JSON"; `console.log` prints one like Node,
-  `<ref *1> { value: 1, next: [Circular *1] }`. A struct that contains itself is still an error
-  (``recursive type `S` has infinite size``): structs are stored inline.
 - Used as a **generic bound** (`<T extends Named>`), an interface is resolved at compile time
   (direct calls). Used as a **value type** (`Named[]` holding different classes), it is a fat
   pointer (data plus vtable), like Rust's `dyn`.
-- **Fields** are read and written through an interface value or a `T extends I` as in
-  TypeScript: `hook.owner = null`, `sub.flags |= DIRTY`, `sub.runs++`, `sub.dep ??= d`. The
-  write changes the object behind the value (a struct converted to an interface value is a
-  copy, as structs always are); a `readonly` field cannot be assigned
-  (``cannot assign to `id`: it is a readonly field``). Reads go through a getter in the
-  interface's table and writes through a setter that only interfaces the program writes
-  through get, so other programs pay nothing; through a `T extends I` both are direct calls. An
-  object literal implementing such an interface with `get f()` must give `set f(v)` too.
-  Changing a part of a field (`x.t[0] = 5` on a tuple field, `x.pos.p[1] += 1`, `x.t[0]++`)
-  changes the field the object holds, as in JS: the field is read through its getter, the part
-  changed and the field written back through its setter. The receiver is evaluated once, and a
-  right-hand side with an effect (a call, an `await`) runs before the field is read, so a
-  change it (or another task) makes to the same field is kept. `readonly` is shallow, as in
-  TypeScript: `x.o.v = 5` and `x.t[0] = 5` on a `readonly` field work, written back through a
-  setter the interface keeps for this; an object literal that implements the field with only
-  `get o()` then needs `set o(v)` too.
 - An **optional method** `m?(x: T): R` is an optional field of function type
   (`m?: (x: T) => R`): an implementing class declares the field as `m?: (x: T) => R` or
   `m: ((x: T) => R) | undefined = undefined`, and a caller writes `o.m?.(x)`.
-- **Generic methods** (`apply<U>(f: (x: i64) => U): U[]`) are dispatched statically only: call
-  them on a concrete class or on a `T extends I` generic, not on an interface value
-  (``generic method `apply` cannot be called on an interface value``): make the calling
-  function generic over the receiver (`<T extends Mapper>(m: T)` instead of `(m: Mapper)`), or
-  call a method that is not generic. Generic interface methods cannot have default bodies yet.
-  The method that runs is the one of the class the type parameter is given: when a subclass of that
-  class overrides it, a value of the class may hold the subclass, so instantiating the generic
-  with that class is the same error as calling the method on it directly (pass the concrete
-  class), and an interface value cannot stand for such a type parameter. A call that passes
-  exactly that class is allowed: a `new C()` given directly to a parameter of type `T` of a
-  function or of a generic method, or a `const` initialized with `new C()`. Other variables, a
-  value inside another parameter's type (`get: () => T`, `xs: T[]`), a default (`y: T = x`)
-  and a class instantiated with `C` (`new Holder<C>(new C())`) don't count.
 - A default body can be `async` (`async load(): Promise<T> { … }`), with the rules of an async
   class method ([Async](/docs/reference/async/#errors)). A method without a body cannot be: like in TypeScript,
   it declares a `Promise` result, and implementations may be `async`.
@@ -591,6 +740,25 @@ for (const p of pets) {
 console.log(loudest(new Dog()));
 ```
 
+### Interfaces with only fields
+
+An interface with **only fields** (at least one, no methods, extending only such interfaces)
+describes data: it is an object type, like `type User = { … }`, so object literals satisfy it,
+field reads are loads and it has a JSON form. It converts to and from object types with the
+same fields and stays the same object.
+
+`class C implements User` checks that the class has the fields, but a class instance is not a
+`User` (it is shared by reference; build one from its fields). As a bound, `<T extends HasId>`
+is satisfied by any type with the fields (a struct, class or object type, not generic).
+
+An interface may refer to itself through a field (`next?: Node`, `parent?: Category`, or a
+union such as `left: Tree`): such an object is stored behind a pointer, like a class instance,
+so its size is finite. Like JavaScript, `JSON.stringify` of an object that contains itself
+(`n.next = n`) fails: it panics with "converting circular structure to JSON"; `console.log`
+prints one like Node, `<ref *1> { value: 1, next: [Circular *1] }`. A struct that contains
+itself is still an error (```recursive type `S` has infinite size```): structs are stored
+inline.
+
 ```ts
 interface User {                          // only fields: an object type
   readonly id: i64;
@@ -609,6 +777,29 @@ function idOf<T extends HasId>(x: T): i64 { // any type with an `id: i64` field
 const u: User = { id: 1, name: "ann" };   // an object literal satisfies it
 console.log(JSON.stringify(u), idOf(u));
 ```
+
+### Fields through an interface
+
+Fields are read and written through an interface value or a `T extends I` as in TypeScript:
+`hook.owner = null`, `sub.flags |= DIRTY`, `sub.runs++`, `sub.dep ??= d`. The write changes the
+object behind the value (a struct converted to an interface value is a copy, as structs always
+are); a `readonly` field cannot be assigned (```cannot assign to `id`: it is a readonly
+field```).
+
+Reads go through a getter in the interface's table and writes through a setter that only
+interfaces the program writes through get, so other programs pay nothing; through a
+`T extends I` both are direct calls. An object literal implementing such an interface with
+`get f()` must give `set f(v)` too.
+
+Changing a part of a field (`x.t[0] = 5` on a tuple field, `x.pos.p[1] += 1`, `x.t[0]++`)
+changes the field the object holds, as in JS: the field is read through its getter, the part
+changed and the field written back through its setter. The receiver is evaluated once, and a
+right-hand side with an effect (a call, an `await`) runs before the field is read, so a change
+it (or another task) makes to the same field is kept.
+
+`readonly` is shallow, as in TypeScript: `x.o.v = 5` and `x.t[0] = 5` on a `readonly` field
+work, written back through a setter the interface keeps for this; an object literal that
+implements the field with only `get o()` then needs `set o(v)` too.
 
 ```ts
 interface Hook {
@@ -634,6 +825,24 @@ const hook = new DevHook();
 withoutOwner(hook, () => console.log(hook.currentOwner)); // null
 console.log(hook.currentOwner);                           // 7
 ```
+
+### Generic methods
+
+Generic methods (`apply<U>(f: (x: i64) => U): U[]`) are dispatched statically only: call them on
+a concrete class or on a `T extends I` generic, not on an interface value (```generic method
+`apply` cannot be called on an interface value```): make the calling function generic over the
+receiver (`<T extends Mapper>(m: T)` instead of `(m: Mapper)`), or call a method that is not
+generic. Generic interface methods cannot have default bodies yet.
+
+The method that runs is the one of the class the type parameter is given: when a subclass of
+that class overrides it, a value of the class may hold the subclass, so instantiating the
+generic with that class is the same error as calling the method on it directly (pass the
+concrete class), and an interface value cannot stand for such a type parameter.
+
+A call that passes exactly that class is allowed: a `new C()` given directly to a parameter of
+type `T` of a function or of a generic method, or a `const` initialized with `new C()`. Other
+variables, a value inside another parameter's type (`get: () => T`, `xs: T[]`), a default
+(`y: T = x`) and a class instantiated with `C` (`new Holder<C>(new C())`) don't count.
 
 ### Declaration merging
 
