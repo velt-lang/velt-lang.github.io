@@ -6,6 +6,7 @@ category: "Language reference"
 order: 50
 navTitle: "Functions"
 ---
+import { Callout } from '@/components/mdx';
 
 # Functions and closures
 
@@ -22,33 +23,7 @@ function scale(xs: f64[], k: f64 = 2.0): f64[] {
   a default the type plainly shows has that type, as in TypeScript (`status = 302` is a
   `number`, `live = true` a `boolean`; the same literals, `new C(…)` and arrays of them that type
   [class fields](/docs/reference/classes/) without annotations). A missing return type is inferred from the
-  body ([Return types](#return-types)).
-- Default values work on functions, methods, constructors and interface methods; calls through
-  an interface use the interface's defaults. A default may use earlier parameters, `this` and
-  closures over the function's surroundings (`q: number = p * 2`, `by: number = this.step`,
-  `cb: () => number = () => local`), as in JavaScript: the function applies such a default
-  itself when the call starts (also to a passed `undefined`), and so every later default that
-  is not a constant, which keeps JavaScript's order. Its parameter is a `T | undefined` to
-  callers (`q?: number`, as TypeScript shows it) and a `T` in the body. Not supported yet, each
-  with an error saying why: such a default on a parameter without a written type (an arrow's
-  `(p: number, q = p * 2)`) or whose type includes `null`, also as a later non-constant default
-  that would have to run after one the function applies (`r = f()` after `q: number = p * 2`);
-  one using a name a destructured parameter binds; and one in a generator, whose defaults are
-  evaluated where it is called. For those, take `q?: number` and write `const r = q ?? p * 2;`
-  in the body. Since the parameter is a `T | undefined`, a method with such a default doesn't
-  match an interface method or a base class method whose parameter is a `T` yet (the error
-  says so); declare that one `q?: T` too.
-- The default of a parameter of a dynamic type (`x: any = "d"`, `x: unknown = 0`) also applies to
-  a passed `undefined`, as in JavaScript. The function applies it itself when the call starts,
-  so it is the function's own default whichever way it is called: through an interface whose
-  method takes `x?: any`, through a base class whose method the class overrides, through a
-  function value (`const g = d; g(undefined)`, and `g()`: a left-out argument of a dynamic
-  type is `undefined` through a function value too), or as a callback
-  (`xs.map((v: any = 0) => …)`).
-  So does the default of a parameter whose type allows `undefined` (`x: number | undefined = 5`, or `status = 302` where an interface declares `status?: number`), which is a `number` in
-  the body. Any other default also applies to a passed `undefined`, tested where it is passed:
-  `f(undefined)`, and `f(v)` with a `v` that may be `undefined`
-  ([Null and undefined](/docs/reference/types/#null-and-undefined)).
+  body ([Return types](#return-types)); [default values](#default-values) are below.
 - An optional parameter `q?: T` is `q: T | undefined = undefined`, as in TypeScript. Left out,
   it is `undefined`: it prints `undefined`, `typeof q` is `"undefined"`, `q === undefined` is
   true and `q === null` false. A call may also pass `undefined` for it (or a value that may be
@@ -72,97 +47,172 @@ function scale(xs: f64[], k: f64 = 2.0): f64[] {
   `resolve()`, and `put(x: T)` on a `Box<void>` as `put()`. As in TypeScript, a call's own
   type arguments don't make a parameter optional: `h<void>()` for `function h<T>(x: T)` is an
   arity error (TS2554).
-- A **rest parameter** `...xs: T[]` (the last one) collects the remaining arguments into an
-  array, and a call may spread arrays into it: `sum(1, ...more, 4)` passes `[1, ...more, 4]`.
-  Its type may be any array type: `readonly T[]`, or an alias of an array type
-  (`...xs: Nums` with `type Nums = number[]`); another type is an error, as in TypeScript
-  (TS2370). A rest parameter typed by a type parameter (`...args: A` with
-  `A extends unknown[]`, which TypeScript infers as the tuple of the argument types) is not
-  supported yet (#943).
-  An arrow function, a function expression or an object-literal method may have one too (a
-  method of a literal implementing an interface not yet, nor an interface method), typed the
-  same ways: a
-  module-level constant `const total = (...xs: Nums) => …` is the function
-  `function total(...xs: Nums)` (its parameters must be typed), and any other is a closure whose
-  function type ends in the rest parameter (see Function types below).
-
-  ```ts
-  type Nums = number[];
-  const total = (...xs: Nums): number => xs.reduce((a, b) => a + b, 0);
-  const join = function (sep: string, ...parts: readonly string[]) {
-    return parts.join(sep);
-  };
-  function main() {
-    console.log(total(1, 2, 3), join("-", "a", "b")); // 6 a-b
-  }
-  ```
-
-  The standard library's variadic functions (`Math.max`, `Math.min`, `Math.hypot`,
-  `String.fromCharCode`, an array's `push`) accept a spread anywhere.
-- A **spread into fixed parameters** passes the elements of a value whose length is known when
-  compiling, as in TypeScript: a variable or field of a tuple type (`f(...t)` with
-  `t: [number, string]` is `f(t[0], t[1])`) or an array literal (`f(...[1, 2])`). Too few or
-  too many elements are the usual arity error, and a missing optional parameter takes its
-  default. A spread of an array type (`T[]`) into fixed parameters is an error, as in
-  TypeScript (JS would bind `undefined` to the parameters its elements do not fill). A tuple
-  returned by a call or a getter (`f(0, ...g.pair)`, `f(...pair())`) is read once into a
-  hidden temporary before the call, as JS reads it once, after the function or receiver
-  (`getf()(...pair())` and `mk().m(...pair())` call `getf` and `mk` first; a receiver or a
-  leading argument read through a getter, `h.g.m(...pair())` or `f(h.g, ...pair())`, is read
-  first too, and so is a function a getter returns, `h.fnget(...pair())`). After another argument with effects (`f(next(), ...pair())`), which JS evaluates
-  first, store it in a variable first (`const t = pair(); f(next(), ...t);`).
-
-  ```ts
-  function label(name: string, n: number, suffix?: string): string {
-    return `${name}=${n}${suffix ?? ""}`;
-  }
-  const p: [string, number] = ["x", 4];
-  console.log(label(...p), label(...p, "!")); // x=4 x=4!
-  ```
+- A [rest parameter](#rest-parameters) collects the remaining arguments into an array.
+- A [spread into fixed parameters](#spread-into-fixed-parameters) passes the elements of a tuple
+  or an array literal.
 - A function or method may have [overloads](#overloads) in TypeScript's form.
-- **Nested functions** may be declared inside blocks, and are hoisted to the start of their
-  block as in JS (a call before the declaration works). One that uses the enclosing function's
-  locals (or another such nested function) is a closure, with the
-  [captures](#captures) of an arrow function: it sees every later change of what it uses, may
-  assign it, and may be passed on or returned as a value. Such closures may call themselves
-  and each other (`mount` / `patch` / `unmount` of a renderer), async ones too. Nested
-  functions calling each other this way share one environment holding what they use, so
-  returning or storing them makes no reference cycle: the environment is freed with the last of
-  them. Each one's parameter types and result type must be known before the bodies are
-  checked, so one that returns a value needs its result type written (``…calls itself: not supported yet`` with ``write its result type``); without `return value;` it is `void`
-  (`Promise<void>` when `async`). Not supported yet: a generator calling itself this way (pass
-  the locals it uses as parameters, or declare it at module level), and a use before a local
-  it uses is declared, which JS allows when the call runs later (declare the local first). A
-  generic nested function cannot use the enclosing function's locals. A nested function may
-  name the type parameters of the enclosing function or class (`function failed(): Res<T>`)
-  even when it uses no locals.
+- Functions may be [nested](#nested-functions) inside blocks.
 
-  ```ts
-  function tally(words: string[]): string {
-    const seen = new Map<string, number>();
-    let total = 0;
-    for (const w of words) add(w);   // before the declaration
-    return `${total} ${seen.get("a")}`;
+### Default values
 
-    function add(w: string): void {
-      seen.set(w, (seen.get(w) ?? 0) + 1);
-      total += 1;
-    }
+Default values work on functions, methods, constructors and interface methods; calls through an
+interface use the interface's defaults.
+
+A default may use earlier parameters, `this` and closures over the function's surroundings
+(`q: number = p * 2`, `by: number = this.step`, `cb: () => number = () => local`), as in
+JavaScript: the function applies such a default itself when the call starts (also to a passed
+`undefined`), and so every later default that is not a constant, which keeps JavaScript's
+order. Its parameter is a `T | undefined` to callers (`q?: number`, as TypeScript shows it) and
+a `T` in the body. Since the parameter is a `T | undefined`, a method with such a default
+doesn't match an interface method or a base class method whose parameter is a `T` yet (the
+error says so); declare that one `q?: T` too.
+
+The default of a parameter of a dynamic type (`x: any = "d"`, `x: unknown = 0`) also applies to
+a passed `undefined`, as in JavaScript. The function applies it itself when the call starts, so
+it is the function's own default whichever way it is called:
+
+- through an interface whose method takes `x?: any`;
+- through a base class whose method the class overrides;
+- through a function value (`const g = d; g(undefined)`, and `g()`: a left-out argument of a
+  dynamic type is `undefined` through a function value too);
+- as a callback (`xs.map((v: any = 0) => …)`).
+
+So does the default of a parameter whose type allows `undefined` (`x: number | undefined = 5`,
+or `status = 302` where an interface declares `status?: number`), which is a `number` in the
+body. Any other default also applies to a passed `undefined`, tested where it is passed:
+`f(undefined)`, and `f(v)` with a `v` that may be `undefined`
+([Null and undefined](/docs/reference/types/#null-and-undefined)).
+
+<Callout kind="warn" title="Not supported yet">
+
+Each with an error saying why: a default that uses earlier parameters, `this` or closures on a
+parameter without a written type (an arrow's `(p: number, q = p * 2)`) or whose type includes
+`null`, also as a later non-constant default that would have to run after one the function
+applies (`r = f()` after `q: number = p * 2`); one using a name a destructured parameter binds;
+and one in a generator, whose defaults are evaluated where it is called. For those, take
+`q?: number` and write `const r = q ?? p * 2;` in the body.
+
+</Callout>
+
+### Rest parameters
+
+A **rest parameter** `...xs: T[]` (the last one) collects the remaining arguments into an
+array, and a call may spread arrays into it: `sum(1, ...more, 4)` passes `[1, ...more, 4]`. The
+standard library's variadic functions (`Math.max`, `Math.min`, `Math.hypot`,
+`String.fromCharCode`, an array's `push`) accept a spread anywhere.
+
+Its type may be any array type: `readonly T[]`, or an alias of an array type (`...xs: Nums` with
+`type Nums = number[]`); another type is an error, as in TypeScript (TS2370).
+
+An arrow function, a function expression or an object-literal method may have one too, typed
+the same ways: a module-level constant `const total = (...xs: Nums) => …` is the function
+`function total(...xs: Nums)` (its parameters must be typed), and any other is a closure whose
+function type ends in the rest parameter (see
+[Rest parameters in function types](#rest-parameters-in-function-types)).
+
+```ts
+type Nums = number[];
+const total = (...xs: Nums): number => xs.reduce((a, b) => a + b, 0);
+const join = function (sep: string, ...parts: readonly string[]) {
+  return parts.join(sep);
+};
+function main() {
+  console.log(total(1, 2, 3), join("-", "a", "b")); // 6 a-b
+}
+```
+
+<Callout kind="warn" title="Not supported yet">
+
+A rest parameter typed by a type parameter (`...args: A` with `A extends unknown[]`, which
+TypeScript infers as the tuple of the argument types) (#943); a rest parameter on a method of an
+object literal implementing an interface, or on an interface method.
+
+</Callout>
+
+### Spread into fixed parameters
+
+A spread into fixed parameters passes the elements of a value whose length is known when
+compiling, as in TypeScript: a variable or field of a tuple type (`f(...t)` with
+`t: [number, string]` is `f(t[0], t[1])`) or an array literal (`f(...[1, 2])`). Too few or too
+many elements are the usual arity error, and a missing optional parameter takes its default. A
+spread of an array type (`T[]`) into fixed parameters is an error, as in TypeScript (JS would
+bind `undefined` to the parameters its elements do not fill).
+
+```ts
+function label(name: string, n: number, suffix?: string): string {
+  return `${name}=${n}${suffix ?? ""}`;
+}
+const p: [string, number] = ["x", 4];
+console.log(label(...p), label(...p, "!")); // x=4 x=4!
+```
+
+A tuple returned by a call or a getter (`f(0, ...g.pair)`, `f(...pair())`) is read once into a
+hidden temporary before the call, as JS reads it once, after the function or receiver:
+
+- `getf()(...pair())` and `mk().m(...pair())` call `getf` and `mk` first;
+- a receiver or a leading argument read through a getter, `h.g.m(...pair())` or
+  `f(h.g, ...pair())`, is read first too;
+- and so is a function a getter returns, `h.fnget(...pair())`.
+
+After another argument with effects (`f(next(), ...pair())`), which JS evaluates first, store it
+in a variable first (`const t = pair(); f(next(), ...t);`).
+
+### Nested functions
+
+Functions may be declared inside blocks, and are hoisted to the start of their block as in JS
+(a call before the declaration works).
+
+One that uses the enclosing function's locals (or another such nested function) is a closure,
+with the [captures](#captures) of an arrow function: it sees every later change of what it
+uses, may assign it, and may be passed on or returned as a value. Such closures may call
+themselves and each other (`mount` / `patch` / `unmount` of a renderer), async ones too. Nested
+functions calling each other this way share one environment holding what they use, so
+returning or storing them makes no reference cycle: the environment is freed with the last of
+them.
+
+Each one's parameter types and result type must be known before the bodies are checked, so one
+that returns a value needs its result type written (```…calls itself: not supported yet```
+with ```write its result type```); without `return value;` it is `void` (`Promise<void>` when
+`async`).
+
+A generic nested function cannot use the enclosing function's locals. A nested function may
+name the type parameters of the enclosing function or class (`function failed(): Res<T>`) even
+when it uses no locals.
+
+```ts
+function tally(words: string[]): string {
+  const seen = new Map<string, number>();
+  let total = 0;
+  for (const w of words) add(w);   // before the declaration
+  return `${total} ${seen.get("a")}`;
+
+  function add(w: string): void {
+    seen.set(w, (seen.get(w) ?? 0) + 1);
+    total += 1;
   }
-  console.log(tally(["a", "b", "a"])); // 3 2
+}
+console.log(tally(["a", "b", "a"])); // 3 2
 
-  function parity(base: number): Array<(n: number) => number> {
-    function even(n: number): number {
-      return n === 0 ? base : odd(n - 1);   // calls each other
-    }
-    function odd(n: number): number {
-      return n === 0 ? -base : even(n - 1);
-    }
-    return [even, odd];
+function parity(base: number): Array<(n: number) => number> {
+  function even(n: number): number {
+    return n === 0 ? base : odd(n - 1);   // calls each other
   }
-  const [even, odd] = parity(7);
-  console.log(even(4), odd(4)); // 7 -7
-  ```
+  function odd(n: number): number {
+    return n === 0 ? -base : even(n - 1);
+  }
+  return [even, odd];
+}
+const [even, odd] = parity(7);
+console.log(even(4), odd(4)); // 7 -7
+```
+
+<Callout kind="warn" title="Not supported yet">
+
+A generator calling itself this way (pass the locals it uses as parameters, or declare it at
+module level), and a use before a local it uses is declared, which JS allows when the call runs
+later (declare the local first).
+
+</Callout>
 
 ## Overloads
 
@@ -807,41 +857,16 @@ async function main() {
   `const fmt = (n: number, digits = 2) => n.toFixed(digits);`, `fmt(3.14159)` is `"3.14"`. A
   call through the `const` fills in left-out arguments; an unannotated parameter takes its
   default's type.
+- [Generic arrow functions](#generic-arrow-functions) are written as in `.ts` files.
 - As in TS, a function may take **fewer parameters** than the function type it is passed as:
   `xs.map((x) => x * 2)` where `map` passes `(x, i)`, and `xs.map(double)` with a one-parameter
   `double`, also a method value or a generic callback type (`xs.reduce(plus, 0)` and
   `xs.reduce(acc.add, 0)` with a two-parameter `plus` and `add`, where `reduce` passes
   `(acc, x, i)`). A function may also take more, when the extra ones are optional or have defaults
   (`setTimeout(tick, 10)` with `function tick(n?: number)`): they are left out.
-- As in TS, a function whose **parameter types are wider** than the function type's is accepted
-  where the function type is expected: `p.then((v: any) => …)` for a `Promise<number>`,
-  `xs.forEach((x: unknown) => …)`, `const f: (x: number) => void = (v: number | string) => …`,
-  a function value or named function taking an `any`, `object`, union or interface. Each
-  argument converts to the function's parameter type when it is called, as any argument does
-  (an `any` boxes the number). An argument that doesn't convert (`(x: string) => …` where
-  `(x: number) => void` is expected) is an error, as it is in TS.
-
-  So is a function whose **result type is narrower** than the function type's: a `() => void`
-  where a `() => any` is expected (its result is `undefined`), a `() => string` for a
-  `() => unknown`, an async function's `() => Promise<R>` for a `() => R | Promise<R>`. Its
-  result converts to the expected result type when it returns, through the same wrapper.
-
-  An arrow written there takes the expected parameter types and converts each one where it
-  starts, so it is one function, as fast as one written with those types. A function value
-  (a variable, a named function, a method value) is wrapped instead: each such use makes a
-  **new function value** that calls it, so `g === f` is `false` after `const g: (x: number) => void = f`, a `Set` holds both, and an emitter whose `off(f)` looks for the function
-  `on(f)` stored doesn't find it (each call passes its own wrapper). To register and remove the same handler,
-  declare it with the parameter types the registry expects (`const h = (x: number) => …`), or
-  convert it once and pass that value to both.
-
-  ```ts
-  function main() {
-    const show = (v: unknown) => console.log(typeof v, v);
-    [1, 2].forEach(show); // number 1, number 2
-    const both: (x: number) => void = (v: number | string) => console.log(v);
-    both(3); // 3
-  }
-  ```
+- As in TS, a function whose parameter types are wider, or whose result type is narrower, than
+  the function type's is accepted where the function type is expected: see
+  [Wider parameters and narrower results](#wider-parameters-and-narrower-results).
 - As in TS, a function that returns a value is accepted where a **`void`-returning** function
   type is expected; the value is evaluated and dropped. This holds for an arrow without a
   return type (its expression body, or a `return value;` in it) and for a named function or a
@@ -886,197 +911,17 @@ async function main() {
     console.log(show((n) => `#${n}`, 3), show((n) => n * 2, 3)); // text #3 number 6
   }
   ```
-- **Generic arrow functions** are written as in `.ts` files, `<T>(x: T): T => x` (the `.tsx`
-  spelling `<T,>` works too, and JSX is allowed alongside). One must be the value of a `const`
-  with typed parameters; it is then a generic function. Without a return type it returns the
-  type of its body or its `return`s, by the rules of [Return types](#return-types)
-  (`const id = <T>(x: T) => x` returns `T`; an `async` one returns `Promise<T>`). At module
-  level it is an ordinary generic function; in a function body it is a generic function nested
-  there, so each call instantiates it, and like any generic [nested function](#declarations) it
-  cannot use the local variables around it (nor `this` in a method). A function value has one type, so using one as a value needs
-  a function type to instantiate it at (`const f: (x: i64) => i64 = id;`), and a generic arrow
-  anywhere else (an argument, a `let`) is an error:
-
-  ```ts
-  const firstOr = <T>(xs: T[], fallback: T): T => (xs.length > 0 ? xs[0].clone() : fallback);
-
-  function main() {
-    console.log(firstOr([3, 4], 0), firstOr([], "none"));
-    const pair = <A, B>(a: A, b: B) => `${a}:${b}`; // returns string
-    console.log(pair(1, true), pair("x", 2.5)); // 1:true x:2.5
-    const id = <T>(x: T) => x;
-    const n: i64 = id(41) + 1;
-    console.log(n); // 42
-  }
-  ```
-
-- **Methods as values**: `obj.method` read without calling it, and `obj.method.bind(obj)`, are
-  function values bound to `obj`: `xs.forEach(log.write)`, `const add = counter.add.bind(counter)`.
-  The object is evaluated once, where the method is read, so a later assignment to the
-  variable does not change which object it calls, as with `bind` in JS. The method dispatches
-  like a call (an override in the object's class runs), and converts its arguments as a named
-  function does (`[1, 2].forEach(p.log)` with `log(x: number)`). Read from `this` or a
-  `const` or `using` local, it is the arrow `(x) => obj.method(x)` itself: it captures the
-  object as that arrow would, and costs no allocation where such an arrow costs none. Two
-  deliberate differences from JavaScript:
-  - An unbound read: there `this` is lost (calling the value with a method that uses `this`
-    throws a `TypeError`); Velt binds it to the object it was read from, so the two differ
-    only where JavaScript would throw.
-  - Identity: each read is a new function value, as each `bind` is in JavaScript, where an
-    unbound read returns the one function of the prototype (`o.get === o.get` is `true`).
-    So `===` and `!==` on a method read are errors: store it in a `const` first and use that,
-    e.g. to register and remove a handler (`const tick = w.tick; e.on(tick); e.off(tick)`).
-
-  `bind` takes exactly the object the method is read from
-  (`a.m.bind(b)` is an error: write `(x) => b.m(x)`). A generic method, or one with a rest
-  parameter, has no single function type: wrap it in an arrow.
-
-  ```ts
-  class Log {
-    lines: string[] = [];
-    write(s: string): void {
-      this.lines.push(s);
-    }
-  }
-
-  function main() {
-    const log = new Log();
-    const words: string[] = ["a", "b"];
-    words.forEach(log.write.bind(log));
-    const write = log.write;
-    write("c");
-    console.log(log.lines.join(",")); // a,b,c
-  }
-  ```
-
+- [Methods as values](#methods-as-values): `obj.method` read without calling it is a function
+  value bound to `obj`.
 - **Function types** `(x: T) => U` accept closures and named functions alike. One that may
   throw says so: `(x: T) => U throws E` ([Errors](/docs/reference/errors/#dynamic-calls)). Calling a named
   function through a value behaves like calling it directly: an object it keeps or modifies is
   the caller's object. A promise passed through a function value is shared with the function,
   as any object is.
-- A function type may end in a **rest parameter**: `(event: string, ...args: T[]) => void`. A
-  call through the value packs the remaining arguments into the array, as a call to a function
-  with a rest parameter does (`emit("tick")` passes `[]`, `emit("tick", ...xs)` spreads), and a
-  function or arrow with the same rest parameter is such a value. An arrow passed where one is
-  expected may leave the rest arguments out (`(event) => …`), take them as its own rest
-  parameter in the same place (`(event, ...args) => …`), or name them one by one
-  (`(event, a) => …`): a missing one is `undefined`, which the parameter's type (or the rest
-  element type) must admit (`a: any`, `a?: number`; a default is not supported yet there). An
-  arrow's own rest parameter may also take fixed arguments (`(...xs: number[]) => …` for
-  `(a: number, b: number) => number`), as an array, or as a tuple when their types differ;
-  after more fixed parameters than the function type has (`(p, q, ...xs) => …` for
-  `(p: string, ...xs: number[]) => R`) it is not supported yet. A rest parameter typed
-  by a tuple is that tuple's parameters: `(...args: [string, number]) => R` is
-  `(a: string, b: number) => R`, also when the tuple is a type argument
-  (`type Factory<A extends unknown[], T> = (...args: A) => T`).
-
-  ```ts
-  type Listener = (event: string, ...args: number[]) => void;
-
-  function fire(f: Listener) {
-    f("none");
-    f("two", 1, 2);
-  }
-
-  function main() {
-    fire((event, ...args) => console.log(event, args.length)); // none 0, then two 2
-  }
-  ```
-
-- A named function or a function value passed where a function type with the other kind of
-  parameters is expected is adapted as TypeScript allows. A function with a rest parameter
-  gets every argument the caller passes (`const h: (a: number, b: number) => number = sum`
-  gives `sum` both). A function with fixed parameters, passed where the function type ends
-  in a rest parameter, gets the rest arguments one by one (`call(Math.max)`); a
-  parameter whose argument is missing gets its default, or `undefined`, which its type (or
-  the rest element type) must then admit (`(a: any) => …`, `b?: number`); one of another type
-  is an error. Through `any` a function with a rest parameter gets the arguments past its
-  fixed ones in its array, each converted as a fixed parameter's argument is. Calling a union
-  of function types where one has a rest parameter is not supported yet.
-- In type-level code, `F extends (...args: any[]) => any` holds for every function type, and
-  `Parameters<F>` of `(...xs: T[]) => R` is `T[]`, as is `A` in
-  `F extends (...a: infer A) => R ? A : never`. For a function type with fixed parameters before
-  its rest parameter, `Parameters` would be a variadic tuple type
-  (`[e: string, ...xs: number[]]`), which is not supported yet. A generic function whose rest
-  parameter is typed by its type parameter (`wrap<A extends unknown[], R>(f: (...args: A) => R)`)
-  is not supported yet.
-- **Construct signatures** (`new (buffer: ArrayBuffer) => ArrayBufferView`) type a class used
-  as a value. A class named where a value of that type is expected (a variable's or field's
-  type, an argument, an array or tuple element, a returned value) is one when its constructor
-  takes the signature's parameters and its instance converts to the signature's instance type,
-  as TypeScript checks it. Through a value `C` of that type, `new C(args)` constructs an
-  instance (what the constructor throws, the call throws), `v instanceof C` tests for an
-  instance of the class `C` holds (and narrows `v` to the signature's instance type when that
-  is a class), `C.name` is the class's name and `typeof C` is `"function"` (also held as
-  `unknown`). `C` may be a variable, a module constant, a member of one (`new reg.Default(x)`)
-  or a class's static field (`new Registry.DEFAULT(x)`), and an optional parameter of the
-  signature may be left out (`new (x?: number) => Point`). A class has one value per signature
-  type, as JavaScript has one class object: `C === Point`, `kinds.includes(Point)`,
-  `Object.is` and `Map` and `Set` keys see the same object, also where a generic function
-  takes the class (`register<T>(C: new (x: number) => T)` called as `register(Point)`; as in
-  TypeScript, the call's other arguments take part in inferring `T`, which is the common
-  supertype: `mk(Point3, new Point(1))` for `mk<T>(C: new (x: number) => T, v: T)` is
-  `T = Point`, in either argument order). A class
-  declared in a function gets a new value each time its declaration runs (each call, each loop
-  iteration), as JavaScript makes a new class object there; a function declared there that
-  reads the class as a value reads that value too (it becomes a closure, as one using the
-  enclosing function's variables does). Reading such a class as a value from a method or field
-  initializer of a class, or from a parameter default, is an error for now (#1444). Two cases differ from JavaScript,
-  which has one object per class (#1444): one class at two signature types is two objects
-  (`new () => Point` and `new (x?: number) => Point`, or `Box` at `new (v: number) => Box<number>` and at `new (v: string) => Box<string>`), so comparing values of two signature
-  types directly is an error, and compared as `unknown` or as `Map` and `Set` keys they are not
-  equal; and a class read at a signature type over a generic function's type parameters in
-  its body (`const k: new (v: T) => Box<T> = Box;`) is one object per call of that function.
-  A class used as a value without
-  such a type (`const C = Point;`) is an error for now, as are generic construct signatures
-  (`new <T>(x: T) => Box<T>`), printing or `JSON.stringify` of one, converting one to another
-  construct signature type (`new (x: number) => Point3` to `new (x: number) => Point`; name
-  the class instead), and `new` of an expression that is not a name (`new (pick())(x)`).
-
-  ```ts
-  class Point {
-    constructor(public x: number) {}
-  }
-  class Point3 extends Point {}
-  type PointCtor = new (x: number) => Point;
-  const kinds: PointCtor[] = [Point, Point3];
-  for (const K of kinds) {
-    const p = new K(1);
-    console.log(K.name, p instanceof K, p instanceof Point3); // "Point true false", then "Point3 true true"
-  }
-  console.log(kinds.indexOf(Point3), kinds[0] === Point); // 1 true
-  ```
-- **Generic function types** (`<T>(x: T) => T`, a value each call instantiates, #943): a
-  `const` of such a type is a generic function, as a generic arrow constant is, so each call
-  instantiates it and nothing is boxed. The type may be written at the constant, named by a type
-  alias (also a generic one at its arguments, `const pair: Pair<string> = …`, or one imported
-  from another module), or by an interface with one generic call signature (`interface Mapper { <A, B>(xs: A[], f: (a: A) => B): B[] }`). Its value is an arrow function, whose parameters
-  take their types from the function type where it writes none (it may take fewer parameters
-  than the type, as in TypeScript), or a name, which each call reads and calls at the
-  instantiated type: also a name asserted to the type,
-  `const createToken = Symbol as unknown as <T>(description: string) => Token<T>`, whose
-  function converts to the instantiated type directly, a branded result such as
-  `symbol & { __t?: T }` taking the value as it is. Like a local generic arrow, a local constant
-  of such a type cannot use the local variables around it. A generic function type anywhere
-  else (a parameter, a field, a `let`, a constant with another initializer) is a value that
-  stays generic, which is not supported yet: using one is an error saying so, as are generic
-  construct signatures (`new <T>(x: T) => Box<T>`).
-
-  ```ts
-  type Id = <T>(x: T) => T;
-  const id: Id = (x) => x;
-  type Pair<K> = <V>(key: K, value: V) => [K, V];
-  const pair: Pair<string> = (k, v) => [k, v];
-  type Token<T> = symbol & { readonly __type?: T };
-  const createToken = Symbol as unknown as <T>(description: string) => Token<T>;
-
-  function main() {
-    console.log(id(3), id("s")); // 3 s
-    console.log(pair("a", true)); // [ 'a', true ]
-    const t = createToken<number>("port");
-    console.log(typeof t, t.description); // symbol port
-  }
-  ```
+- A function type may end in a [rest parameter](#rest-parameters-in-function-types).
+- [Construct signatures](#construct-signatures) (`new (x: number) => Point`) type a class used
+  as a value, and [generic function types](#generic-function-types) (`<T>(x: T) => T`) a value
+  each call instantiates.
 - A function type's parameter may be named by a destructuring pattern
   (`([a, b]: [number, number]) => number`), which, like a name, is only for the reader.
 - A function type's parameter may be **optional** (`(app: App, options?: Options) => void`): its
@@ -1084,6 +929,285 @@ async function main() {
   cannot follow it (TypeScript's TS1016). A call through such a value may leave it out
   (`install(app)`), which passes `undefined`; so may a call of a parameter typed
   `T | undefined`, which TypeScript requires to be passed.
+
+### Wider parameters and narrower results
+
+As in TS, a function whose **parameter types are wider** than the function type's is accepted
+where the function type is expected: `p.then((v: any) => …)` for a `Promise<number>`,
+`xs.forEach((x: unknown) => …)`, `const f: (x: number) => void = (v: number | string) => …`, a
+function value or named function taking an `any`, `object`, union or interface. Each argument
+converts to the function's parameter type when it is called, as any argument does (an `any`
+boxes the number). An argument that doesn't convert (`(x: string) => …` where
+`(x: number) => void` is expected) is an error, as it is in TS.
+
+So is a function whose **result type is narrower** than the function type's: a `() => void`
+where a `() => any` is expected (its result is `undefined`), a `() => string` for a
+`() => unknown`, an async function's `() => Promise<R>` for a `() => R | Promise<R>`. Its result
+converts to the expected result type when it returns, through the same wrapper.
+
+An arrow written there takes the expected parameter types and converts each one where it
+starts, so it is one function, as fast as one written with those types.
+
+A function value (a variable, a named function, a method value) is wrapped instead: each such
+use makes a **new function value** that calls it, so `g === f` is `false` after
+`const g: (x: number) => void = f`, a `Set` holds both, and an emitter whose `off(f)` looks for
+the function `on(f)` stored doesn't find it (each call passes its own wrapper). To register and
+remove the same handler, declare it with the parameter types the registry expects
+(`const h = (x: number) => …`), or convert it once and pass that value to both.
+
+```ts
+function main() {
+  const show = (v: unknown) => console.log(typeof v, v);
+  [1, 2].forEach(show); // number 1, number 2
+  const both: (x: number) => void = (v: number | string) => console.log(v);
+  both(3); // 3
+}
+```
+
+### Generic arrow functions
+
+Generic arrow functions are written as in `.ts` files, `<T>(x: T): T => x` (the `.tsx` spelling
+`<T,>` works too, and JSX is allowed alongside). One must be the value of a `const` with typed
+parameters; it is then a generic function. Without a return type it returns the type of its body
+or its `return`s, by the rules of [Return types](#return-types) (`const id = <T>(x: T) => x`
+returns `T`; an `async` one returns `Promise<T>`).
+
+At module level it is an ordinary generic function; in a function body it is a generic function
+nested there, so each call instantiates it, and like any generic
+[nested function](#nested-functions) it cannot use the local variables around it (nor `this` in
+a method). A function value has one type, so using one as a value needs a function type to
+instantiate it at (`const f: (x: i64) => i64 = id;`), and a generic arrow anywhere else (an
+argument, a `let`) is an error:
+
+```ts
+const firstOr = <T>(xs: T[], fallback: T): T => (xs.length > 0 ? xs[0].clone() : fallback);
+
+function main() {
+  console.log(firstOr([3, 4], 0), firstOr([], "none"));
+  const pair = <A, B>(a: A, b: B) => `${a}:${b}`; // returns string
+  console.log(pair(1, true), pair("x", 2.5)); // 1:true x:2.5
+  const id = <T>(x: T) => x;
+  const n: i64 = id(41) + 1;
+  console.log(n); // 42
+}
+```
+
+### Methods as values
+
+`obj.method` read without calling it, and `obj.method.bind(obj)`, are function values bound to
+`obj`: `xs.forEach(log.write)`, `const add = counter.add.bind(counter)`. The object is evaluated
+once, where the method is read, so a later assignment to the variable does not change which
+object it calls, as with `bind` in JS. The method dispatches like a call (an override in the
+object's class runs), and converts its arguments as a named function does
+(`[1, 2].forEach(p.log)` with `log(x: number)`).
+
+Read from `this` or a `const` or `using` local, it is the arrow `(x) => obj.method(x)` itself:
+it captures the object as that arrow would, and costs no allocation where such an arrow costs
+none.
+
+Two deliberate differences from JavaScript:
+
+- An unbound read: there `this` is lost (calling the value with a method that uses `this`
+  throws a `TypeError`); Velt binds it to the object it was read from, so the two differ
+  only where JavaScript would throw.
+- Identity: each read is a new function value, as each `bind` is in JavaScript, where an
+  unbound read returns the one function of the prototype (`o.get === o.get` is `true`).
+  So `===` and `!==` on a method read are errors: store it in a `const` first and use that,
+  e.g. to register and remove a handler (`const tick = w.tick; e.on(tick); e.off(tick)`).
+
+`bind` takes exactly the object the method is read from (`a.m.bind(b)` is an error: write
+`(x) => b.m(x)`). A generic method, or one with a rest parameter, has no single function type:
+wrap it in an arrow.
+
+```ts
+class Log {
+  lines: string[] = [];
+  write(s: string): void {
+    this.lines.push(s);
+  }
+}
+
+function main() {
+  const log = new Log();
+  const words: string[] = ["a", "b"];
+  words.forEach(log.write.bind(log));
+  const write = log.write;
+  write("c");
+  console.log(log.lines.join(",")); // a,b,c
+}
+```
+
+### Rest parameters in function types
+
+A function type may end in a **rest parameter**: `(event: string, ...args: T[]) => void`. A call
+through the value packs the remaining arguments into the array, as a call to a function with a
+rest parameter does (`emit("tick")` passes `[]`, `emit("tick", ...xs)` spreads), and a function
+or arrow with the same rest parameter is such a value.
+
+An arrow passed where one is expected may:
+
+- leave the rest arguments out (`(event) => …`);
+- take them as its own rest parameter in the same place (`(event, ...args) => …`);
+- name them one by one (`(event, a) => …`): a missing one is `undefined`, which the
+  parameter's type (or the rest element type) must admit (`a: any`, `a?: number`).
+
+An arrow's own rest parameter may also take fixed arguments (`(...xs: number[]) => …` for
+`(a: number, b: number) => number`), as an array, or as a tuple when their types differ.
+
+A rest parameter typed by a tuple is that tuple's parameters: `(...args: [string, number]) => R`
+is `(a: string, b: number) => R`, also when the tuple is a type argument
+(`type Factory<A extends unknown[], T> = (...args: A) => T`).
+
+```ts
+type Listener = (event: string, ...args: number[]) => void;
+
+function fire(f: Listener) {
+  f("none");
+  f("two", 1, 2);
+}
+
+function main() {
+  fire((event, ...args) => console.log(event, args.length)); // none 0, then two 2
+}
+```
+
+A named function or a function value passed where a function type with the other kind of
+parameters is expected is adapted as TypeScript allows:
+
+- A function with a rest parameter gets every argument the caller passes
+  (`const h: (a: number, b: number) => number = sum` gives `sum` both).
+- A function with fixed parameters, passed where the function type ends in a rest parameter,
+  gets the rest arguments one by one (`call(Math.max)`); a parameter whose argument is missing
+  gets its default, or `undefined`, which its type (or the rest element type) must then admit
+  (`(a: any) => …`, `b?: number`); one of another type is an error.
+- Through `any` a function with a rest parameter gets the arguments past its fixed ones in its
+  array, each converted as a fixed parameter's argument is.
+
+In type-level code, `F extends (...args: any[]) => any` holds for every function type, and
+`Parameters<F>` of `(...xs: T[]) => R` is `T[]`, as is `A` in
+`F extends (...a: infer A) => R ? A : never`.
+
+<Callout kind="warn" title="Not supported yet">
+
+A default on a parameter of an arrow that names the rest arguments one by one; an arrow's own
+rest parameter after more fixed parameters than the function type has (`(p, q, ...xs) => …` for
+`(p: string, ...xs: number[]) => R`); calling a union of function types where one has a rest
+parameter; `Parameters` of a function type with fixed parameters before its rest parameter,
+which would be a variadic tuple type (`[e: string, ...xs: number[]]`); and a generic function
+whose rest parameter is typed by its type parameter
+(`wrap<A extends unknown[], R>(f: (...args: A) => R)`).
+
+</Callout>
+
+### Construct signatures
+
+Construct signatures (`new (buffer: ArrayBuffer) => ArrayBufferView`) type a class used as a
+value. A class named where a value of that type is expected (a variable's or field's type, an
+argument, an array or tuple element, a returned value) is one when its constructor takes the
+signature's parameters and its instance converts to the signature's instance type, as
+TypeScript checks it.
+
+Through a value `C` of that type:
+
+- `new C(args)` constructs an instance (what the constructor throws, the call throws);
+- `v instanceof C` tests for an instance of the class `C` holds (and narrows `v` to the
+  signature's instance type when that is a class);
+- `C.name` is the class's name and `typeof C` is `"function"` (also held as `unknown`).
+
+`C` may be a variable, a module constant, a member of one (`new reg.Default(x)`) or a class's
+static field (`new Registry.DEFAULT(x)`), and an optional parameter of the signature may be left
+out (`new (x?: number) => Point`).
+
+```ts
+class Point {
+  constructor(public x: number) {}
+}
+class Point3 extends Point {}
+type PointCtor = new (x: number) => Point;
+const kinds: PointCtor[] = [Point, Point3];
+for (const K of kinds) {
+  const p = new K(1);
+  console.log(K.name, p instanceof K, p instanceof Point3); // "Point true false", then "Point3 true true"
+}
+console.log(kinds.indexOf(Point3), kinds[0] === Point); // 1 true
+```
+
+A class has one value per signature type, as JavaScript has one class object: `C === Point`,
+`kinds.includes(Point)`, `Object.is` and `Map` and `Set` keys see the same object, also where a
+generic function takes the class (`register<T>(C: new (x: number) => T)` called as
+`register(Point)`; as in TypeScript, the call's other arguments take part in inferring `T`,
+which is the common supertype: `mk(Point3, new Point(1))` for
+`mk<T>(C: new (x: number) => T, v: T)` is `T = Point`, in either argument order).
+
+Two cases differ from JavaScript, which has one object per class (#1444):
+
+- one class at two signature types is two objects (`new () => Point` and
+  `new (x?: number) => Point`, or `Box` at `new (v: number) => Box<number>` and at
+  `new (v: string) => Box<string>`), so comparing values of two signature types directly is an
+  error, and compared as `unknown` or as `Map` and `Set` keys they are not equal;
+- a class read at a signature type over a generic function's type parameters in its body
+  (`const k: new (v: T) => Box<T> = Box;`) is one object per call of that function.
+
+A class declared in a function gets a new value each time its declaration runs (each call, each
+loop iteration), as JavaScript makes a new class object there; a function declared there that
+reads the class as a value reads that value too (it becomes a closure, as one using the
+enclosing function's variables does).
+
+<Callout kind="warn" title="Not supported yet">
+
+These are errors for now: reading a class declared in a function as a value from a method or
+field initializer of a class, or from a parameter default (#1444); a class used as a value
+without such a type (`const C = Point;`); generic construct signatures
+(`new <T>(x: T) => Box<T>`); printing or `JSON.stringify` of one; converting one to another
+construct signature type (`new (x: number) => Point3` to `new (x: number) => Point`; name the
+class instead); and `new` of an expression that is not a name (`new (pick())(x)`).
+
+</Callout>
+
+### Generic function types
+
+A `const` of a generic function type (`<T>(x: T) => T`, a value each call instantiates, #943) is
+a generic function, as a generic arrow constant is, so each call instantiates it and nothing is
+boxed. The type may be written at the constant, named by a type alias (also a generic one at its
+arguments, `const pair: Pair<string> = …`, or one imported from another module), or by an
+interface with one generic call signature
+(`interface Mapper { <A, B>(xs: A[], f: (a: A) => B): B[] }`).
+
+Its value is:
+
+- an arrow function, whose parameters take their types from the function type where it writes
+  none (it may take fewer parameters than the type, as in TypeScript);
+- or a name, which each call reads and calls at the instantiated type: also a name asserted to
+  the type, `const createToken = Symbol as unknown as <T>(description: string) => Token<T>`,
+  whose function converts to the instantiated type directly, a branded result such as
+  `symbol & { __t?: T }` taking the value as it is.
+
+Like a local generic arrow, a local constant of such a type cannot use the local variables
+around it.
+
+```ts
+type Id = <T>(x: T) => T;
+const id: Id = (x) => x;
+type Pair<K> = <V>(key: K, value: V) => [K, V];
+const pair: Pair<string> = (k, v) => [k, v];
+type Token<T> = symbol & { readonly __type?: T };
+const createToken = Symbol as unknown as <T>(description: string) => Token<T>;
+
+function main() {
+  console.log(id(3), id("s")); // 3 s
+  console.log(pair("a", true)); // [ 'a', true ]
+  const t = createToken<number>("port");
+  console.log(typeof t, t.description); // symbol port
+}
+```
+
+<Callout kind="warn" title="Not supported yet">
+
+A generic function type anywhere else (a parameter, a field, a `let`, a constant with another
+initializer) is a value that stays generic: using one is an error saying so, as are generic
+construct signatures (`new <T>(x: T) => Box<T>`).
+
+</Callout>
 
 ### `this` parameters
 
@@ -1204,102 +1328,9 @@ console.log(add.call(null, 1, 2), add.apply(null, pair)); // 3 7
 
 ## Captures
 
-- A closure passed directly as a call argument, or called immediately, is **non-escaping** and
-  captures by reference: `xs.forEach((x) => { total += x; })` updates `total`, as in JS.
-- Parameters of function type are borrowed unless the callee keeps them. One that the body
-  stores, returns, captures in an escaping closure (`spawn(async () => cb())`), copies or
-  passes to an async function is **owned** (inferred like other parameters), and a closure
-  literal passed to an owned parameter is escaping, so `new Holder(() => msg)` keeps a closure
-  that stays valid. Closures and overridden or interface methods have fixed borrowed
-  parameters; they may still keep a function they receive, as JS callback registries do
-  (`onCleanup((fn) => (cleanupFn = fn))`, `subscribe(handler) { this.handlers.push(handler); }`).
-  A program that does so passes such callees only closures that own their environment: every
-  closure literal passed to a function value or an interface method escapes (also one that
-  forwards a borrowed function, below), and a parameter of a named function that is kept, or
-  passed to a function value, an interface method, an overridden method or a parameter of a
-  generic type, becomes owned (a generic type may stand for a function type, so a closure
-  literal passed to a parameter of a generic type always escapes, and a method keeping a value
-  of a generic type, `put(t: T) { this.items.push(t); }`, counts as keeping a function), also when a closure
-  inside the function does it (`untrack(() => topic.subscribe(f))`). A closure may likewise keep
-  a function it captured from a local variable (`untrack(() => registry.add(onInvalidate))`).
-  The executor of `new Promise((resolve, reject) => …)` is the exception: its `resolve` and
-  `reject` are handles the compiler creates on the heap (never a caller's closure), so it may
-  keep them ([Async](/docs/reference/async/#new-promise)). A spawned or stored closure can't capture a borrowed
-  function parameter either (same error).
-- A closure literal passed directly to a function value or an interface method (whose
-  parameters are fixed, so it may keep them, for example as a generic `T`) is escaping: it
-  owns a heap environment. Unless it captures a borrowed function parameter of the enclosing
-  function, as a middleware forwarding its `next` does (`inner.handle(req, (r) => next(r))`):
-  then it stays non-escaping, like the parameter it forwards, and is safe as long as the callee
-  only calls it. A parameter declared with a generic type (`keep(x: T)`, with `T` a function
-  type) may be kept, and so may anything passed to a callee that returns a promise the caller
-  does not `await` right away (the callee may run after the caller returned): a forwarding
-  closure passed there escapes like any other. It captures the function it forwards by value,
-  and that parameter of the enclosing function becomes owned. In a closure, or an overridden or
-  interface method, where that parameter cannot become owned, it is kept as described above.
-  What remains an error (``cannot keep a copy of `g`, a borrowed function parameter``) is keeping
-  a function that reached the closure through a destructured or `for...of` binding of a
-  borrowed value, or through `this`.
-- A closure held in a `const` that is only ever called (`const add = (n: number) => { this.total += n; }; add(1); add(2);`) is non-escaping too: it captures by reference, sees
-  every later change of what it captures, and lives in the frame, so capturing `this` does not
-  make the class reference-counted. The compiler proves it: the closure's variable is used only
-  as `f(...)` (never copied, stored, returned, passed on or captured by another closure), the
-  enclosing function and the closure are not `async` or generators, it captures no `using`
-  value and nothing holding a promise, no closure created inside it captures a variable the
-  enclosing function assigns, and no call runs while a reference into a
-  captured object is held (the call's own arguments do not use what it captures, and it is not
-  inside a `for...of` over such an object, a `match` on one, or next to an argument borrowing
-  one). Otherwise it is escaping, as below; the results are the same, only the cost differs.
-  Borrowing never makes a program an error: where a closure borrowing `this` (or `const me = this`) would conflict with a caller's borrow, such as a `for...of` over `c.items` around a
-  `c.clear()` that replaces `items`, the closure and `me` share instead. The fallback is for
-  the whole program: one such conflict makes every held closure and every `const me = this` in
-  it share, as if none of them borrowed.
-- A closure stored in a `let`, a field or an array, held in a `const` that is used other than
-  by calling it (or one that does not meet the conditions above), or returned, is **escaping**
-  and captures by
-  value: objects are shared with it (the closure and the enclosing code see the same object),
-  numbers and strings are copied. A captured object the enclosing code does not use again moves
-  into the closure, so it is released (and disposed) when the closure is, even if other captures
-  are still used afterwards. A variable that the closure or the enclosing code assigns
-  while the other still uses it (`let count = 0; const incs = [() => { count++; }]; incs[0](); console.log(count)`) lives in a shared, reference-counted cell, so both see every change, as
-  in JS; a closure that is the only remaining user (a `makeCounter` returning `() => ++n`) keeps
-  a plain copy. A closure created inside another closure that assigns a variable the outer
-  closure captured (`let last = ""; const f = (v: string) => { const g = () => { last = v; }; g(); }`) assigns the variable itself, as in JS: it lives in a cell that the function declaring
-  it and every closure on the way share. A variable holding a promise cannot live in a cell, so
-  a closure created inside another closure may not assign one the outer closure captured
-  (``…is assigned by a closure created inside another closure, and cannot be shared with it``);
-  assign it in the function that declares it. A `for (let …)` loop's step runs on a fresh
-  binding per iteration, as in JS, so the same error applies to a variable the loop's head
-  declares; a variable declared in the loop body is one per iteration and may be assigned. So
-  is a variable a `for (let … of …)` or `for await` loop declares (over an array, a `Map`, a
-  `Set` or a generator), as in JS: each iteration gets its own cell, so the closures the
-  iterations create do not share one (`for (let x of ["a", "b"]) fs.push(() => { x += "!"; return x; })` gives `a!` and `b!`). The same holds for the variables a destructuring `let`
-  declares, each time it runs. A closure called on the spot or a callback (`[1, 2].forEach(() => { x += "!"; })`) that assigns such a variable changes that variable too, never the array
-  element it was bound from: the array keeps its contents, as in JS. Such a variable cannot live
-  in a cell when it holds a promise or a spawned closure also captures it; a closure assigning
-  it then gets ``cannot assign to `x`, which borrows an array element``: copy it into a `let`
-  declared in the loop body and assign that. A closure passed to `push` is stored, so it is
-  escaping too.
-- An async closure that stays on the task that created it captures like any other escaping
-  closure, as in JavaScript: it may change what it captured, the enclosing code may assign the
-  variables it captured, and every call sees the same objects and variables. Each call shares
-  the captured objects with the closure (a count increment, no copy), and a variable that the
-  closure assigns, or that the enclosing code assigns after creating it, lives in a cell. Every
-  call runs as a started promise on the caller's task, so it interleaves with the rest of the
-  task only at `await`s, never in parallel ([Async](/docs/reference/async/#promises)).
-- An async closure that may run on another thread copies what it captured for each call (one
-  copy per call: two reads of a captured object in a call are the same object, `===` also as an
-  `any`), and may not modify a captured variable or object, itself or through a closure it creates (``this async closure modifies captured `n`, so it must stay on the task that created it``, with where
-  it leaves its task); nor may the enclosing code assign one it captured (``cannot assign to `k` after a stored closure captured it``), nor a closure created in another closure (``…is assigned by a closure created inside another closure, and cannot be shared with it``). The
-  compiler proves which closures stay: one may leave when it is spawned
-  (`spawn(async () => …)`, `spawn(f())`, an argument of a spawned call), is an HTTP handler, goes
-  into `shared(...)` or a `Mutex`, is sent on a channel or settles a promise; when a parameter it
-  is passed to (a generic one included), a variable holding it, a closure capturing it or a
-  task returning it does; when it is stored in an
-  object, array or map whose type reaches one of those places; and when it is passed directly to
-  a function value or an interface or overridden method, which may keep it. A timer callback
-  (`setTimeout`, `setInterval`) runs on the task that created the timer, so it stays (it
-  shares its captures, as in Node) unless it leaves another way.
+A closure passed directly as a call argument, or called immediately, is **non-escaping** and
+captures by reference: `xs.forEach((x) => { total += x; })` updates `total`, as in JS. A
+closure that is stored or returned is [escaping](#escaping-closures) and captures by value.
 
 ```ts
 function apply(f: (x: i64) => i64, v: i64): i64 {
@@ -1326,6 +1357,153 @@ const next = makeCounter();
 next();
 console.log(total, next(), apply((x) => x * 10, 5), scale([1.5]));   // 6 2 50 [ 3 ]
 ```
+
+### Borrowed and owned function parameters
+
+Parameters of function type are borrowed unless the callee keeps them. One that the body
+stores, returns, captures in an escaping closure (`spawn(async () => cb())`), copies or passes
+to an async function is **owned** (inferred like other parameters), and a closure literal
+passed to an owned parameter is escaping, so `new Holder(() => msg)` keeps a closure that stays
+valid.
+
+Closures and overridden or interface methods have fixed borrowed parameters; they may still
+keep a function they receive, as JS callback registries do
+(`onCleanup((fn) => (cleanupFn = fn))`, `subscribe(handler) { this.handlers.push(handler); }`).
+A program that does so passes such callees only closures that own their environment:
+
+- every closure literal passed to a function value or an interface method escapes (also one
+  that forwards a borrowed function, [below](#closures-passed-to-function-values));
+- a parameter of a named function that is kept, or passed to a function value, an interface
+  method, an overridden method or a parameter of a generic type, becomes owned, also when a
+  closure inside the function does it (`untrack(() => topic.subscribe(f))`). A generic type
+  may stand for a function type, so a closure literal passed to a parameter of a generic type
+  always escapes, and a method keeping a value of a generic type,
+  `put(t: T) { this.items.push(t); }`, counts as keeping a function;
+- a closure may likewise keep a function it captured from a local variable
+  (`untrack(() => registry.add(onInvalidate))`).
+
+The executor of `new Promise((resolve, reject) => …)` is the exception: its `resolve` and
+`reject` are handles the compiler creates on the heap (never a caller's closure), so it may
+keep them ([Async](/docs/reference/async/#new-promise)). A spawned or stored closure can't
+capture a borrowed function parameter either (same error).
+
+### Closures passed to function values
+
+A closure literal passed directly to a function value or an interface method (whose parameters
+are fixed, so it may keep them, for example as a generic `T`) is escaping: it owns a heap
+environment.
+
+Unless it captures a borrowed function parameter of the enclosing function, as a middleware
+forwarding its `next` does (`inner.handle(req, (r) => next(r))`): then it stays non-escaping,
+like the parameter it forwards, and is safe as long as the callee only calls it.
+
+A parameter declared with a generic type (`keep(x: T)`, with `T` a function type) may be kept,
+and so may anything passed to a callee that returns a promise the caller does not `await` right
+away (the callee may run after the caller returned): a forwarding closure passed there escapes
+like any other. It captures the function it forwards by value, and that parameter of the
+enclosing function becomes owned. In a closure, or an overridden or interface method, where that
+parameter cannot become owned, it is kept as described
+[above](#borrowed-and-owned-function-parameters).
+
+What remains an error (```cannot keep a copy of `g`, a borrowed function parameter```) is
+keeping a function that reached the closure through a destructured or `for...of` binding of a
+borrowed value, or through `this`.
+
+### Closures that are only called
+
+A closure held in a `const` that is only ever called
+(`const add = (n: number) => { this.total += n; }; add(1); add(2);`) is non-escaping too: it
+captures by reference, sees every later change of what it captures, and lives in the frame, so
+capturing `this` does not make the class reference-counted. The compiler proves it:
+
+- the closure's variable is used only as `f(...)` (never copied, stored, returned, passed on or
+  captured by another closure);
+- the enclosing function and the closure are not `async` or generators;
+- it captures no `using` value and nothing holding a promise;
+- no closure created inside it captures a variable the enclosing function assigns;
+- no call runs while a reference into a captured object is held (the call's own arguments do
+  not use what it captures, and it is not inside a `for...of` over such an object, a `match` on
+  one, or next to an argument borrowing one).
+
+Otherwise it is escaping, as below; the results are the same, only the cost differs.
+
+Borrowing never makes a program an error: where a closure borrowing `this` (or
+`const me = this`) would conflict with a caller's borrow, such as a `for...of` over `c.items`
+around a `c.clear()` that replaces `items`, the closure and `me` share instead. The fallback is
+for the whole program: one such conflict makes every held closure and every `const me = this`
+in it share, as if none of them borrowed.
+
+### Escaping closures
+
+A closure stored in a `let`, a field or an array, held in a `const` that is used other than by
+calling it (or one that does not meet the conditions above), or returned, is **escaping** and
+captures by value: objects are shared with it (the closure and the enclosing code see the same
+object), numbers and strings are copied. A closure passed to `push` is stored, so it is
+escaping too.
+
+A captured object the enclosing code does not use again moves into the closure, so it is
+released (and disposed) when the closure is, even if other captures are still used afterwards.
+
+A variable that the closure or the enclosing code assigns while the other still uses it
+(`let count = 0; const incs = [() => { count++; }]; incs[0](); console.log(count)`) lives in a
+shared, reference-counted cell, so both see every change, as in JS; a closure that is the only
+remaining user (a `makeCounter` returning `() => ++n`) keeps a plain copy.
+
+A closure created inside another closure that assigns a variable the outer closure captured
+(`let last = ""; const f = (v: string) => { const g = () => { last = v; }; g(); }`) assigns the
+variable itself, as in JS: it lives in a cell that the function declaring it and every closure
+on the way share. A variable holding a promise cannot live in a cell, so a closure created
+inside another closure may not assign one the outer closure captured
+(```…is assigned by a closure created inside another closure, and cannot be shared with it```);
+assign it in the function that declares it.
+
+A `for (let …)` loop's step runs on a fresh binding per iteration, as in JS, so the same error
+applies to a variable the loop's head declares; a variable declared in the loop body is one per
+iteration and may be assigned. So is a variable a `for (let … of …)` or `for await` loop
+declares (over an array, a `Map`, a `Set` or a generator), as in JS: each iteration gets its own
+cell, so the closures the iterations create do not share one
+(`for (let x of ["a", "b"]) fs.push(() => { x += "!"; return x; })` gives `a!` and `b!`). The
+same holds for the variables a destructuring `let` declares, each time it runs.
+
+A closure called on the spot or a callback (`[1, 2].forEach(() => { x += "!"; })`) that assigns
+such a variable changes that variable too, never the array element it was bound from: the array
+keeps its contents, as in JS. Such a variable cannot live in a cell when it holds a promise or a
+spawned closure also captures it; a closure assigning it then gets ```cannot assign to `x`,
+which borrows an array element```: copy it into a `let` declared in the loop body and assign
+that.
+
+### Async closures
+
+An async closure that stays on the task that created it captures like any other escaping
+closure, as in JavaScript: it may change what it captured, the enclosing code may assign the
+variables it captured, and every call sees the same objects and variables. Each call shares the
+captured objects with the closure (a count increment, no copy), and a variable that the closure
+assigns, or that the enclosing code assigns after creating it, lives in a cell. Every call runs
+as a started promise on the caller's task, so it interleaves with the rest of the task only at
+`await`s, never in parallel ([Async](/docs/reference/async/#promises)).
+
+An async closure that may run on another thread copies what it captured for each call (one copy
+per call: two reads of a captured object in a call are the same object, `===` also as an
+`any`). It may not modify a captured variable or object, itself or through a closure it creates
+(```this async closure modifies captured `n`, so it must stay on the task that created it```,
+with where it leaves its task); nor may the enclosing code assign one it captured
+(```cannot assign to `k` after a stored closure captured it```), nor a closure created in
+another closure
+(```…is assigned by a closure created inside another closure, and cannot be shared with it```).
+
+The compiler proves which closures stay. One may leave:
+
+- when it is spawned (`spawn(async () => …)`, `spawn(f())`, an argument of a spawned call), is
+  an HTTP handler, goes into `shared(...)` or a `Mutex`, is sent on a channel or settles a
+  promise;
+- when a parameter it is passed to (a generic one included), a variable holding it, a closure
+  capturing it or a task returning it does;
+- when it is stored in an object, array or map whose type reaches one of those places;
+- when it is passed directly to a function value or an interface or overridden method, which
+  may keep it.
+
+A timer callback (`setTimeout`, `setInterval`) runs on the task that created the timer, so it
+stays (it shares its captures, as in Node) unless it leaves another way.
 
 ```ts
 class Ctx {

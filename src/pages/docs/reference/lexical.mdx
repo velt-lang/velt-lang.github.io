@@ -105,24 +105,29 @@ members and in `#name in o` ([Classes](/docs/reference/classes/#classes)).
   before any other character is dropped (`"a\d"` is `"ad"`, so `new RegExp("\\d")` needs the
   doubled backslash, as in JS). Legacy octal escapes (`\1`, `\01`) and `\8` `\9` are errors, as
   in TypeScript; a lone surrogate (`"\uD800"`) is an error too, since Velt strings are UTF-8.
-- **Template literals**: `` `a ${expr} b` `` may span lines and also escape `` \` `` and `\$`,
-  with the same escapes as strings. There are no tagged templates (`` tag`…` ``) or
-  `String.raw`.
-  `${expr}` writes a value as JS's `String(x)` does: numbers, strings and booleans as JS writes
-  them, an array as its elements joined with `,` (`${[1, 2]}` is `1,2`), a class instance
-  through its `toString()` (its own or inherited, a subclass's override also through a
-  base-class value), and an object without one as `[object Object]` (std's classes as
-  `[object Map]`, `[object Headers]`, …). Errors, unions and other values are written the way
-  `console.log` prints them ([Strings](/docs/reference/types/#strings)).
-  - A `toString` parameter takes its default value (`toString(radix: number = 10)`), and a
-    result that is not a `string` is written with `String(result)`, as JavaScript does.
-  - A `toString` that cannot be called that way is a compile error, never silently left out: a
-    parameter without a default, an `async` one or a generator, a `void` result, type
-    parameters of its own, or one that can throw.
+- **Template literals**: see [Template literals](#template-literals) below.
 - **Regular expressions**: `/ab+c/gi` is `new RegExp("ab+c", "gi")` from
   [`velt:regex`](/docs/std/regex/) (a global, like `RegExp` itself). A `/` after an operand is
   division.
 - `true`, `false`, `null`.
+
+### Template literals
+
+`` `a ${expr} b` `` may span lines and also escape `` \` `` and `\$`, with the same escapes as
+strings. There are no tagged templates (`` tag`…` ``) or `String.raw`.
+
+`${expr}` writes a value as JS's `String(x)` does: numbers, strings and booleans as JS writes
+them, an array as its elements joined with `,` (`${[1, 2]}` is `1,2`), a class instance through
+its `toString()` (its own or inherited, a subclass's override also through a base-class value),
+and an object without one as `[object Object]` (std's classes as `[object Map]`,
+`[object Headers]`, …). Errors, unions and other values are written the way `console.log` prints
+them ([Strings](/docs/reference/types/#strings)).
+
+- A `toString` parameter takes its default value (`toString(radix: number = 10)`), and a result
+  that is not a `string` is written with `String(result)`, as JavaScript does.
+- A `toString` that cannot be called that way is a compile error, never silently left out: a
+  parameter without a default, an `async` one or a generator, a `void` result, type parameters
+  of its own, or one that can throw.
 
 ## Keywords
 
