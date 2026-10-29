@@ -1,0 +1,42 @@
+name: Content / feature request
+description: Suggest a new docs page, missing topic, or site improvement
+title: "[feat] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea! The best requests start from a clear problem rather than a prescribed solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What were you trying to learn or do? What was missing or hard to find?
+      placeholder: I was looking for ... but couldn't find ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed content / change
+      description: A rough sketch of what should exist — section title, key points, code samples, etc. Don't worry about polish.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Where you looked
+      description: Pages or sections you checked first.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Prior art from other languages' docs, related discussions, etc.
+    validations:
+      required: false

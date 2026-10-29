@@ -1,0 +1,36 @@
+name: Docs sync (filed from velt-lang/velt)
+description: A user-facing change in velt-lang/velt that the docs need to reflect
+title: "velt: "
+labels: ["docs-sync"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Filed by velt-lang/velt **before** merging a user-facing change. When the change ships,
+        velt comments `Released in velt vX.Y.Z.` here; only then is the issue ready to document
+        (see AGENTS.md, "Keeping the docs in sync with Velt").
+
+  - type: input
+    id: source
+    attributes:
+      label: Source PR
+      placeholder: "https://github.com/velt-lang/velt/pull/123"
+    validations:
+      required: true
+
+  - type: textarea
+    id: change
+    attributes:
+      label: What users see
+      description: New or changed syntax, std API, diagnostics, CLI flags or behavior. Include a short example.
+    validations:
+      required: true
+
+  - type: textarea
+    id: pages
+    attributes:
+      label: Pages affected
+      description: The docs pages (routes or areas) that should change, if known.
+      placeholder: "/docs/reference/types/, /docs/std/json/"
+    validations:
+      required: false

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08080D" />
+    <!-- Page meta first: the tab title and OG tags aren't blocked behind the font CSS. -->
+    <!--head-tags-->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <!-- SITE-wide JSON-LD only: this template is shared by every route. -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "WebSite",
+                "@id": "https://veltlang.com/#website",
+                "name": "Velt",
+                "url": "https://veltlang.com",
+                "description": "Velt compiles TypeScript's good parts to one native executable: no interpreter, no garbage collector, every core in use.",
+                "inLanguage": "en"
+            },
+            {
+                "@type": "SoftwareSourceCode",
+                "@id": "https://veltlang.com/#software",
+                "name": "Velt",
+                "description": "A compiled language with TypeScript syntax: native code through LLVM, no garbage collector, Rust-level performance.",
+                "url": "https://veltlang.com",
+                "codeRepository": "https://github.com/velt-lang/velt",
+                "programmingLanguage": "Rust",
+                "runtimePlatform": ["Linux", "macOS", "Windows", "WebAssembly"],
+                "license": "https://www.apache.org/licenses/LICENSE-2.0"
+            }
+        ]
+    }
+    </script>
+</head>
+<body>
+    <div id="app"><!--app-html--></div>
+    <script type="module" src="/src/entry-client.ts"></script>
+</body>
+</html>

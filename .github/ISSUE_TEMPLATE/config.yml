@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion about Velt
+    url: https://github.com/velt-lang/velt/issues
+    about: For questions about the language itself. (Docs site problems should use the templates above.)
+  - name: Bug in Velt itself
+    url: https://github.com/velt-lang/velt/issues/new
+    about: Compiler, runtime, standard library and tooling bugs go to velt-lang/velt.

@@ -1,0 +1,57 @@
+{
+    "name": "@velt-lang/site",
+    "version": "0.1.0",
+    "private": true,
+    "packageManager": "pnpm@10.33.4",
+    "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+    },
+    "description": "The Velt website and documentation \u2014 veltlang.com",
+    "type": "module",
+    "scripts": {
+        "dev": "sigx dev",
+        "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && sigx build",
+        "preview": "sigx preview",
+        "sync:docs": "node scripts/sync-docs.mjs",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "typecheck": "tsgo --noEmit",
+        "wt": "node scripts/worktree.mjs"
+    },
+    "dependencies": {
+        "@fontsource/inter": "^5.3.0",
+        "@fontsource/jetbrains-mono": "^5.3.0",
+        "@fontsource/space-grotesk": "^5.3.0",
+        "@sigx/mermaid": "^0.4.0",
+        "@sigx/router": "^0.13.0",
+        "@sigx/server-renderer": "^1.0.1",
+        "@sigx/ssg": "^0.22.0",
+        "@sigx/ssr-islands": "^1.0.1",
+        "@sigx/vite": "^1.0.1",
+        "hast-util-to-string": "^3.0.1",
+        "mermaid": "^12.2.0",
+        "shiki": "4.5.0",
+        "sigx": "^1.0.1",
+        "unist-util-visit": "^5.2.0"
+    },
+    "devDependencies": {
+        "@sigx/cli": "^0.14.0",
+        "@tailwindcss/vite": "4.3.1",
+        "@typescript/native-preview": "7.0.0-dev.20260628.1",
+        "happy-dom": "^20.10.6",
+        "tailwindcss": "4.3.1",
+        "typescript": "^5.9.3",
+        "vite": "^8.0.16",
+        "vitest": "^4.1.9"
+    },
+    "author": "Andreas Ekdahl",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/velt-lang/velt-lang.github.io.git"
+    },
+    "homepage": "https://veltlang.com/",
+    "bugs": {
+        "url": "https://github.com/velt-lang/velt-lang.github.io/issues"
+    }
+}

@@ -1,0 +1,422 @@
+@import 'tailwindcss';
+
+/* Self-hosted fonts (no third-party request; font-display: swap). Each file
+   covers its subsets with unicode-range, so a page downloads only what it uses. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+/*
+ * Velt design tokens (design/Main.dc.html, design/Docs.dc.html). Dark only for
+ * now; every color is a token so a light theme can redefine them later.
+ */
+@theme {
+    --color-bg: #08080d;
+    --color-bg-raised: #0b0b11;
+    --color-bg-header: #0a0a10;
+    --color-surface: #0d0d14;
+    --color-card: #0f0f17;
+    --color-input: #111119;
+    --color-chip: #15151f;
+    --color-tab: #1c1c2b;
+
+    --color-line: #1c1c27;
+    --color-line-2: #23232f;
+    --color-line-3: #2a2a38;
+    --color-card-line: #1f1f2b;
+
+    --color-fg: #ececf3;
+    --color-fg-2: #c9c9da;
+    --color-fg-3: #b4b4c8;
+    --color-muted: #9a9ab0;
+    --color-dim: #8a8aa3;
+
+    --color-accent: #6e5bff;
+    --color-cyan: #5fe1f7;
+    --color-cyan-hover: #a8f0fb;
+    --color-violet: #a592ff;
+    --color-pink: #f07bf5;
+    --color-orange: #ff9f5a;
+    --color-peach: #ffb27a;
+    --color-yellow: #ffc93c;
+    --color-green: #3ddc97;
+
+    --font-sans: Inter, system-ui, sans-serif;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer base {
+    html {
+        background: var(--color-bg);
+        color-scheme: dark;
+        scroll-padding-top: 24px;
+    }
+    body {
+        margin: 0;
+        background: var(--color-bg);
+        color: var(--color-fg);
+        font-family: var(--font-sans);
+        font-size: 16px;
+        line-height: 1.6;
+    }
+    a {
+        color: var(--color-fg);
+        text-decoration: none;
+    }
+    a:hover {
+        color: var(--color-cyan);
+    }
+    pre {
+        margin: 0;
+    }
+    :focus-visible {
+        outline: 2px solid var(--color-cyan);
+        outline-offset: 2px;
+        border-radius: 4px;
+    }
+    button {
+        cursor: pointer;
+    }
+}
+
+/* The brand gradient: only the header hairline and the hero highlight. */
+.brand-line {
+    height: 2px;
+    background: linear-gradient(90deg, #22d8f5, #6e5bff 40%, #e24bf0 65%, #ff8f3c 85%, #ffc93c);
+}
+.brand-text {
+    background: linear-gradient(90deg, #22d8f5, #8b6cff 50%, #ff8f3c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* Inline code in marketing copy. */
+.c {
+    font-family: var(--font-mono);
+    color: var(--color-fg);
+}
+
+/* Hand-highlighted code on the home page (same palette as the Shiki theme). */
+.tk-k { color: #b69cff; }
+.tk-s { color: #ffb27a; }
+.tk-t { color: #5fe1f7; }
+.tk-f { color: #ffd27a; }
+.tk-c { color: #8a8aa3; }
+.tk-n { color: #ff8fd8; }
+
+/* Install command: only the command scrolls; the copy button stays pinned. */
+.install-cmd {
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+}
+.install-cmd::-webkit-scrollbar {
+    display: none;
+}
+
+.no-scrollbar {
+    scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+/* ─── Docs article ───────────────────────────────────────────────────────── */
+
+.prose {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    color: var(--color-fg-2);
+    font-size: 16px;
+    line-height: 1.65;
+    min-width: 0;
+}
+.prose > * {
+    margin: 0;
+}
+.prose h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 48px;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    color: var(--color-fg);
+}
+/* The paragraph right after the title is the lead. */
+.prose h1 + p {
+    font-size: 19px;
+    color: var(--color-fg-3);
+}
+.prose h2 {
+    margin-top: 24px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 30px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--color-fg);
+}
+.prose h3 {
+    margin-top: 12px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 21px;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    color: var(--color-fg);
+}
+.prose h4 {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--color-fg);
+}
+.prose :is(h1, h2, h3, h4) code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    padding: 0;
+    background: none;
+}
+.prose :is(h2, h3, h4) {
+    scroll-margin-top: 24px;
+}
+.prose .heading-anchor {
+    margin-left: 0.3em;
+    color: var(--color-line-3);
+    opacity: 0;
+    transition: opacity 0.15s;
+    font-weight: 400;
+}
+.prose :is(h1, h2, h3, h4):hover .heading-anchor,
+.prose .heading-anchor:focus-visible {
+    opacity: 1;
+}
+.prose .heading-anchor:hover {
+    color: var(--color-cyan);
+}
+.prose a {
+    color: var(--color-cyan);
+    text-decoration: underline;
+    text-decoration-color: rgb(95 225 247 / 0.35);
+    text-underline-offset: 3px;
+}
+.prose a:hover {
+    text-decoration-color: currentColor;
+}
+.prose .heading-anchor {
+    text-decoration: none;
+}
+.prose a:hover {
+    color: var(--color-cyan-hover);
+}
+.prose strong {
+    color: var(--color-fg);
+    font-weight: 600;
+}
+.prose :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    padding: 1px 6px;
+    background: var(--color-chip);
+    border-radius: 5px;
+    color: var(--color-fg);
+    overflow-wrap: anywhere;
+}
+.prose a > code {
+    color: var(--color-cyan);
+}
+.prose ul {
+    list-style: disc;
+}
+.prose ol {
+    list-style: decimal;
+}
+.prose :is(ul, ol) {
+    padding-left: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.prose li > :is(ul, ol) {
+    margin-top: 12px;
+}
+.prose li::marker {
+    color: var(--color-muted);
+}
+.prose hr {
+    border: 0;
+    border-top: 1px solid var(--color-line);
+}
+.prose blockquote {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px 16px 50px;
+    background: #0f1420 no-repeat 18px 19px / 20px 20px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235FE1F7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 8h.01M11 12h1v4h1'/%3E%3C/svg%3E");
+    border: 1px solid #1e3346;
+    border-radius: 12px;
+    font-size: 15px;
+}
+.prose blockquote > * {
+    margin: 0;
+}
+
+/* Tables scroll inside their own box rather than widening the page. */
+.prose .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--color-line-2);
+    border-radius: 12px;
+}
+.prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+}
+.prose th,
+.prose td {
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--color-line);
+}
+.prose tr:last-child td {
+    border-bottom: 0;
+}
+.prose th {
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font-weight: 600;
+}
+.prose th:empty {
+    display: none;
+}
+.prose thead:has(th:empty:only-child, th:empty + th:empty) {
+    display: none;
+}
+
+/* Code windows: the design's figure with a file bar and a copy button. */
+.code-window {
+    margin: 4px 0;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line-2);
+    border-radius: 14px;
+    overflow: hidden;
+}
+.code-window-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 32px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--color-line);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-muted);
+}
+.code-window-header:has(.code-window-copy) {
+    padding: 4px 6px 4px 16px;
+}
+.code-window-copy {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    color: var(--color-fg-3);
+}
+.code-window-copy:hover {
+    background: var(--color-line);
+    color: var(--color-fg);
+}
+.code-window-copy .icon-done,
+.code-window-copy-done .icon-copy {
+    display: none;
+}
+.code-window-copy-done .icon-done {
+    display: block;
+    color: var(--color-green);
+}
+.code-window pre {
+    padding: 18px 20px;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--color-fg);
+    overflow-x: auto;
+    background: transparent !important;
+    tab-size: 4;
+}
+.code-window pre code {
+    font-family: inherit;
+}
+.code-window .code-badge {
+    margin-left: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+}
+.code-window .code-badge-error {
+    color: var(--color-orange);
+    background: #2a1a10;
+}
+
+/* Sidebar: native <details> groups, so the nav scales with no JS. */
+.nav-group > summary {
+    list-style: none;
+    cursor: pointer;
+}
+.nav-group > summary::-webkit-details-marker {
+    display: none;
+}
+.nav-group > summary .chev {
+    transition: transform 0.15s, opacity 0.15s;
+    opacity: 0;
+}
+.nav-group > summary:hover .chev,
+.nav-group > summary:focus-visible .chev,
+.nav-group:not([open]) > summary .chev {
+    opacity: 1;
+}
+.nav-group[open] > summary .chev {
+    transform: rotate(90deg);
+}
+
+/* Phones: the sidebar folds into the "Menu" disclosure (docs layout). */
+.docs-menu > summary {
+    list-style: none;
+}
+.docs-menu > summary::-webkit-details-marker {
+    display: none;
+}
+.docs-menu[open] .menu-chev {
+    transform: rotate(180deg);
+}
+
+/* MDX components inside .prose: their paragraphs sit flush. */
+.prose .callout-text > p,
+.prose .card-body > p {
+    margin: 0;
+}
+
+/* Mermaid diagrams, themed to the code windows. */
+.prose .sigx-mermaid {
+    --sigx-mermaid-bg: var(--color-surface);
+    --sigx-mermaid-border: var(--color-line-2);
+    --sigx-mermaid-radius: 14px;
+    --sigx-mermaid-padding: 20px;
+    --sigx-mermaid-muted: var(--color-muted);
+    margin: 4px 0;
+}
+.prose .callout-text > p + p {
+    margin-top: 8px;
+}

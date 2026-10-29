@@ -1,0 +1,73 @@
+name: Deploy docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow only one concurrent deployment, skip runs queued between the run
+# in-progress and latest queued. Don't cancel in-progress, so deploys finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the sitemap dates each URL from its source file's last
+      # commit (`sitemap.lastmod: 'git'`). A shallow clone has no such log, and
+      # the build would silently emit no <lastmod> at all.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  # Tell IndexNow-consuming engines (Bing/Yandex/Seznam/Naver) the site
+  # changed. Reads the just-deployed live sitemap; failure-tolerant —
+  # the script never exits non-zero, a flaky endpoint can't fail the deploy.
+  indexnow:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Ping IndexNow with sitemap URLs
+        run: node scripts/indexnow-ping.mjs

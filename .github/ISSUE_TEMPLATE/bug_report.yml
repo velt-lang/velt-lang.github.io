@@ -1,0 +1,52 @@
+name: Bug report (docs site)
+description: Report a problem with the Velt docs site
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report against the docs site!
+
+        For bugs in Velt itself (compiler, runtime, standard library, tooling), please file in [velt-lang/velt](https://github.com/velt-lang/velt/issues).
+
+  - type: input
+    id: page
+    attributes:
+      label: Affected page
+      description: URL of the page where you hit the issue.
+      placeholder: "https://veltlang.com/docs/..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages and screenshots if any.
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: "Chrome 131 / Firefox 134 / ..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Additional context, related issues, screenshots, etc.
+    validations:
+      required: false
