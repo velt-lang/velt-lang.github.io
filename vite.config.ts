@@ -7,6 +7,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 import { rehypeVeltCode } from './src/lib/rehype-code.ts';
 import { remarkReference } from './src/lib/remark-reference.ts';
+import { errorsIndexPlugin } from './src/lib/errors-index.ts';
 
 // Asset path prefix. `/` for the GitHub Pages deployment at the domain root
 // (https://veltlang.com/); override with BASE_PATH to serve from a subpath.
@@ -24,6 +25,8 @@ export default defineConfig({
         // Islands: only components rendered with a `client:*` directive ship
         // JavaScript (src/islands/). Everything else is static HTML.
         sigxIslands(),
+        // errors-index.json: compiler messages for the search palette's Errors group.
+        errorsIndexPlugin(),
         ssgPlugin({
             markdown: {
                 // Highlighting is ours (src/lib/rehype-code.ts): the Velt palette
