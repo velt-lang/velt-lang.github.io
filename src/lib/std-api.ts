@@ -401,14 +401,15 @@ function shortDecl(e: ApiItem): { text: string; spans: Span<Target>[] } {
     if (!withBody) return layoutSignature(e.signature, e.spans, 52);
     let text = `${e.signature} {`;
     const spans: Span<Target>[] = e.spans.map((s) => ({ ...s }));
-    const shown = e.members.filter((m) => m.kind !== 'constructor').slice(0, CARD_MEMBERS);
+    const listed = e.members.filter((m) => m.kind !== 'constructor');
+    const shown = listed.slice(0, CARD_MEMBERS);
     for (const m of shown) {
         text += '\n  ';
         const at = text.length;
         text += m.signature + (e.kind === 'enum' ? ',' : ';');
         for (const s of m.spans) spans.push({ start: s.start + at, end: s.end + at, target: s.target });
     }
-    if (e.members.length > shown.length) text += '\n  …';
+    if (listed.length > shown.length) text += '\n  …';
     text += shown.length ? '\n}' : '}';
     return { text, spans };
 }
