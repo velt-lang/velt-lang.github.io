@@ -353,7 +353,11 @@ export const DocsSearch = component(({ signal, onMounted, onUnmounted }) => {
                                 {results()}
                             </div>
                             <p class="sr-only" aria-live="polite">
-                                {state.query.trim() && state.ready ? `${state.counts.all ?? 0} results` : ''}
+                                {state.asked
+                                    ? 'Prompt copied'
+                                    : state.query.trim() && state.ready
+                                      ? `${state.counts[state.filter] ?? 0} results${state.filter === 'all' ? '' : ` in ${KINDS[state.filter].label}`}`
+                                      : ''}
                             </p>
                             <div class="flex flex-wrap items-center gap-x-[18px] gap-y-2.5 border-t border-line bg-[#0C0C13] px-5 py-3 text-[13px] text-muted">
                                 <span class="hidden items-center gap-1.5 min-[720px]:inline-flex">
@@ -372,7 +376,6 @@ export const DocsSearch = component(({ signal, onMounted, onUnmounted }) => {
                                 <button
                                     type="button"
                                     onClick={ask}
-                                    aria-live="polite"
                                     class="ml-auto inline-flex min-h-8 max-w-full items-center gap-2 rounded-lg border border-dashed border-[#34304F] bg-[#17152A] px-3 text-[13px] text-fg"
                                 >
                                     <SparkIcon size={14} stroke={2} color="#A592FF" />
