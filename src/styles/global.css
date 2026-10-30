@@ -762,3 +762,113 @@
 .api-table tr:last-child td {
     border-bottom: 0;
 }
+
+/* Backlinks under an export: "Parameter of serve · Returned by …". */
+.api-backlinks-role,
+.api-backlinks-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+}
+.api-backlinks a:not(.text-cyan) {
+    color: var(--color-fg-3);
+}
+.api-backlinks a:not(.text-cyan):hover {
+    color: var(--color-cyan);
+}
+
+/* API hover cards (api-hover.png), placed by the ApiCards island. */
+.api-card {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    background: #12121c;
+    border: 1px solid #34304f;
+    border-radius: 14px;
+    box-shadow: 0 24px 60px -16px rgb(0 0 0 / 0.85);
+    overflow: hidden;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-fg-2);
+}
+.api-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px 8px;
+}
+.api-card-pill {
+    padding: 0 7px;
+    border: 1px solid;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+.api-card-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-fg);
+}
+.api-card-module {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--color-muted);
+    white-space: nowrap;
+}
+.api-card-decl {
+    margin: 0 14px;
+    padding: 10px 12px;
+    max-height: 220px;
+    overflow: auto;
+    background: var(--color-surface);
+    border: 1px solid var(--color-card-line);
+    border-radius: 9px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--color-fg);
+}
+.api-card-doc {
+    margin: 0;
+    padding: 8px 14px 0;
+    font-size: 13px;
+    color: var(--color-fg-3);
+}
+.api-card-doc code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    padding: 0.1em 0.3em;
+    background: rgb(255 255 255 / 0.055);
+    border-radius: 4px;
+    color: #e4e4f0;
+}
+.api-card-missing {
+    color: var(--color-muted);
+    font-style: italic;
+}
+.api-card-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 9px 14px;
+    border-top: 1px solid var(--color-card-line);
+    background: var(--color-card);
+    font-size: 12.5px;
+    color: var(--color-muted);
+}
+.api-card-used {
+    font-family: var(--font-mono);
+    color: var(--color-fg-3);
+}
+.api-card-open {
+    margin-left: auto;
+    color: var(--color-cyan);
+    font-weight: 500;
+    white-space: nowrap;
+}

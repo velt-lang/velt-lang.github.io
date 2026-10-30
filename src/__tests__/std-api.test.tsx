@@ -128,3 +128,34 @@ describe('an export section', () => {
         expect(html).not.toContain('>Returns<');
     });
 });
+
+describe('backlinks and hover cards', () => {
+    it('inverts the spans: Server is returned by serve, ServeOptions is a parameter of serve', async () => {
+        const { backlinks } = await import('../lib/std-api');
+        expect(backlinks('/docs/api/http/#Server').get('Returned by')?.map((b) => b.name)).toEqual(['serve']);
+        expect(backlinks('/docs/api/http/#ServeOptions').get('Parameter of')?.map((b) => b.name)).toContain('serve');
+    });
+
+    it('lists users of a cross-module type with their modules', async () => {
+        const { backlinks } = await import('../lib/std-api');
+        const users = backlinks('/docs/api/fetch/#Request').get('Parameter of') ?? [];
+        expect(users.map((b) => b.module)).toEqual(expect.arrayContaining(['std/fetch', 'std/http']));
+        expect(users.find((b) => b.name === 'serve')?.href).toBe('/docs/api/http/#serve');
+    });
+
+    it('builds a card per export with its short declaration and linked types', async () => {
+        const { moduleCards } = await import('../lib/std-api');
+        const cards = moduleCards(apiModule('http')!);
+        const opts = cards.ServeOptions;
+        expect(opts.kind).toBe('struct');
+        expect(opts.color).toBe('#A592FF');
+        expect(opts.decl.map((t) => t[1]).join('')).toBe('struct ServeOptions {\n  port: number;\n  host?: string;\n  tls?: TlsOptions;\n}');
+        expect(opts.decl.find((t) => t[1] === 'TlsOptions')?.[2]).toBe('/docs/api/http/#TlsOptions');
+        expect(opts.summary).toBeNull();
+        expect(opts.usedBy).toContain('serve');
+        expect(Object.keys(cards)).toHaveLength(apiModule('http')!.exports.length);
+        // A constructor isn't listed, and doesn't make the card look truncated.
+        const exec = moduleCards(apiModule('child_process')!).ExecResult;
+        expect(exec.decl.map((t) => t[1]).join('')).not.toContain('…');
+    });
+});

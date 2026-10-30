@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_URL } from './site';
+import { layoutSignature, tokenize, type Span } from './signature';
 
 export interface Target {
     id: string;
@@ -312,4 +313,134 @@ export function coverageReport(): string {
         return `   ${r.specifier.padEnd(width)}  ${String(r.documented).padStart(3)}/${String(r.exports).padEnd(3)} ${String(percent(r)).padStart(3)}%${gaps}`;
     });
     return [`📚 Std API doc coverage (${apiDoc().generator}): ${total.documented}/${total.exports} exports documented (${percent(total)}%)`, ...lines].join('\n');
+}
+
+// ─── Backlinks ─────────────────────────────────────────────────────────────
+
+export type BacklinkKind = 'Parameter of' | 'Returned by' | 'Thrown by' | 'Used by';
+
+export interface Backlink {
+    /** The using export's name (`serve`, `Server.close` for a member). */
+    name: string;
+    href: string;
+    /** The page module it is on (`std/http`). */
+    module: string;
+}
+
+const ROLE_LABEL: Record<Role, BacklinkKind> = {
+    param: 'Parameter of', return: 'Returned by', throws: 'Thrown by',
+    extends: 'Used by', implements: 'Used by', typeArg: 'Used by', field: 'Used by', type: 'Used by',
+};
+export const BACKLINK_ORDER: BacklinkKind[] = ['Parameter of', 'Returned by', 'Thrown by', 'Used by'];
+
+let backlinkIndex: Map<string, Map<BacklinkKind, Backlink[]>> | undefined;
+
+/**
+ * Where an export is used, by inverting the type spans of every documented
+ * item: keyed by the export's page href, then by role. An item is listed once
+ * per role; a member's span counts for its type (`Server.close` → `Server`).
+ */
+export function backlinks(href: string): Map<BacklinkKind, Backlink[]> {
+    if (!backlinkIndex) {
+        backlinkIndex = new Map();
+        const pageOf = (h: string) => `std/${h.slice(API_ROOT.length).replace(/\/#.*$/, '')}`;
+        const add = (to: string, kind: BacklinkKind, from: Backlink) => {
+            if (from.href === to) return;
+            let roles = backlinkIndex!.get(to);
+            if (!roles) backlinkIndex!.set(to, (roles = new Map()));
+            const list = roles.get(kind) ?? [];
+            if (!list.some((b) => b.href === from.href)) list.push(from);
+            roles.set(kind, list);
+        };
+        for (const m of apiDoc().modules) {
+            for (const e of m.exports) {
+                const from = hrefOf({ id: e.id, module: m.module, kind: e.kind, name: e.name, member: null });
+                if (!from) continue;
+                const source = { name: e.name, href: from, module: pageOf(from) };
+                for (const s of e.spans) {
+                    const to = hrefOf(s.target);
+                    if (to) add(to.replace(/(#[^.]*)\..*$/, '$1'), ROLE_LABEL[s.role], source);
+                }
+                for (const mem of e.members) {
+                    for (const s of mem.spans) {
+                        const to = hrefOf(s.target);
+                        if (to) add(to.replace(/(#[^.]*)\..*$/, '$1'), ROLE_LABEL[s.role], { ...source, name: `${e.name}.${mem.name}` });
+                    }
+                }
+            }
+        }
+    }
+    return backlinkIndex.get(href) ?? new Map();
+}
+
+// ─── Hover cards ───────────────────────────────────────────────────────────
+
+/** A token of a card's declaration: [class, text] or [class, text, href] for a linked type. */
+export type CardToken = [string, string] | [string, string, string];
+
+export interface Card {
+    kind: string;
+    /** The kind's color (KINDS), so the island doesn't keep its own copy. */
+    color: string;
+    name: string;
+    module: string;
+    href: string;
+    /** The declaration in short form: fields of a struct, public members of a class, the alias of a type. */
+    decl: CardToken[];
+    /** The first doc sentence (Markdown), or null: "No doc comment yet". */
+    summary: string | null;
+    /** Exports that use it, for the footer ("Used by serve"). */
+    usedBy: string[];
+    usedByCount: number;
+}
+
+const CARD_MEMBERS = 8;
+const TOKEN_CLASS: Record<string, string> = { k: 'tk-k', t: 'tk-t', f: 'tk-f', s: 'tk-s', n: 'tk-n', text: '', link: 'api-type' };
+
+/** The short declaration of an export and its spans, for its card. */
+function shortDecl(e: ApiItem): { text: string; spans: Span<Target>[] } {
+    const withBody = ['struct', 'class', 'interface', 'enum'].includes(e.kind);
+    if (!withBody) return layoutSignature(e.signature, e.spans, 52);
+    let text = `${e.signature} {`;
+    const spans: Span<Target>[] = e.spans.map((s) => ({ ...s }));
+    const listed = e.members.filter((m) => m.kind !== 'constructor');
+    const shown = listed.slice(0, CARD_MEMBERS);
+    for (const m of shown) {
+        text += '\n  ';
+        const at = text.length;
+        text += m.signature + (e.kind === 'enum' ? ',' : ';');
+        for (const s of m.spans) spans.push({ start: s.start + at, end: s.end + at, target: s.target });
+    }
+    if (listed.length > shown.length) text += '\n  …';
+    text += shown.length ? '\n}' : '}';
+    return { text, spans };
+}
+
+/** Card data for every export on a module's page, keyed by anchor. Served as /api-cards/<slug>.json. */
+export function moduleCards(m: ApiModule): Record<string, Card> {
+    const cards: Record<string, Card> = {};
+    for (const e of m.exports) {
+        const href = `${apiPath(m.module)}#${anchorOf(e)}`;
+        const decl = shortDecl(e);
+        const used = [...backlinks(href).values()].flat();
+        const names = [...new Set(used.map((b) => b.name))];
+        cards[anchorOf(e)] = {
+            kind: e.kind,
+            color: kindInfo(e.kind).color,
+            name: e.name,
+            module: m.specifier,
+            href,
+            decl: tokenize(decl.text, decl.spans).map((t): CardToken => {
+                if (t.kind === 'link') {
+                    const to = hrefOf(t.target);
+                    return to ? ['api-type', t.text, to] : ['tk-t', t.text];
+                }
+                return [TOKEN_CLASS[t.kind], t.text];
+            }),
+            summary: summaryOf(e),
+            usedBy: names.slice(0, 3),
+            usedByCount: names.length,
+        };
+    }
+    return cards;
 }

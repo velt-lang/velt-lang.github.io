@@ -6,6 +6,7 @@ import { remarkMermaid } from '@sigx/mermaid/ssg';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 import { rehypeVeltCode } from './src/lib/rehype-code.ts';
+import { apiCardsDev } from './src/lib/api-cards.ts';
 import { remarkReference } from './src/lib/remark-reference.ts';
 import { errorsIndexPlugin } from './src/lib/errors-index.ts';
 
@@ -25,6 +26,8 @@ export default defineConfig({
         // Islands: only components rendered with a `client:*` directive ship
         // JavaScript (src/islands/). Everything else is static HTML.
         sigxIslands(),
+        // The API hover cards' /api-cards/*.json in dev (the build writes them after rendering).
+        apiCardsDev(),
         // errors-index.json: compiler messages for the search palette's Errors group.
         errorsIndexPlugin(),
         ssgPlugin({

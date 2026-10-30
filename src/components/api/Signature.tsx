@@ -8,11 +8,11 @@ import { hrefOf, type ApiSpan, type Target } from '../../lib/std-api';
 
 const CLASS: Record<string, string> = { k: 'tk-k', t: 'tk-t', f: 'tk-f', s: 'tk-s', n: 'tk-n' };
 
-/** A linked type name. `data-api` carries the target id for the hover cards. */
+/** A linked type name; `data-card` is the export whose hover card it shows (ApiCards). */
 export const TypeLink = component<{ target: Target; text: string }>(({ props }) => () => {
     const href = hrefOf(props.target);
     return href ? (
-        <a class="api-type" href={href} data-api={props.target.id}>{props.text}</a>
+        <a class="api-type" href={href} data-card={href.replace(/(#[^.]*)\..*$/, '$1')}>{props.text}</a>
     ) : (
         <span class="tk-t">{props.text}</span>
     );
