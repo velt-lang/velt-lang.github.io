@@ -1,0 +1,8 @@
+{
+    "//": "Examples that don't check with DOCS_VERSION yet, each with the issue tracking it. Keyed by file and the example's first line. check-examples.mjs fails when one of them starts passing, so remove it then.",
+    "known": [
+        { "file": "src/pages/docs/reference/classes.mdx", "first": "class Stack<T> {", "issue": 33 },
+        { "file": "src/pages/docs/reference/classes.mdx", "first": "type Shape = { kind: \"circle\"; r: f64 } | { kind: \"square\"; side: f64 };", "issue": 33 },
+        { "file": "src/pages/docs/reference/classes.mdx", "first": "class Version implements Comparable<Version> {", "issue": 33 }
+    ]
+}

@@ -14,6 +14,7 @@
         "preview": "sigx preview",
         "sync:docs": "node scripts/sync-docs.mjs",
         "test": "vitest run",
+        "check:examples": "node scripts/check-examples.mjs",
         "test:watch": "vitest",
         "typecheck": "tsgo --noEmit",
         "wt": "node scripts/worktree.mjs"

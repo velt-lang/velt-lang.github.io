@@ -33,7 +33,7 @@ listed names.
 
 ## Imports
 
-```ts
+```ts ignore
 import { a, b as c } from "…";     // binds exported names
 import * as ns from "…";           // binds the module as a namespace
 import type { T } from "…";        // names for type positions only
@@ -53,7 +53,7 @@ static `import` instead.
 
 ### `import.meta`
 
-```ts
+```ts ignore
 import.meta.dirname    // the source file's directory
 import.meta.filename   // its absolute path
 import.meta.main       // true in the program's root module, false in the others
