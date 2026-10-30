@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { apiModule, coverageReport, guideIntro } from './src/lib/std-api';
+import { writeApiCards } from './src/lib/api-cards';
 
 /**
  * The API pages share one route, so their title and description come from
@@ -97,6 +98,7 @@ export default defineSSGConfig({
         // Which std exports still lack a doc comment (design: missing docs are visible).
         postBuild() {
             console.log(`\n${coverageReport()}\n`);
+            console.log(`🃏 Wrote ${writeApiCards(join(process.cwd(), 'dist'))} API hover card files\n`);
         },
         transformHtml(html, page) {
             html = html.replace('<link rel="icon"', `${fontPreloadTags()}\n    <link rel="icon"`);

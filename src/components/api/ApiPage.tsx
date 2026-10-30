@@ -5,9 +5,11 @@
  * `velt doc --format json`; static except the copy button.
  */
 import { component } from 'sigx';
+import { ApiCards } from '../../islands/ApiCards';
 import { CopyTextButton } from '../../islands/CopyTextButton';
+import { COMING_FROM } from '../../data/coming-from';
 import {
-    anchorOf, guideIntro, guidePath, groupExports, kindInfo, moduleSummary, sourceUrl, summaryOf, visibleExports,
+    anchorOf, apiPath, backlinks, BACKLINK_ORDER, guideIntro, guidePath, groupExports, kindInfo, moduleSlug, moduleSummary, sourceUrl, summaryOf, visibleExports,
     type ApiItem, type ApiModule,
 } from '../../lib/std-api';
 import { tint } from '../../lib/docs-areas';
@@ -103,6 +105,68 @@ const MemberRows = component<{ members: ApiItem[] }>(({ props }) => () => (
 /** True when a signature says no more than `kind Name`: the heading already says it. */
 const trivialSignature = (it: ApiItem) => new RegExp(`^(export )?(abstract )?(${it.kind}) ${it.name.replace(/[$]/g, '\\$')}$`).test(it.signature.trim());
 
+/**
+ * "Parameter of serve · Returned by …" under an export: the exports whose
+ * signatures name it. Users from other modules are grouped under their module.
+ */
+const BACKLINKS_SHOWN = 8;
+
+const Backlinks = component<{ href: string; module: string }>(({ props, slots }) => () => {
+    const roles = backlinks(props.href);
+    const extra = slots.default?.();
+    const parts = BACKLINK_ORDER.filter((k) => roles.has(k)).map((kind) => {
+        const list = roles.get(kind)!;
+        const groups = new Map<string, typeof list>();
+        for (const b of list) groups.set(b.module, [...(groups.get(b.module) ?? []), b]);
+        // This module's users first, then other modules by name.
+        const ordered = [...groups.entries()].sort(([a], [b]) => (a === props.module ? -1 : b === props.module ? 1 : a.localeCompare(b)));
+        let shown = 0;
+        return (
+            <span class="api-backlinks-role">
+                <span>{kind}</span>
+                {ordered.map(([mod, users]) => {
+                    if (shown >= BACKLINKS_SHOWN) return null;
+                    const take = users.slice(0, BACKLINKS_SHOWN - shown);
+                    shown += take.length;
+                    return (
+                        <span class="api-backlinks-group">
+                            {mod !== props.module && <span class="font-mono text-[12.5px] text-dim">{mod.replace(/^std\//, 'velt:')}</span>}
+                            {take.map((b) => <a href={b.href} data-card={b.href.replace(/(#[^.]*)\..*$/, '$1')}><code>{b.name}</code></a>)}
+                        </span>
+                    );
+                })}
+                {list.length > shown && <span>and {list.length - shown} more</span>}
+            </span>
+        );
+    });
+    if (!parts.length && !extra) return null;
+    return (
+        <p class="api-backlinks m-0 flex flex-wrap items-baseline gap-x-2.5 gap-y-1.5 text-[14px] text-muted">
+            {parts.map((p, i) => <>{i > 0 && <span aria-hidden="true">·</span>}{p}</>)}
+            {parts.length > 0 && extra && <span aria-hidden="true">·</span>}
+            {extra}
+        </p>
+    );
+}, { name: 'Backlinks' });
+
+/** "Coming from": the closest Node, Deno and Bun APIs (src/data/coming-from.ts). */
+const ComingFromBox = component<{ slug: string }>(({ props }) => () => {
+    const c = COMING_FROM[props.slug];
+    return (
+        <aside aria-label="Coming from Node, Deno or Bun" class="flex flex-col gap-2 rounded-xl border border-card-line bg-card px-4 py-3.5">
+            <span class={eyebrow}>Coming from</span>
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-x-4 gap-y-2 text-sm leading-normal">
+                {(['Node', 'Deno', 'Bun'] as const).map((rt) => (
+                    <span>
+                        <span class="text-muted">{rt}</span> <code>{c[rt.toLowerCase() as 'node' | 'deno' | 'bun']}</code>
+                    </span>
+                ))}
+            </div>
+            <span class="api-tag text-[13.5px] leading-normal text-fg-3"><DocInline md={c.note} /></span>
+        </aside>
+    );
+}, { name: 'ComingFromBox' });
+
 export const ExportSection = component<{ item: ApiItem; module: ApiModule }>(({ props }) => () => {
     const it = props.item;
     const t = it.tags;
@@ -129,13 +193,14 @@ export const ExportSection = component<{ item: ApiItem; module: ApiModule }>(({ 
                 </p>
             )}
             {!trivialSignature(it) && <SignatureBlock signature={it.signature} spans={it.spans} />}
-            {it.doc ? (
-                <DocText md={it.doc} />
-            ) : (
-                <p class="m-0 text-[14px] text-muted">
-                    No doc comment yet{src && <>: <a href={sourceUrl(src.file, src.line)} class="text-cyan hover:text-cyan-hover">add one</a></>}
-                </p>
-            )}
+            {it.doc && <DocText md={it.doc} />}
+            <Backlinks href={`${apiPath(props.module.module)}#${anchorOf(it)}`} module={props.module.module}>
+                {!it.doc && (
+                    <span>
+                        No doc comment yet{src && <>: <a href={sourceUrl(src.file, src.line)} class="text-cyan hover:text-cyan-hover">add one</a></>}
+                    </span>
+                )}
+            </Backlinks>
             {t.deprecated !== null && (
                 <Tag label="Deprecated">
                     <div class="api-tag text-[15px]">{t.deprecated ? <DocInline md={t.deprecated} /> : 'This is deprecated.'}</div>
@@ -194,7 +259,7 @@ export const ExportSection = component<{ item: ApiItem; module: ApiModule }>(({ 
 }, { name: 'ExportSection' });
 
 /** The Exports table: kind glyph, name, first sentence of the doc comment. */
-const ExportsTable = component<{ items: ApiItem[] }>(({ props }) => () => (
+const ExportsTable = component<{ items: ApiItem[]; module: string }>(({ props }) => () => (
     <div class="overflow-hidden rounded-xl border border-card-line">
         {props.items.map((it, i) => {
             const k = kindInfo(it.kind);
@@ -202,6 +267,7 @@ const ExportsTable = component<{ items: ApiItem[] }>(({ props }) => () => (
                 <a
                     key={it.id}
                     href={`#${anchorOf(it)}`}
+                    data-card={`${apiPath(props.module)}#${anchorOf(it)}`}
                     class={`api-export-row grid items-baseline gap-x-3 px-4 py-2.5 text-[14.5px] leading-normal text-fg-2 hover:bg-[#12121B] hover:text-fg-2 ${i > 0 ? 'border-t border-card-line' : ''}`}
                 >
                     <span class="font-mono text-xs" style={{ color: k.color }} aria-hidden="true">{k.glyph}</span>
@@ -256,12 +322,14 @@ export const ApiPage = component<{ module: ApiModule }>(({ props, slots }) => ()
                 {summary && <DocInline md={summary} />} For a walkthrough, read <a href={guidePath(m.module)} class="text-cyan hover:text-cyan-hover">the guide</a>.
             </p>
             <ImportLine code={importLine(m)} />
+            {COMING_FROM[moduleSlug(m.module)] && <ComingFromBox slug={moduleSlug(m.module)} />}
             {slots.default?.()}
             <section id="exports" class="flex scroll-mt-6 flex-col gap-3 pt-2">
                 <h2 class="m-0 font-display text-[26px] font-semibold tracking-[-0.02em] text-fg">Exports</h2>
-                {items.length > 0 ? <ExportsTable items={items} /> : <p class="m-0 text-muted">This module exports nothing yet.</p>}
+                {items.length > 0 ? <ExportsTable items={items} module={m.module} /> : <p class="m-0 text-muted">This module exports nothing yet.</p>}
             </section>
             {items.map((it) => <ExportSection key={it.id} item={it} module={m} />)}
+            <ApiCards client:idle />
         </>
     );
 }, { name: 'ApiPage' });
