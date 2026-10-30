@@ -43,3 +43,25 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # Every ts/vlt/tsx example in the docs checks with the velt release the docs
+  # describe (DOCS_VERSION in src/lib/site.ts). scripts/check-examples.mjs.
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install velt at DOCS_VERSION
+        run: |
+          version=$(node -e "console.log(require('fs').readFileSync('src/lib/site.ts','utf8').match(/DOCS_VERSION = '([^']+)'/)[1])")
+          curl -fsSL https://github.com/velt-lang/velt/releases/latest/download/get-velt.sh | sh -s -- --version "$version" --no-modify-path
+          echo "$HOME/.velt/bin" >> "$GITHUB_PATH"
+
+      - name: Check the docs examples
+        run: |
+          velt --version
+          node scripts/check-examples.mjs

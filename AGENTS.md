@@ -200,9 +200,12 @@ pnpm typecheck    # tsgo --noEmit
   folds the rest under "All N modules". When another group grows past ~20
   pages, give it the same treatment rather than a longer list.
 - Code examples must be valid Velt for the release the docs describe
-  (`DOCS_VERSION` in `src/lib/site.ts`): check them with that release's
-  `velt run` / `velt check` before you merge. Don't document behavior users
-  can't install yet.
+  (`DOCS_VERSION` in `src/lib/site.ts`). `pnpm check:examples` runs every
+  `ts` / `vlt` / `tsx` fence through the installed `velt check` (CI does it
+  with `DOCS_VERSION`): a plain fence must check, `ts error` must be rejected,
+  `ts ignore` (an excerpt, not a program) is skipped. A snippet without `main`
+  gets one around its statements. Don't document behavior users can't
+  install yet.
 
 ## Keeping the docs in sync with Velt
 

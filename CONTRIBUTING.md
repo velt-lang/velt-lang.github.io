@@ -42,6 +42,7 @@ pnpm dev
 ```bash
 pnpm typecheck
 pnpm build
+pnpm check:examples   # needs velt installed: the docs' code examples must check
 ```
 
 If `pnpm build` succeeds, the GitHub Pages deploy on `main` will succeed too: the deploy workflow runs the same command.
