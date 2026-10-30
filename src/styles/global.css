@@ -219,14 +219,20 @@
     color: var(--color-fg);
     font-weight: 600;
 }
+/* Inline code is read inside sentences, often many spans per line: no chip, only a faint tint
+   and a lighter color, so the sentence stays readable. `break-word` breaks a span only when it
+   can't fit a line, and (unlike `anywhere`) doesn't shrink table columns to a character. */
 .prose :not(pre) > code {
     font-family: var(--font-mono);
-    font-size: 0.9em;
-    padding: 1px 6px;
-    background: var(--color-chip);
-    border-radius: 5px;
-    color: var(--color-fg);
-    overflow-wrap: anywhere;
+    font-size: 0.88em;
+    padding: 0 2px;
+    background: rgb(255 255 255 / 0.04);
+    border-radius: 3px;
+    color: var(--color-fg-2);
+    overflow-wrap: break-word;
+}
+.prose td:first-child > code {
+    white-space: nowrap;
 }
 .prose a > code {
     color: var(--color-cyan);
