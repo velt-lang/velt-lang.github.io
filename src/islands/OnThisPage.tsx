@@ -11,9 +11,16 @@ export interface TocHeading {
     id: string;
     text: string;
     level: 2 | 3;
+    /** Code names (an API page's exports) show in mono. */
+    code?: boolean;
 }
 
-export const OnThisPage = component<{ headings: TocHeading[]; md: string; edit?: string }>(({ props, signal, onMounted, onUnmounted }) => {
+export interface TocLink {
+    href: string;
+    label: string;
+}
+
+export const OnThisPage = component<{ headings: TocHeading[]; md?: string; edit?: string; links?: TocLink[] }>(({ props, signal, onMounted, onUnmounted }) => {
     const state = signal({ active: props.headings[0]?.id ?? '', copied: '' });
     let els: HTMLElement[] = [];
     let nav: HTMLElement | null = null;
@@ -77,7 +84,7 @@ export const OnThisPage = component<{ headings: TocHeading[]; md: string; edit?:
                                     key={h.id}
                                     href={`#${h.id}`}
                                     aria-current={on ? 'location' : undefined}
-                                    class={`-ml-px border-l-2 py-[5px] pr-1 leading-[1.4] ${h2 ? 'pl-3.5 text-sm' : 'pl-7 text-[13px]'} ${
+                                    class={`-ml-px border-l-2 py-[5px] pr-1 leading-[1.4] ${h2 ? 'pl-3.5 text-sm' : 'pl-7 text-[13px]'} ${h.code ? 'font-mono !text-[12.5px]' : ''} ${
                                         on ? 'border-cyan font-semibold text-fg' : `border-transparent hover:text-cyan ${h2 ? 'font-medium text-fg-3' : 'text-muted'}`
                                     }`}
                                 >
@@ -89,20 +96,29 @@ export const OnThisPage = component<{ headings: TocHeading[]; md: string; edit?:
                 </div>
             )}
             <div class={`flex flex-col gap-1 ${props.headings.length > 0 ? 'border-t border-line pt-4' : ''}`}>
-                <button type="button" class={action} aria-live="polite" onClick={async () => flash((await copyPageMarkdown(props.md)) ? 'md' : '')}>
+                {props.links?.map((l) => (
+                    <a key={l.href} href={l.href} class={action}>
+                        {l.label} →
+                    </a>
+                ))}
+                {props.md && (
+                <button type="button" class={action} aria-live="polite" onClick={async () => flash((await copyPageMarkdown(props.md!)) ? 'md' : '')}>
                     {state.copied === 'md' ? <CheckIcon size={15} stroke={2} cls="text-green" /> : <FileIcon size={15} stroke={2} />}
                     {state.copied === 'md' ? 'Copied' : 'Copy page as Markdown'}
                 </button>
+                )}
+                {props.md && (
                 <button
                     type="button"
                     class={action}
                     aria-live="polite"
                     title="Copies a prompt that points an AI assistant at this page"
-                    onClick={async () => flash((await copyText(pagePrompt(props.md))) ? 'ai' : '')}
+                    onClick={async () => flash((await copyText(pagePrompt(props.md!))) ? 'ai' : '')}
                 >
                     {state.copied === 'ai' ? <CheckIcon size={15} stroke={2} cls="text-green" /> : <SparkIcon size={15} stroke={2} />}
                     {state.copied === 'ai' ? 'Prompt copied: paste it in your AI' : 'Ask an AI about this page'}
                 </button>
+                )}
                 {props.edit && (
                     <a href={props.edit} class={action}>
                         <EditIcon size={15} stroke={2} />

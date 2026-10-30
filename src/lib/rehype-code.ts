@@ -53,11 +53,11 @@ export const VELT_THEME: ThemeRegistration = {
 
 const LANGS = ['ts', 'tsx', 'js', 'jsx', 'json', 'sh', 'bash', 'powershell', 'rust', 'toml', 'yaml', 'diff', 'html', 'css', 'sql'] as const;
 /** Fence names that highlight with another grammar. `vlt` is TypeScript syntax. */
-const ALIASES: Record<string, string> = { vlt: 'ts', velt: 'ts', shell: 'sh', console: 'sh', zsh: 'sh', ps1: 'powershell', pwsh: 'powershell', rs: 'rust', typescript: 'ts', javascript: 'js' };
+export const ALIASES: Record<string, string> = { vlt: 'ts', velt: 'ts', shell: 'sh', console: 'sh', zsh: 'sh', ps1: 'powershell', pwsh: 'powershell', rs: 'rust', typescript: 'ts', javascript: 'js' };
 const LABELS: Record<string, string> = { sh: 'Terminal', bash: 'Terminal', powershell: 'PowerShell', text: 'Text', txt: 'Text' };
 
 let highlighter: Promise<HighlighterGeneric<string, string>> | undefined;
-const getHighlighter = () => (highlighter ??= createHighlighter({ themes: [VELT_THEME], langs: [...LANGS] }) as never);
+export const getHighlighter = () => (highlighter ??= createHighlighter({ themes: [VELT_THEME], langs: [...LANGS] }) as never);
 
 const svg = (cls: string, children: Node[]): Node => ({
     type: 'element', tagName: 'svg',

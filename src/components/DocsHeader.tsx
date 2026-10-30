@@ -9,7 +9,8 @@ import { GitHubIcon } from './Icons';
 import { AreaMenu } from '../islands/AreaMenu';
 import { DocsSearch } from '../islands/DocsSearch';
 import { docGroups } from '../lib/docs-nav';
-import { API_PATH, AREAS, areaOf, hasApiTabs } from '../lib/docs-areas';
+import { API_PATH, AREAS, areaOf, hasApiTabs, stdModuleOf, tabTargets } from '../lib/docs-areas';
+import { apiModule, apiModuleForGuide, apiPath, guidePath } from '../lib/std-api';
 import { DOCS_VERSION, RELEASES_URL, REPO_URL } from '../lib/site';
 
 /** The std area's one-liner counts its modules. */
@@ -26,6 +27,10 @@ export const DocsHeader = component<{ path: string }>(({ props }) => () => {
     const path = props.path;
     const area = areaOf(path);
     const tabs = hasApiTabs(path);
+    const mod = stdModuleOf(path);
+    const onApi = path.startsWith(API_PATH);
+    const api = mod ? (onApi ? apiModule(mod) : apiModuleForGuide(mod)) : undefined;
+    const tab = tabTargets(path, { guide: api && onApi ? guidePath(api.module) : null, api: api ? apiPath(api.module) : null });
     return (
         <header class="relative z-20 border-b border-line bg-bg-header">
             <div class="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-5 gap-y-3 px-6 py-3 leading-[1.4]">
@@ -37,16 +42,16 @@ export const DocsHeader = component<{ path: string }>(({ props }) => () => {
                 {tabs && (
                     <nav aria-label="Guide or API" class="flex gap-1 text-sm">
                         <a
-                            href={path === API_PATH ? '/docs/std/' : path}
-                            aria-current={path !== API_PATH ? 'page' : undefined}
-                            class={`inline-flex min-h-10 items-center px-3 ${path !== API_PATH ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
+                            href={tab.guide}
+                            aria-current={!tab.onApi ? 'page' : undefined}
+                            class={`inline-flex min-h-10 items-center px-3 ${!tab.onApi ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
                         >
                             Guide
                         </a>
                         <a
-                            href={API_PATH}
-                            aria-current={path === API_PATH ? 'page' : undefined}
-                            class={`inline-flex min-h-10 items-center px-3 ${path === API_PATH ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
+                            href={tab.api}
+                            aria-current={tab.onApi ? 'page' : undefined}
+                            class={`inline-flex min-h-10 items-center px-3 ${tab.onApi ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
                         >
                             API
                         </a>

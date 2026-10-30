@@ -2,6 +2,25 @@ import { defineSSGConfig } from '@sigx/ssg';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { apiModule, coverageReport, guideIntro } from './src/lib/std-api';
+
+/**
+ * The API pages share one route, so their title and description come from
+ * the module: "velt:http API — Velt docs" and the guide's opening sentence.
+ */
+function apiPageHead(html: string, path: string): string {
+    const slug = path.match(/^\/docs\/api\/(.+?)\/?$/)?.[1];
+    const m = slug ? apiModule(slug) : undefined;
+    if (!m) return html;
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const title = esc(`${m.specifier} API`);
+    const description = esc(`API reference for ${m.specifier}: ${(guideIntro(m.module).summary ?? m.summary ?? '').replace(/`|\[|\]\([^)]*\)/g, '')}`.trim());
+    return html
+        // Replacer functions: a `$` in the text must come out as written.
+        .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+        .replace(/(<meta (?:name="description"|property="og:description") content=")[^"]*"/g, (_, open: string) => `${open}${description}"`)
+        .replace(/(<meta property="og:title" content=")[^"]*"/, (_, open: string) => `${open}${title}"`);
+}
 
 /**
  * Route paths of every docs page under one area, in sidebar (`order`) order,
@@ -76,9 +95,14 @@ export default defineSSGConfig({
     // Font preloads on every page, and "Memory model" → "Memory model — Velt
     // docs" in the tab and search results for docs pages.
     hooks: {
+        // Which std exports still lack a doc comment (design: missing docs are visible).
+        postBuild() {
+            console.log(`\n${coverageReport()}\n`);
+        },
         transformHtml(html, page) {
             html = html.replace('<link rel="icon"', `${fontPreloadTags()}\n    <link rel="icon"`);
             if (!page.path.startsWith('/docs')) return html;
+            html = apiPageHead(html, page.path);
             return html.replace(/<title>([^<]*)<\/title>/, (m, t: string) =>
                 page.path === '/docs/' || page.path === '/docs' ? m : `<title>${t} — Velt docs</title>`,
             );
