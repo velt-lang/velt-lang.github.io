@@ -426,3 +426,32 @@
 .prose .callout-text > p + p {
     margin-top: 8px;
 }
+
+/* Docs side columns: from 1100px they stick and scroll on their own; below that they stack. */
+@media (min-width: 1100px) {
+    .sticky-col {
+        position: sticky;
+        top: 0;
+        max-height: 100vh;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-line-3) transparent;
+    }
+}
+
+/* "Copy page" sits on the H1's first line; on phones it goes above the title. */
+.page-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+@media (min-width: 640px) {
+    .page-actions {
+        position: absolute;
+        top: 52px;
+        right: 0;
+        z-index: 1;
+    }
+    .prose.has-page-actions > h1:first-child {
+        padding-right: 190px;
+    }
+}

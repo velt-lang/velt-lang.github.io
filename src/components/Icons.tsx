@@ -89,3 +89,18 @@ export const FileIcon = icon('FileIcon', () => (
         <path d="M14 3v5h5M9 13h6M9 17h4" />
     </>
 ));
+export const ChevronUp = icon('ChevronUp', () => <path d="m18 15-6-6-6 6" />);
+export const EditIcon = icon('EditIcon', () => (
+    <>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </>
+));
+export const GridIcon = icon('GridIcon', () => (
+    <>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+));
