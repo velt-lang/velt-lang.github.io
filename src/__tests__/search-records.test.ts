@@ -46,3 +46,24 @@ describe('search records', () => {
         expect(highlight('Routes', 'zzz')).toEqual(['Routes', '', '']);
     });
 });
+
+describe('API symbols', () => {
+    const apis = [
+        { n: 'serve', g: 'ƒ', m: 'velt:http', s: 'Binds host:port and serves handler in the background.', h: '/docs/api/http/#serve' },
+        { n: 'Server', g: 'C', m: 'velt:http', s: 'A running server.', h: '/docs/api/http/#Server' },
+        { n: 'Server.close', g: 'ƒ', m: 'velt:http', s: 'Stops accepting.', h: '/docs/api/http/#Server.close' },
+    ];
+    const withApis = buildRecords(pages as never, errors, apis);
+
+    it('come first, in mono, with their kind glyph and module', () => {
+        const groups = search(withApis, 'serve');
+        expect(groups[0].kind).toBe('api');
+        const [top] = groups[0].hits;
+        expect(top).toMatchObject({ title: 'serve', glyph: 'ƒ', mono: true, href: '/docs/api/http/#serve' });
+        expect(top.meta).toBe('velt:http · Binds host:port and serves handler in the background.');
+    });
+
+    it('include class members', () => {
+        expect(search(withApis, 'close')[0].hits.map((h) => h.title)).toContain('Server.close');
+    });
+});

@@ -1,12 +1,14 @@
 /**
  * The standard library catalog (design/Std.dc.html). The modules are the std
  * docs pages; src/data/std-catalog.ts puts them in categories. Static except
- * the category chips.
+ * the category chips. Export counts and doc coverage come from the API JSON
+ * (src/lib/std-api.ts).
  */
 import { component } from 'sigx';
 import { CatalogChips } from '../../../islands/CatalogChips';
 import { CATEGORIES } from '../../../data/std-catalog';
 import { docGroups } from '../../../lib/docs-nav';
+import { apiModuleForGuide, coverage, percent } from '../../../lib/std-api';
 
 export const meta = {
     title: 'Standard library modules',
@@ -21,7 +23,8 @@ function sections() {
         ...c,
         cards: c.modules.flatMap(([page, line, badge]) => {
             const item = byHref.get(`/docs/std/${page}/`);
-            return item ? [{ href: item.href, title: item.title, line, badge }] : [];
+            const api = apiModuleForGuide(page);
+            return item ? [{ href: item.href, title: item.title, line, badge, cov: api ? coverage(api) : undefined }] : [];
         }),
     })).filter((c) => c.cards.length > 0);
 }
@@ -74,6 +77,12 @@ export default component(() => () => {
                                     {m.badge && <span class="flex-none rounded-full border border-[#3F2A1A] px-2 py-px text-[11px] text-peach">{m.badge}</span>}
                                 </span>
                                 <span class="text-sm leading-normal text-fg-3">{m.line}</span>
+                                {m.cov && m.cov.exports > 0 && (
+                                    <span class="mt-auto pt-1 font-mono text-xs text-muted" title={`${m.cov.documented} of ${m.cov.exports} exports have a doc comment`}>
+                                        {m.cov.exports} export{m.cov.exports === 1 ? '' : 's'} ·{' '}
+                                        <span class={percent(m.cov) < 50 ? 'text-orange' : ''}>{percent(m.cov)}% documented</span>
+                                    </span>
+                                )}
                             </a>
                         ))}
                     </div>

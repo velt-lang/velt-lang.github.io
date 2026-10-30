@@ -444,3 +444,38 @@ export function moduleCards(m: ApiModule): Record<string, Card> {
     }
     return cards;
 }
+
+// ─── Search ────────────────────────────────────────────────────────────────
+
+/** One API symbol in the search palette's index (/api-index.json); short keys keep the file small. */
+export interface ApiSearchEntry {
+    /** Name: `serve`, or `Server.close` for a member. */
+    n: string;
+    /** Glyph of its kind (ƒ C S …). */
+    g: string;
+    /** Module specifier. */
+    m: string;
+    /** First doc sentence, plain text, or "". */
+    s: string;
+    h: string;
+}
+
+const plain = (md: string | null) => (md ?? '').replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, '$1');
+const MEMBER_GLYPH: Record<string, string> = { method: 'ƒ', getter: 'ƒ', setter: 'ƒ', constructor: 'ƒ', field: '·', member: '·' };
+
+/** Every export of every API page, and the public members of its classes and interfaces. */
+export function apiSearchEntries(): ApiSearchEntry[] {
+    const out: ApiSearchEntry[] = [];
+    for (const m of apiModules().values()) {
+        for (const e of visibleExports(m)) {
+            if (e.kind === 'extend' || e.kind === 're-export') continue;
+            out.push({ n: e.name, g: kindInfo(e.kind).glyph, m: m.specifier, s: plain(summaryOf(e)), h: `${apiPath(m.module)}#${anchorOf(e)}` });
+            if (e.kind !== 'class' && e.kind !== 'interface') continue;
+            for (const mem of e.members) {
+                if (mem.kind === 'constructor' || mem.kind === 'setter' || mem.name.startsWith('[')) continue;
+                out.push({ n: `${e.name}.${mem.name}`, g: MEMBER_GLYPH[mem.kind] ?? 'ƒ', m: m.specifier, s: plain(summaryOf(mem)), h: `${apiPath(m.module)}#${anchorOf(mem)}` });
+            }
+        }
+    }
+    return out;
+}
