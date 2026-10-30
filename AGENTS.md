@@ -255,7 +255,10 @@ reaches this repo two ways.
    compatibility pair, a feature card, a benchmark), update it. Benchmarks live
    in `src/data/benchmarks.ts`; every number must come from the `source` file in
    velt-lang/velt it names.
-4. **Bump `DOCS_VERSION`** in `src/lib/site.ts`.
+4. **Refresh the API pages**: `node scripts/refresh-std-api.mjs` with that release's
+   `velt` regenerates `src/data/std-api.json` (`velt doc --std --format json`), which the
+   `/docs/api/<module>/` pages, their links and the build's doc coverage report come from.
+   Bump `DOCS_VERSION` in `src/lib/site.ts`.
 5. **Verify:** `pnpm typecheck`, `pnpm test`, `pnpm build`; run the changed code
    examples with the release's `velt`.
 6. **PR** per the workflow above — `Closes #N` for every queue issue and the

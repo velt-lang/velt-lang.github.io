@@ -19,7 +19,7 @@ export interface Area {
 }
 
 export const DIAGNOSTICS_PATH = '/docs/reference/diagnostics/';
-/** The std API tab. A placeholder until the API pages are generated from `velt doc --format json`. */
+/** The std API pages: `/docs/api/<module>/`, generated from `velt doc --format json`. */
 export const API_PATH = '/docs/api/';
 /** The std module catalog (design/Std.dc.html). */
 export const CATALOG_PATH = '/docs/std/modules/';
@@ -51,5 +51,22 @@ export function tint(hex: string, alpha: number): string {
 /** Std module guides get Guide | API tabs; the std overview and the catalog don't. */
 export const hasApiTabs = (path: string) => {
     const p = norm(path);
-    return p === API_PATH || (p.startsWith('/docs/std/') && p !== '/docs/std/' && p !== CATALOG_PATH);
+    return p.startsWith(API_PATH) || (p.startsWith('/docs/std/') && p !== '/docs/std/' && p !== CATALOG_PATH);
 };
+
+/** The module a std guide or API page is about (`collections/deque`), or null. */
+export function stdModuleOf(path: string): string | null {
+    const p = norm(path);
+    const m = p.match(/^\/docs\/(?:std|api)\/(.+)\/$/);
+    return m ? m[1] : null;
+}
+
+/** The Guide and API tab targets for a page; `hasApi` says whether its module has an API page. */
+export function tabTargets(path: string, hasApi: boolean): { guide: string; api: string; onApi: boolean } {
+    const mod = stdModuleOf(path);
+    return {
+        guide: mod ? `/docs/std/${mod}/` : '/docs/std/',
+        api: mod && hasApi ? `${API_PATH}${mod}/` : API_PATH,
+        onApi: norm(path).startsWith(API_PATH),
+    };
+}

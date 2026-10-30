@@ -12,7 +12,9 @@ import { ChevronDown, ChevronRight, GridIcon, MenuIcon } from '../components/Ico
 import { OnThisPage, type TocHeading } from '../islands/OnThisPage';
 import { PageActions } from '../islands/PageActions';
 import { docGroups, docSequence, type DocGroup, type DocLink } from '../lib/docs-nav';
-import { API_PATH, CATALOG_PATH, DIAGNOSTICS_PATH, areaOf, type Area } from '../lib/docs-areas';
+import { API_PATH, CATALOG_PATH, DIAGNOSTICS_PATH, areaOf, stdModuleOf, type Area } from '../lib/docs-areas';
+import { ApiSidebar } from '../components/api/ApiSidebar';
+import { anchorOf, apiModule, guidePath, sourceUrl, visibleExports } from '../lib/std-api';
 import { DOCS_VERSION, EDIT_BASE, RELEASES_URL, REPO_URL } from '../lib/site';
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
@@ -109,7 +111,14 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
     const title = String(meta.title ?? '');
     const source = String(meta.sourceFile ?? '');
     const md = path === '/docs/' ? '/docs.md' : `${path.replace(/\/$/, '')}.md`;
-    const hasMd = path !== API_PATH;
+    const hasMd = !path.startsWith(API_PATH);
+    const stdModule = stdModuleOf(path);
+    // A std module's API page (/docs/api/http/), from the velt doc JSON.
+    const api = path.startsWith(API_PATH) && stdModule ? apiModule(stdModule) : undefined;
+    if (api) {
+        headings.splice(0, headings.length, { id: 'exports', text: 'Exports', level: 2 },
+            ...visibleExports(api).map((e) => ({ id: anchorOf(e), text: e.name, level: 3 as const, code: true })));
+    }
     const crumbGroup = area.id === 'errors' ? { title: 'Errors', href: DIAGNOSTICS_PATH } : { title: nav.group.title, href: nav.group.href };
 
     return (
@@ -124,11 +133,11 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                 <details class="docs-menu w-full border-b border-line min-[900px]:hidden">
                     <summary class="flex min-h-12 cursor-pointer items-center gap-2 text-sm font-medium text-fg-3">
                         <MenuIcon size={18} />
-                        {nav.title}
+                        {api ? <span class="font-mono">{api.specifier} exports</span> : nav.title}
                         <ChevronDown size={16} cls="menu-chev ml-auto transition-transform" />
                     </summary>
                     <nav aria-label="Documentation" class="pb-6 pt-2">
-                        <Sidebar area={area} current={path} />
+                        {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : <Sidebar area={area} current={path} />}
                         <p class="m-0 mt-6 flex gap-4 px-3 text-[13px] text-muted">
                             <a href={`${RELEASES_URL}/tag/v${DOCS_VERSION}`} class="text-muted hover:text-cyan">
                                 <span class="font-mono">v{DOCS_VERSION}</span> · Changelog
@@ -137,12 +146,21 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                         </p>
                     </nav>
                 </details>
-                <nav aria-label="Documentation" class="sticky-col hidden max-w-[280px] flex-[1_1_240px] py-8 min-[900px]:block">
-                    <Sidebar area={area} current={path} />
+                <nav aria-label={api ? `${api.specifier} API` : 'Documentation'} class="sticky-col hidden max-w-[290px] flex-[1_1_240px] py-8 min-[900px]:block">
+                    {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : <Sidebar area={area} current={path} />}
                 </nav>
 
                 <main id="main" class="flex min-w-0 flex-[999_1_560px] flex-wrap items-start gap-12 pb-24 pt-10">
                     <article class="relative flex min-w-0 max-w-[760px] flex-[999_1_520px] flex-col gap-[22px]">
+                        {api ? (
+                            <nav aria-label="Breadcrumb" class="flex flex-wrap gap-2 text-[13px] text-muted">
+                                <a href="/docs/std/" class="text-muted hover:text-cyan">Standard library</a>
+                                <span aria-hidden="true">/</span>
+                                <a href={guidePath(api.module)} class="text-fg hover:text-cyan">{api.specifier}</a>
+                                <span aria-hidden="true">/</span>
+                                <span class="text-fg" aria-current="page">API</span>
+                            </nav>
+                        ) : (
                         <nav aria-label="Breadcrumb" class="flex flex-wrap gap-2 text-[13px] text-muted">
                             <a href="/docs/" class="text-muted hover:text-cyan">Docs</a>
                             {path !== crumbGroup.href && path !== '/docs/' && (
@@ -158,12 +176,13 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                                 </>
                             )}
                         </nav>
+                        )}
                         {hasMd && (
                             <div class="page-actions">
                                 <PageActions client:idle md={md} />
                             </div>
                         )}
-                        <div class={`prose ${hasMd ? 'has-page-actions' : ''}`}>{slots.default?.()}</div>
+                        <div class={api ? 'api-page' : `prose ${hasMd ? 'has-page-actions' : ''}`}>{slots.default?.()}</div>
 
                         {(prev || next) && (
                             <nav aria-label="Pager" class="mt-8 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3.5">
@@ -183,13 +202,25 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                                 )}
                             </nav>
                         )}
-                        {source && (
+                        {source && !api && (
                             <p class="m-0 text-[13px]">
                                 <a href={`${EDIT_BASE}${source}`} class="text-cyan hover:text-cyan-hover">Edit this page on GitHub</a>
                             </p>
                         )}
                     </article>
 
+                    {api && (
+                        <aside data-toc-scroll class="sticky-col max-w-[260px] flex-[1_1_220px] pb-8 pt-2">
+                            <OnThisPage
+                                client:idle
+                                headings={headings}
+                                links={[
+                                    { href: guidePath(api.module), label: 'Read the guide' },
+                                    { href: sourceUrl(api.file), label: 'View source' },
+                                ]}
+                            />
+                        </aside>
+                    )}
                     {hasMd && (
                         <aside data-toc-scroll class="sticky-col max-w-[260px] flex-[1_1_220px] pb-8 pt-2">
                             <OnThisPage client:idle headings={headings} md={md} edit={source ? `${EDIT_BASE}${source}` : undefined} />
