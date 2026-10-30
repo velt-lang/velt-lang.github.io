@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToString } from '@sigx/server-renderer/server';
 import { defineApp } from 'sigx';
 import { layoutSignature, tokenize } from '../lib/signature';
-import { anchorOf, apiModule, apiModules, coverage, guideIntro, hrefOf, sentences, visibleExports, type ApiItem } from '../lib/std-api';
+import { anchorOf, apiModule, apiModuleForGuide, apiModules, coverage, guideIntro, guidePath, hrefOf, sentences, visibleExports, type ApiItem } from '../lib/std-api';
 import { tabTargets } from '../lib/docs-areas';
 import { ExportSection } from '../components/api/ApiPage';
 import { highlighterReady } from '../components/api/CodeBlock';
@@ -85,9 +85,14 @@ describe('the snapshot', () => {
 
 describe('Guide | API tabs', () => {
     it('point at the same module', () => {
-        expect(tabTargets('/docs/std/http/', true)).toEqual({ guide: '/docs/std/http/', api: '/docs/api/http/', onApi: false });
-        expect(tabTargets('/docs/api/collections/deque/', true)).toEqual({ guide: '/docs/std/collections/deque/', api: '/docs/api/collections/deque/', onApi: true });
-        expect(tabTargets('/docs/std/prelude/', false).api).toBe('/docs/api/');
+        expect(tabTargets('/docs/std/http/', { api: '/docs/api/http/' })).toEqual({ guide: '/docs/std/http/', api: '/docs/api/http/', onApi: false });
+        expect(tabTargets('/docs/api/http/server/', { guide: '/docs/std/http_server/', api: '/docs/api/http/server/' }).guide).toBe('/docs/std/http_server/');
+        expect(tabTargets('/docs/std/prelude/', {}).api).toBe('/docs/api/');
+    });
+
+    it('find the module of a guide whose name differs from the module path', () => {
+        expect(apiModuleForGuide('http_server')?.specifier).toBe('velt:http/server');
+        expect(guidePath('std/http/server')).toBe('/docs/std/http_server/');
     });
 });
 

@@ -136,8 +136,14 @@ export const API_ROOT = '/docs/api/';
 /** `std/collections/deque` → `collections/deque`. */
 export const moduleSlug = (module: string) => module.replace(/^std\//, '');
 
+/** Guides whose page isn't named after the module's path. */
+const GUIDE_SLUG: Record<string, string> = { 'http/server': 'http_server' };
+
+/** The guide page's name under /docs/std/: `http`, `collections/deque`, `http_server` for velt:http/server. */
+export const guideSlug = (module: string) => GUIDE_SLUG[moduleSlug(module)] ?? moduleSlug(module);
+
 export const apiPath = (module: string) => `${API_ROOT}${moduleSlug(module)}/`;
-export const guidePath = (module: string) => `/docs/std/${moduleSlug(module)}/`;
+export const guidePath = (module: string) => `/docs/std/${guideSlug(module)}/`;
 
 /** An export's anchor on its module page: its name, or `kind-name` when an extend block shares it. */
 export function anchorOf(item: Pick<ApiItem, 'id' | 'name' | 'kind'>): string {
@@ -158,7 +164,7 @@ export function apiModules(): Map<string, ApiModule> {
     const root = join(process.cwd(), 'src/pages/docs/std');
     pageModules = new Map(
         apiDoc()
-            .modules.filter((m) => m.module.startsWith('std/') && existsSync(join(root, `${moduleSlug(m.module)}.mdx`)))
+            .modules.filter((m) => m.module.startsWith('std/') && existsSync(join(root, `${guideSlug(m.module)}.mdx`)))
             .sort((a, b) => a.specifier.localeCompare(b.specifier))
             .map((m) => [m.module, m]),
     );
@@ -166,6 +172,9 @@ export function apiModules(): Map<string, ApiModule> {
 }
 
 export const apiModule = (slug: string) => apiModules().get(`std/${slug.replace(/\/$/, '')}`);
+
+/** The module a guide page (`http_server`) documents, when it has an API page. */
+export const apiModuleForGuide = (slug: string) => [...apiModules().values()].find((m) => guideSlug(m.module) === slug.replace(/\/$/, ''));
 
 let homes: Map<string, string> | undefined;
 
@@ -258,7 +267,7 @@ const intros = new Map<string, GuideIntro>();
 export function guideIntro(module: string): GuideIntro {
     const cached = intros.get(module);
     if (cached) return cached;
-    const file = join(process.cwd(), 'src/pages/docs/std', `${moduleSlug(module)}.mdx`);
+    const file = join(process.cwd(), 'src/pages/docs/std', `${guideSlug(module)}.mdx`);
     const src = existsSync(file) ? readFileSync(file, 'utf8') : '';
     const body = src.replace(/^---[\s\S]*?\n---\n/, '');
     // The first paragraph after the `# heading`.

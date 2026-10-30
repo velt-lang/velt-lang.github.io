@@ -61,12 +61,17 @@ export function stdModuleOf(path: string): string | null {
     return m ? m[1] : null;
 }
 
-/** The Guide and API tab targets for a page; `hasApi` says whether its module has an API page. */
-export function tabTargets(path: string, hasApi: boolean): { guide: string; api: string; onApi: boolean } {
+/**
+ * The Guide and API tab targets for a page: the other page of the same
+ * module when there is one (`links`, from the API data), else the guide or
+ * the API index.
+ */
+export function tabTargets(path: string, links: { guide?: string | null; api?: string | null }): { guide: string; api: string; onApi: boolean } {
     const mod = stdModuleOf(path);
+    const onApi = norm(path).startsWith(API_PATH);
     return {
-        guide: mod ? `/docs/std/${mod}/` : '/docs/std/',
-        api: mod && hasApi ? `${API_PATH}${mod}/` : API_PATH,
-        onApi: norm(path).startsWith(API_PATH),
+        guide: links.guide ?? (mod && !onApi ? `/docs/std/${mod}/` : '/docs/std/'),
+        api: links.api ?? API_PATH,
+        onApi,
     };
 }
