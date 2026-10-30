@@ -153,5 +153,8 @@ describe('backlinks and hover cards', () => {
         expect(opts.summary).toBeNull();
         expect(opts.usedBy).toContain('serve');
         expect(Object.keys(cards)).toHaveLength(apiModule('http')!.exports.length);
+        // A constructor isn't listed, and doesn't make the card look truncated.
+        const exec = moduleCards(apiModule('child_process')!).ExecResult;
+        expect(exec.decl.map((t) => t[1]).join('')).not.toContain('…');
     });
 });
