@@ -4,11 +4,13 @@
  */
 import type { SearchIndexEntry } from '@sigx/ssg/client';
 import type { ErrorRecord } from './errors-index';
+import type { ApiSearchEntry } from './std-api';
 
-export type Kind = 'book' | 'ref' | 'std' | 'tool' | 'err';
+export type Kind = 'api' | 'book' | 'ref' | 'std' | 'tool' | 'err';
 
 /** Section colors, glyphs and labels: the same as the area switcher. */
 export const KINDS: Record<Kind, { label: string; group: string; color: string; glyph: string }> = {
+    api: { label: 'API', group: 'APIs', color: '#F07BF5', glyph: 'ƒ' },
     std: { label: 'Std', group: 'Standard library', color: '#FF9F5A', glyph: '{}' },
     book: { label: 'Book', group: 'Guides', color: '#5FE1F7', glyph: '→' },
     ref: { label: 'Reference', group: 'Reference', color: '#A592FF', glyph: '§' },
@@ -16,7 +18,7 @@ export const KINDS: Record<Kind, { label: string; group: string; color: string; 
     err: { label: 'Errors', group: 'Errors', color: '#FFC93C', glyph: '!' },
 };
 /** Group order in the results. */
-export const ORDER: Kind[] = ['std', 'book', 'ref', 'tool', 'err'];
+export const ORDER: Kind[] = ['api', 'std', 'book', 'ref', 'tool', 'err'];
 
 export const DIAGNOSTICS = '/docs/reference/diagnostics/';
 
@@ -29,6 +31,8 @@ export interface SearchRecord {
     mono: boolean;
     /** A page rather than a section of one. */
     page: boolean;
+    /** The tile's glyph when it isn't the section's (an API symbol's kind: ƒ C S). */
+    glyph?: string;
 }
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
@@ -42,12 +46,12 @@ export function kindOf(path: string): Kind {
     return 'book';
 }
 
-const SECTION: Record<Kind, string> = { book: 'The book', ref: 'Reference', std: 'Std', tool: 'Tooling', err: 'Errors' };
+const SECTION: Record<Kind, string> = { api: 'API', book: 'The book', ref: 'Reference', std: 'Std', tool: 'Tooling', err: 'Errors' };
 
 const clip = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const pageTitle = (t: string) => t.replace(/ — Velt( docs)?$/, '');
 
-export function buildRecords(pages: SearchIndexEntry[], errors: ErrorRecord[]): SearchRecord[] {
+export function buildRecords(pages: SearchIndexEntry[], errors: ErrorRecord[], apis: ApiSearchEntry[] = []): SearchRecord[] {
     const out: SearchRecord[] = [];
     for (const p of pages) {
         if (!p.path.startsWith('/docs')) continue;
@@ -59,6 +63,9 @@ export function buildRecords(pages: SearchIndexEntry[], errors: ErrorRecord[]): 
             if (h.level !== 2 && h.level !== 3) continue;
             out.push({ kind, title: h.text, meta: `${SECTION[kind]} · ${title}`, href: `${href}#${h.id}`, mono: false, page: false });
         }
+    }
+    for (const a of apis) {
+        out.push({ kind: 'api', title: a.n, meta: a.s ? `${a.m} · ${clip(a.s)}` : a.m, href: a.h, mono: true, page: true, glyph: a.g });
     }
     for (const e of errors) {
         out.push({ kind: 'err', title: e.message, meta: `Errors · ${e.situation}`, href: DIAGNOSTICS, mono: true, page: false });

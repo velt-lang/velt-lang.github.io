@@ -7,6 +7,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 import { rehypeVeltCode } from './src/lib/rehype-code.ts';
 import { apiCardsDev } from './src/lib/api-cards.ts';
+import { apiIndexPlugin } from './src/lib/api-index.ts';
 import { remarkReference } from './src/lib/remark-reference.ts';
 import { errorsIndexPlugin } from './src/lib/errors-index.ts';
 
@@ -30,6 +31,8 @@ export default defineConfig({
         apiCardsDev(),
         // errors-index.json: compiler messages for the search palette's Errors group.
         errorsIndexPlugin(),
+        // api-index.json: std API symbols for the search palette's APIs group.
+        apiIndexPlugin(),
         ssgPlugin({
             markdown: {
                 // Highlighting is ours (src/lib/rehype-code.ts): the Velt palette

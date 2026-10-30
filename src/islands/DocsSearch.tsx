@@ -2,7 +2,8 @@
  * The search palette (design/Search.dc.html). The header shows a search
  * field that opens a dialog; ⌘K / Ctrl+K or "/" opens it from anywhere.
  * The index loads on first open: the docs pages and their headings
- * (search-index.json) and the compiler messages (errors-index.json).
+ * (search-index.json), the compiler messages (errors-index.json) and the
+ * std API symbols (api-index.json).
  */
 import { component } from 'sigx';
 import { loadSearchIndex } from '@sigx/ssg/client';
@@ -10,6 +11,7 @@ import { SearchIcon, SparkIcon } from '../components/Icons';
 import { KINDS, buildRecords, highlight, search, type Kind, type SearchRecord } from '../lib/search-records';
 import { LLMS_URL, SITE_URL } from '../lib/site';
 import type { ErrorRecord } from '../lib/errors-index';
+import type { ApiSearchEntry } from '../lib/std-api';
 
 type Filter = 'all' | Kind;
 type Row = Pick<SearchRecord, 'kind' | 'title' | 'meta' | 'href' | 'mono'> & { glyph?: string; page?: boolean };
@@ -28,7 +30,8 @@ const loadRecords = () =>
     (records ??= Promise.all([
         loadSearchIndex(),
         fetch('/errors-index.json').then((r) => (r.ok ? (r.json() as Promise<ErrorRecord[]>) : [])).catch(() => []),
-    ]).then(([pages, errors]) => buildRecords(pages, errors)));
+        fetch('/api-index.json').then((r) => (r.ok ? (r.json() as Promise<ApiSearchEntry[]>) : [])).catch(() => []),
+    ]).then(([pages, errors, apis]) => buildRecords(pages, errors, apis)));
 
 function readRecent(): Row[] {
     try {
@@ -117,7 +120,7 @@ export const DocsSearch = component(({ signal, onMounted, onUnmounted }) => {
     const reveal = () =>
         requestAnimationFrame(() => list?.querySelector<HTMLElement>(`#search-row-${state.active}`)?.scrollIntoView({ block: 'nearest' }));
 
-    const FILTERS = (): Filter[] => ['all', 'book', 'ref', 'std', 'tool', 'err'];
+    const FILTERS = (): Filter[] => ['all', 'book', 'ref', 'std', 'api', 'tool', 'err'];
     const onKey = (e: KeyboardEvent) => {
         const n = rows().length;
         if (e.key === 'Escape') {
