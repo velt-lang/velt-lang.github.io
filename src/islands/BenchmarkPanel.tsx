@@ -1,6 +1,7 @@
 /** The tabbed benchmark panel. Data: src/data/benchmarks.ts. */
 import { component } from 'sigx';
 import { BENCHMARKS } from '../data/benchmarks';
+import { BenchBars } from '../components/BenchBars';
 
 /** Split a note ending in "bench/web." so the bench folder links to its results. */
 function noteParts(note: string) {
@@ -21,7 +22,6 @@ export const BenchmarkPanel = component(({ signal }) => {
 
     return () => {
         const b = BENCHMARKS.find((x) => x.id === state.id)!;
-        const max = Math.max(...b.rows.map((r) => r.value));
         return (
             <div class="min-w-0 flex-[1.5_1_560px] overflow-hidden rounded-2xl border border-line-2 bg-surface">
                 <div role="tablist" aria-label="Benchmark" class="no-scrollbar flex gap-1 overflow-x-auto border-b border-line p-2" onKeydown={onKey}>
@@ -50,23 +50,7 @@ export const BenchmarkPanel = component(({ signal }) => {
                         <strong class="font-display text-[19px] font-semibold">{b.title}</strong>
                         <span class="text-[13px] text-muted">{b.unit}</span>
                     </div>
-                    <div class="flex flex-col gap-2.5">
-                        {b.rows.map((r) => {
-                            const velt = r.name === 'Velt';
-                            return (
-                                <div key={`${b.id}-${r.name}`} class="flex items-center gap-3.5 text-sm">
-                                    <span class={`w-28 flex-none ${velt ? 'font-semibold text-fg' : 'text-fg-3'}`}>{r.name}</span>
-                                    <div class="h-[26px] min-w-0 flex-auto overflow-hidden rounded-md bg-[#15151F]" aria-hidden="true">
-                                        <div
-                                            class={`h-full rounded-md ${velt ? 'bg-accent' : 'bg-[#3A3A4C]'}`}
-                                            style={{ width: `${Math.max(2, (r.value / max) * 100)}%` }}
-                                        />
-                                    </div>
-                                    <span class={`w-[72px] flex-none text-right font-mono text-[13px] ${velt ? 'text-fg' : 'text-fg-3'}`}>{r.label}</span>
-                                </div>
-                            );
-                        })}
-                    </div>
+                    <BenchBars bench={b} />
                     <p class="m-0 border-t border-line pt-3 text-[13px] text-muted">
                         {noteParts(b.note).before}
                         <a href={`https://github.com/velt-lang/velt/blob/main/${b.source}`} class="text-muted hover:text-cyan">

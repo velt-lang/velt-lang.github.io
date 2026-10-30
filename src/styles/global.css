@@ -85,6 +85,13 @@
     }
 }
 
+/* Anchor jumps clear the sticky marketing header. */
+@media (min-width: 900px) {
+    html:has(.site-header) {
+        scroll-padding-top: 96px;
+    }
+}
+
 /* The brand gradient: only the header hairline and the hero highlight. */
 .brand-line {
     height: 2px;

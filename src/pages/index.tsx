@@ -192,7 +192,7 @@ export default component(() => () => (
                     The HTTP server, the Redis, Postgres and SQLite drivers are written in Velt and measured against Rust, Go, Bun
                     and Node. Every number links to its method and raw data.
                 </p>
-                <a href="https://github.com/velt-lang/velt/tree/main/bench" class="inline-flex min-h-11 items-center gap-2 self-start font-medium text-cyan hover:text-cyan-hover">
+                <a href="/benchmarks/" class="inline-flex min-h-11 items-center gap-2 self-start font-medium text-cyan hover:text-cyan-hover">
                     All benchmarks and methods
                     <ArrowRight size={16} stroke={2} />
                 </a>
