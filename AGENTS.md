@@ -248,7 +248,7 @@ reaches this repo two ways.
    of a page here.
 2. **Update the pages** under `src/pages/docs/`: new or changed syntax in the
    reference, new std functions in their module page (new module → new page in
-   `std/`, plus a `COMPACT` entry if it's a headline module), new CLI behavior in
+   `std/`, a category in `src/data/std-catalog.ts`, and a `COMPACT` entry if it's a headline module), new CLI behavior in
    `tooling/`, and the book chapters a change affects. Write for a reader meeting
    the feature for the first time: state what is true, don't narrate history.
 3. **Home page**: if the release changes a claim on the home page (the
