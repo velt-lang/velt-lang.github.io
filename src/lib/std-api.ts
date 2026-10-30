@@ -380,6 +380,8 @@ export type CardToken = [string, string] | [string, string, string];
 
 export interface Card {
     kind: string;
+    /** The kind's color (KINDS), so the island doesn't keep its own copy. */
+    color: string;
     name: string;
     module: string;
     href: string;
@@ -424,6 +426,7 @@ export function moduleCards(m: ApiModule): Record<string, Card> {
         const names = [...new Set(used.map((b) => b.name))];
         cards[anchorOf(e)] = {
             kind: e.kind,
+            color: kindInfo(e.kind).color,
             name: e.name,
             module: m.specifier,
             href,

@@ -148,6 +148,7 @@ describe('backlinks and hover cards', () => {
         const cards = moduleCards(apiModule('http')!);
         const opts = cards.ServeOptions;
         expect(opts.kind).toBe('struct');
+        expect(opts.color).toBe('#A592FF');
         expect(opts.decl.map((t) => t[1]).join('')).toBe('struct ServeOptions {\n  port: number;\n  host?: string;\n  tls?: TlsOptions;\n}');
         expect(opts.decl.find((t) => t[1] === 'TlsOptions')?.[2]).toBe('/docs/api/http/#TlsOptions');
         expect(opts.summary).toBeNull();

@@ -12,6 +12,7 @@ import { component } from 'sigx';
 type Token = [string, string] | [string, string, string];
 interface Card {
     kind: string;
+    color: string;
     name: string;
     module: string;
     href: string;
@@ -23,9 +24,6 @@ interface Card {
 
 const OPEN_DELAY = 150;
 const CLOSE_DELAY = 250;
-const KIND_COLOR: Record<string, string> = {
-    function: '#F07BF5', class: '#5FE1F7', struct: '#A592FF', interface: '#3DDC97', enum: '#FFC93C', type: '#FF9F5A', const: '#FF8FD8',
-};
 
 const files = new Map<string, Promise<Record<string, Card>>>();
 
@@ -51,7 +49,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, ...kids:
 const inline = (md: string) => md.split(/(`[^`]+`)/).map((p) => (p.startsWith('`') && p.length > 1 ? el('code', '', p.slice(1, -1)) : p));
 
 function render(card: Card, id: string): HTMLElement {
-    const color = KIND_COLOR[card.kind] ?? '#B4B4C8';
+    const color = card.color;
     const pill = el('span', 'api-card-pill', card.kind);
     pill.style.color = color;
     pill.style.borderColor = `${color}4D`;
