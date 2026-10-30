@@ -33,11 +33,14 @@ const COMPACT: Record<string, string[]> = {
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
 
-const metaByPath = new Map(
-    (routes as { path: string; meta?: Record<string, unknown> }[]).map((r) => [norm(r.path), r.meta ?? {}]),
-);
+// Built on first use: a page that imports this module is itself imported by
+// virtual:ssg-routes, so `routes` isn't initialized yet when this module loads.
+let metaByPath: Map<string, Record<string, unknown>> | undefined;
 
 export function pageMeta(path: string): Record<string, unknown> {
+    metaByPath ??= new Map(
+        (routes as { path: string; meta?: Record<string, unknown> }[]).map((r) => [norm(r.path), r.meta ?? {}]),
+    );
     return metaByPath.get(norm(path)) ?? {};
 }
 

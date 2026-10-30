@@ -7,14 +7,12 @@
  */
 import { component } from 'sigx';
 import type { LayoutProps, LayoutSlots } from '@sigx/ssg';
-import { Logo } from '../components/SiteChrome';
-import { ChevronDown, ChevronRight, GitHubIcon, GridIcon, MenuIcon } from '../components/Icons';
-import { AreaMenu } from '../islands/AreaMenu';
-import { DocsSearch } from '../islands/DocsSearch';
+import { DocsHeader } from '../components/DocsHeader';
+import { ChevronDown, ChevronRight, GridIcon, MenuIcon } from '../components/Icons';
 import { OnThisPage, type TocHeading } from '../islands/OnThisPage';
 import { PageActions } from '../islands/PageActions';
 import { docGroups, docSequence, type DocGroup, type DocLink } from '../lib/docs-nav';
-import { API_PATH, AREAS, DIAGNOSTICS_PATH, areaOf, hasApiTabs, type Area } from '../lib/docs-areas';
+import { API_PATH, CATALOG_PATH, DIAGNOSTICS_PATH, areaOf, type Area } from '../lib/docs-areas';
 import { DOCS_VERSION, EDIT_BASE, RELEASES_URL, REPO_URL } from '../lib/site';
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
@@ -83,7 +81,7 @@ function areaNav(area: Area): { group: DocGroup; title: string; all?: DocLink } 
         };
     }
     const group = groups.find((g) => g.id === area.group)!;
-    const all = area.id === 'std' ? { href: '/docs/std/', title: 'All modules', mono: false } : undefined;
+    const all = area.id === 'std' ? { href: CATALOG_PATH, title: 'All modules', mono: false } : undefined;
     return { group, title: group.title, all };
 }
 
@@ -95,16 +93,6 @@ const Sidebar = component<{ area: Area; current: string }>(({ props }) => () => 
         </div>
     );
 }, { name: 'Sidebar' });
-
-/** The std area's one-liner counts its modules. */
-function areaItems() {
-    const std = docGroups().find((g) => g.id === 'std');
-    const modules = std?.items.filter((i) => i.href !== std.href).length ?? 0;
-    return AREAS.map(({ id, label: l, meta, glyph, color, href }) => ({
-        id, label: l, glyph, color, href,
-        meta: id === 'std' ? `${modules} modules · ${meta}` : meta,
-    }));
-}
 
 export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) => () => {
     const path = norm(props.path ?? '/docs/');
@@ -122,7 +110,6 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
     const source = String(meta.sourceFile ?? '');
     const md = path === '/docs/' ? '/docs.md' : `${path.replace(/\/$/, '')}.md`;
     const hasMd = path !== API_PATH;
-    const tabs = hasApiTabs(path);
     const crumbGroup = area.id === 'errors' ? { title: 'Errors', href: DIAGNOSTICS_PATH } : { title: nav.group.title, href: nav.group.href };
 
     return (
@@ -130,49 +117,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
             <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-white">
                 Skip to content
             </a>
-            <header class="relative z-20 border-b border-line bg-bg-header">
-                <div class="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-5 gap-y-3 px-6 py-3 leading-[1.4]">
-                    <a href="/" aria-label="Velt home" class="text-fg">
-                        <Logo size="md" />
-                    </a>
-                    <span aria-hidden="true" class="hidden h-6 w-px bg-line-2 min-[480px]:block" />
-                    <AreaMenu client:idle areas={areaItems()} current={area.id} />
-                    {tabs && (
-                        <nav aria-label="Guide or API" class="flex gap-1 text-sm">
-                            <a
-                                href={path === API_PATH ? '/docs/std/' : path}
-                                aria-current={path !== API_PATH ? 'page' : undefined}
-                                class={`inline-flex min-h-10 items-center px-3 ${path !== API_PATH ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
-                            >
-                                Guide
-                            </a>
-                            <a
-                                href={API_PATH}
-                                aria-current={path === API_PATH ? 'page' : undefined}
-                                class={`inline-flex min-h-10 items-center px-3 ${path === API_PATH ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
-                            >
-                                API
-                            </a>
-                        </nav>
-                    )}
-                    <div class="order-last flex w-full min-[900px]:order-none min-[900px]:ml-auto min-[900px]:w-auto min-[900px]:max-w-[360px] min-[900px]:flex-[0_1_360px]">
-                        <DocsSearch client:idle />
-                    </div>
-                    <div class="hidden items-center gap-2 min-[640px]:ml-auto min-[640px]:flex min-[900px]:ml-0">
-                        <a
-                            href={`${RELEASES_URL}/tag/v${DOCS_VERSION}`}
-                            class="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-line-3 px-2.5 font-mono text-xs text-fg-3 hover:text-fg"
-                        >
-                            v{DOCS_VERSION}
-                            <span aria-hidden="true" class="text-[#5A5A70]">·</span>
-                            <span class="font-sans text-cyan">Changelog</span>
-                        </a>
-                        <a href={REPO_URL} aria-label="Velt on GitHub" class="grid size-10 place-items-center rounded-[10px] text-fg-3 hover:text-fg">
-                            <GitHubIcon size={18} />
-                        </a>
-                    </div>
-                </div>
-            </header>
+            <DocsHeader path={path} />
 
             <div class="mx-auto flex max-w-[1440px] flex-wrap items-start gap-x-12 px-6">
                 {/* Phones: the sidebar folds into a menu. */}
