@@ -181,12 +181,6 @@
     font-size: 16px;
     color: var(--color-fg);
 }
-.prose :is(h1, h2, h3, h4) code {
-    font-family: var(--font-mono);
-    font-size: 0.85em;
-    padding: 0;
-    background: none;
-}
 .prose :is(h2, h3, h4) {
     scroll-margin-top: 24px;
 }
@@ -237,8 +231,10 @@
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
 }
-/* Code in a heading is part of the title: no tint. */
+/* Code in a heading is part of the title: no tint. After the inline-code rule, which has the
+   same specificity. */
 .prose :is(h1, h2, h3, h4) > code {
+    font-family: var(--font-mono);
     padding: 0;
     background: none;
     color: inherit;

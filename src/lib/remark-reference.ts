@@ -48,9 +48,13 @@ function termOf(item: Node): { term: Node[]; rest: Node[] } | undefined {
     }
 }
 
+/** Drops leading whitespace and upper-cases the first letter of the text that follows a label. */
 const capitalize = (nodes: Node[]) => {
     const first = nodes[0];
-    if (first?.type === 'text' && first.value) first.value = first.value[0].toUpperCase() + first.value.slice(1);
+    if (first?.type === 'text' && first.value) {
+        const value = first.value.trimStart();
+        first.value = value.charAt(0).toUpperCase() + value.slice(1);
+    }
     return nodes;
 };
 

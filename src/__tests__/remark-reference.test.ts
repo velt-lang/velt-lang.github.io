@@ -26,6 +26,7 @@ describe('remarkReference', () => {
         const tree = run(root(ul(li(p(strong('Values that copy:'), t(` numbers ${long}`))))));
         expect(tree.children![0].type).toBe('heading');
         expect(tree.children![0].children![0].value).toBe('Values that copy');
+        expect(tree.children![1].children![0].value!.startsWith('Numbers')).toBe(true);
         const short = run(root(ul(li(p(strong('A'), t(': b'))))));
         expect(short.children![0].type).toBe('list');
     });
