@@ -16,9 +16,10 @@ function apiPageHead(html: string, path: string): string {
     const title = esc(`${m.specifier} API`);
     const description = esc(`API reference for ${m.specifier}: ${(guideIntro(m.module).summary ?? m.summary ?? '').replace(/`|\[|\]\([^)]*\)/g, '')}`.trim());
     return html
-        .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
-        .replace(/(<meta (?:name="description"|property="og:description") content=")[^"]*"/g, `$1${description}"`)
-        .replace(/(<meta property="og:title" content=")[^"]*"/, `$1${title}"`);
+        // Replacer functions: a `$` in the text must come out as written.
+        .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
+        .replace(/(<meta (?:name="description"|property="og:description") content=")[^"]*"/g, (_, open: string) => `${open}${description}"`)
+        .replace(/(<meta property="og:title" content=")[^"]*"/, (_, open: string) => `${open}${title}"`);
 }
 
 /**
