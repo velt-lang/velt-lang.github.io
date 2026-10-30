@@ -1,6 +1,7 @@
-/** The marketing header and footer (design/Main.dc.html). Static: no client JS. */
+/** The marketing header and footer (design/Main.dc.html). Static except the nav's scroll spy. */
 import { component } from 'sigx';
 import { GitHubIcon } from './Icons';
+import { SiteNav } from '../islands/SiteNav';
 import { REPO_URL, RELEASES_URL, VSCODE_URL } from '../lib/site';
 
 export const Logo = component<{ size?: 'lg' | 'md' }>(({ props }) => () => {
@@ -28,18 +29,13 @@ const NAV = [
 ];
 
 export const SiteHeader = component(() => () => (
-    <header class="relative border-b border-line">
+    // Sticky from 900px so the scroll spy stays in view; on phones the header wraps tall.
+    <header class="site-header relative z-30 border-b border-line bg-bg/90 backdrop-blur-md min-[900px]:sticky min-[900px]:top-0">
         <div class="mx-auto flex max-w-[1248px] flex-wrap items-center gap-x-8 gap-y-4 px-6 py-[18px]">
             <a href="/" aria-label="Velt home" class="text-fg">
                 <Logo />
             </a>
-            <nav aria-label="Main" class="flex flex-auto flex-wrap gap-x-6 gap-y-1 text-[15px]">
-                {NAV.map((n) => (
-                    <a key={n.href} href={n.href} class="text-fg-3 hover:text-cyan">
-                        {n.label}
-                    </a>
-                ))}
-            </nav>
+            <SiteNav client:idle items={NAV} />
             <div class="flex items-center gap-3">
                 <a
                     href={REPO_URL}

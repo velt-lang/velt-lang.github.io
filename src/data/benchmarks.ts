@@ -99,11 +99,11 @@ export const BENCHMARKS: Benchmark[] = [
         tab: 'Memory',
         title: 'Hello-world server under load',
         unit: 'peak MB · lower is better',
-        note: 'Apple M4, Node 24. Velt serves 220k req/s, Node 130k. bench/http.',
+        note: 'Apple M4, Node 24, highest of the runs. Velt serves 220k req/s, Node 130k. bench/http.',
         source: 'bench/http/RESULTS.md',
         rows: [
-            { name: 'Velt', value: 21, label: '21 MB' },
-            { name: 'Node', value: 129, label: '129 MB' },
+            { name: 'Velt', value: 20.7, label: '20.7 MB' },
+            { name: 'Node', value: 130, label: '130 MB' },
         ],
     },
 ];
