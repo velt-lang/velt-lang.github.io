@@ -1,6 +1,6 @@
 /** The list of std API pages with export counts and doc coverage (/docs/api/). */
 import { component } from 'sigx';
-import { apiModules, apiPath, coverage, guideIntro, percent } from '../../lib/std-api';
+import { apiModules, apiPath, coverage, guideIntro, percent, sentences } from '../../lib/std-api';
 import { DocInline } from './DocText';
 
 export const ApiIndex = component(() => () => {
@@ -29,7 +29,7 @@ export const ApiIndex = component(() => () => {
                             return (
                                 <tr key={m.module}>
                                     <td class="whitespace-nowrap"><a href={apiPath(m.module)} class="font-mono text-[13.5px]">{m.specifier}</a></td>
-                                    <td class="text-fg-3">{summary ? <DocInline md={summary.replace(/\. .*$/, '.')} /> : null}</td>
+                                    <td class="text-fg-3">{summary ? <DocInline md={sentences(summary)} /> : null}</td>
                                     <td class="text-right font-mono text-[13.5px]">{c.exports}</td>
                                     <td class={`text-right font-mono text-[13.5px] ${percent(c) < 50 ? 'text-orange' : 'text-fg-3'}`}>{percent(c)}%</td>
                                 </tr>
