@@ -6,6 +6,7 @@ import { remarkMermaid } from '@sigx/mermaid/ssg';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 import { rehypeVeltCode } from './src/lib/rehype-code.ts';
+import { remarkReference } from './src/lib/remark-reference.ts';
 
 // Asset path prefix. `/` for the GitHub Pages deployment at the domain root
 // (https://veltlang.com/); override with BASE_PATH to serve from a subpath.
@@ -28,8 +29,11 @@ export default defineConfig({
                 // Highlighting is ours (src/lib/rehype-code.ts): the Velt palette
                 // and the design's code window. `remarkMermaid` claims ```mermaid
                 // fences before that, so diagrams render in dev and build.
+                // `remarkReference` makes dense reference pages readable
+                // (term sections, diagnostics, callouts) before the headings
+                // for "On this page" are collected.
                 shiki: false,
-                remarkPlugins: [remarkMermaid],
+                remarkPlugins: [remarkMermaid, remarkReference],
                 rehypePlugins: [rehypeVeltCode],
             },
         }),
