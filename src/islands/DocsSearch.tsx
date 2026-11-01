@@ -21,7 +21,7 @@ const RECENT_KEY = 'velt-search-recent';
 const JUMP: Row[] = [
     { kind: 'book', glyph: '→', title: 'Getting started', meta: 'The book · Install, create a project, run it', href: '/docs/book/getting-started/', mono: false },
     { kind: 'book', glyph: 'TS', title: 'Velt for TypeScript developers', meta: 'The book · Every difference from TypeScript', href: '/docs/book/ts-developers/', mono: false },
-    { kind: 'std', title: 'Browse the standard library', meta: 'Std · Every velt: module and the conventions they share', href: '/docs/std/', mono: false },
+    { kind: 'std', title: 'Browse the standard library', meta: 'Std · Every velt/ module and the conventions they share', href: '/docs/std/', mono: false },
     { kind: 'ref', title: 'Language reference', meta: 'Reference · Types, functions, classes, memory, modules', href: '/docs/reference/', mono: false },
 ];
 
@@ -120,7 +120,7 @@ export const DocsSearch = component(({ signal, onMounted, onUnmounted }) => {
     const reveal = () =>
         requestAnimationFrame(() => list?.querySelector<HTMLElement>(`#search-row-${state.active}`)?.scrollIntoView({ block: 'nearest' }));
 
-    const FILTERS = (): Filter[] => ['all', 'book', 'ref', 'std', 'api', 'tool', 'err'];
+    const FILTERS = (): Filter[] => ['all', 'book', 'ref', 'std', 'api', 'pkg', 'tool', 'err'];
     const onKey = (e: KeyboardEvent) => {
         const n = rows().length;
         if (e.key === 'Escape') {

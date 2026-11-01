@@ -108,12 +108,33 @@ throws its errors, as every such type throws what is stored into it
 
 ## Scripts: top-level statements
 
-A program starts at `function main()` (or `async function main()`) in its root file, or, as in
-a TS or JS file, at its top-level statements: when the root file has statements outside
-declarations, they run in order in a generated `main` (`async` when one of them awaits). A
-top-level `const` or `let` moves into that `main` with them, unless a function, class, struct,
-`extend` block or module constant refers to it; then it stays at module level
-([module state](/docs/reference/variables/#module-state)).
+A program starts like a TS or JS file in Node, at the top-level statements of its root file (the
+file `velt run` or `velt build` is given): the statements outside declarations run in order in a
+generated `main` (`async` when one of them awaits). A root file with `function main()` (or
+`async function main()`) and no top-level statements runs `main` instead (below). A top-level
+`const` or `let` moves into the generated `main` with the statements, unless a function, class,
+struct, `extend` block or module constant refers to it; then it stays at module level
+([module state](/docs/reference/variables/#module-state)). So does one that a closure the
+statements make refers to (an arrow, a function expression, a method of an object literal, a
+function declared in a block) when the code assigns it or it holds a new object (`new Map()`,
+`[]`, not a `new Promise(…)`): as in Node, the closure then sees the module's variable itself,
+with what a statement assigns after the closure was made and what the closure assigns or
+changes, also from a request handler or a task on another thread (`let hits = 0;` and a `serve`
+handler that runs `hits++`). A closure gets a copy of one that nothing assigns, which is the same
+value.
+
+Not yet module state: a destructuring declaration, a `let` without an initializer, one whose
+initializer awaits (`const server = await serve(…)`), an object literal a closure changes
+(`const stats = { n: 0 }`), or a new object declared with a type that checks narrow
+(`const m: object = new Map()`): those stay locals of `main`, which a closure captures as a copy.
+So does one that module state can't hold: a promise (`let p = Promise.resolve(1)` that a closure
+assigns), or one a `Mutex` `with` callback uses
+([module state](/docs/reference/variables/#module-state)), with the variables below it whose
+initializers read it (`let ok = p !== undefined;`). A `with` callback that calls a function value
+(`v += add()`, a parameter, a loop variable, the locked value) may run any closure the script
+makes, so then every variable a closure in the script uses stays a local of `main`. That one
+callback turns module state off for the whole script: a task or a request handler that assigns
+such a variable (`spawn(async () => { hits++; })`) is then rejected.
 
 ```ts
 const GREETING = "hello";               // a function uses it: a module constant
@@ -127,6 +148,13 @@ names.push("cy");
 for (const n of names) {
   console.log(greet(n));
 }
+
+let calls = 0;                          // a closure uses it: module state
+const shout = (n: string) => {
+  calls++;
+  return greet(n).toUpperCase();
+};
+console.log(names.map(shout).join(" "), calls); // HELLO ANN HELLO BOB HELLO CY 3
 ```
 
 The statements and the declarations between them run in source order, as in Node: a module constant,
@@ -138,7 +166,7 @@ declaration"). A function made above a declaration may read it once it has run (
 initializer or one whose initializer awaits, which must come above the function. A function that
 reads a module variable before its declaration has run (`[1].map((x) => x + K)` above `const K = [1]`) stops the program with `Uncaught ReferenceError: Cannot access 'K' before initialization` and
 exit code 1. Unlike Node, where the `ReferenceError` is an exception a `try`/`catch` around the call
-can catch, it cannot be caught yet: the program ends at the read (a known gap, #1450).
+can catch, it cannot be caught yet: the program ends at the read.
 
 ```ts
 export let calls = 0;
@@ -153,7 +181,33 @@ class Counter {
 console.log(Counter.first);
 ```
 
-A file with top-level statements cannot also declare `main`.
+A file with top-level statements may also declare a function named `main`, as TypeScript
+programs often do (or anything else named `main`: a variable, a class, an import): then, as in
+Node, the statements are the program, and `main` is an ordinary function that runs when they
+call it, with any arguments (`main(process.argv.slice(2))`), as often as they call it, and its
+promise handled as they choose (`main().catch(…)`).
+
+This is where Velt differs from Node: a root file with `function main()` and **no** top-level
+statements runs `main` by itself, which Node does not. Adding a top-level statement to such a
+file makes `main` an ordinary function that runs only when called, so the compiler warns when a
+file with statements declares a `main` that nothing calls:
+
+```text
+warning: `main` is never called: in a file with top-level statements, the statements are the program and `main` is an ordinary function
+  = note: call it from the statements (`main();`) to run it, as in Node
+```
+
+```ts
+async function main(): Promise<void> {
+  await Promise.resolve();
+  console.log("hi");
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+```
 
 When the top-level statements wait at an `await` that nothing can settle any more, and nothing
 else can happen, the program ends as Node's does: `Warning: Detected unsettled top-level await at <file>:<line>` on stderr and exit code 13 ([Async](/docs/reference/async/#promises)).
@@ -173,7 +227,7 @@ in Node: it runs up to its first `await`, the statements after it run, and the p
 it before exiting (a rejection nobody handles ends it with exit code 1); in a function it is a
 floating promise, an error. Top-level `await` is only allowed in the root file, and an imported module's
 statements can't start asynchronous work yet (a timer, a promise chain, `queueMicrotask`,
-`spawn`): they run before the scheduler starts (#846).
+`spawn`): they run before the scheduler starts.
 
 ```ts
 // registry.ts
@@ -190,6 +244,51 @@ Re-exports make one module the public face of others: `export { x, y as z } from
 `export type { T } from "…"`, and `export * from "…"` (every export of that module; a name the
 module exports itself or lists by name wins). Re-exports bind nothing in the re-exporting
 module; importers get the original declaration, and go-to-definition lands there too.
+
+## Types and values of one name
+
+A name may be a type and a value at once, as in TypeScript, which keeps types and values in
+separate namespaces: a type alias or an interface next to a constant, a `let` or a function of
+the same name. A type position uses the type, an expression the value, and `typeof` in a type
+position the value.
+
+```ts
+type guid = string;
+const guid = (): guid => "id-1";
+
+interface Point {
+  x: number;
+  y: number;
+}
+function Point(x: number, y: number): Point {
+  return { x, y };
+}
+
+const id: guid = guid();
+const p: Point = Point(1, 2);
+const make: typeof guid = guid;
+console.log(id, p.x + p.y, make()); // id-1 3 id-1
+```
+
+- `export` marks each declaration on its own (`export type guid = string` with a `const guid`
+  that stays private exports only the type). `import { guid }`, `export { guid }`,
+  `export { guid } from "…"`, `export * from "…"` and `import * as m` (`m.guid` as a type and as
+  a value) carry both meanings; `import type { guid }` and `export type { guid }` only the type.
+  A name a module exports only as a type (with `export type { x }`, or `export { x }` of a name
+  it imports with `import type`) is a type for its importers too: using it as a value is an
+  error, as in TypeScript (TS1361, TS1362).
+- The same holds in a function body (`type Range = [number, number]` next to
+  `const Range = …`), and a value does not hide a type of the same name declared further out (a
+  local `const guid` in a function with `const g: guid` still means the module's type), nor a
+  type a value (a module's `type Map = …` leaves the global `Map` visible to `new Map()`).
+- A type used as a value is ``` `T` is a type, not a value ```, and a value used as a type
+  ``` `f` is a value, not a type ``` (TypeScript's TS2749) with the hint `typeof f`.
+- Classes, structs and enums are a type and a value already: another declaration of their name
+  is an error (as TypeScript's TS2567 for enums; TypeScript merges an interface into a class of
+  its name, Velt doesn't, [Interfaces](/docs/reference/classes/#interfaces)). Two type
+  declarations (an alias and an interface) or two values of one name are an error too, in a
+  function body as at the top level (two functions of one name in one block included:
+  TypeScript's TS2393, where Node would run the last one).
 
 ## Namespaces
 
@@ -240,7 +339,7 @@ console.log(s.ends[1].x, s.length); // 3 5
 | Specifier | Resolves to |
 |---|---|
 | `"./file"`, `"../dir/file"` | relative to the importing file, without the extension: `file.vlt`, `file.ts` or `file.tsx` ([TypeScript files](#typescript-files-ts-and-tsx)). A folder is a module through its `index` file: `"./shapes"` is `shapes.vlt` (or `.ts`, `.tsx`), else `shapes/index.vlt` (or `.ts`, `.tsx`) |
-| `"velt:x"` | the [standard library](/docs/std/) module `x` (`"velt:fs"`, `"velt:collections/set"`) |
+| `"velt/x"` | the [standard library](/docs/std/) module `x` (`"velt/fs"`, `"velt/collections"`, `"velt/net/http"`): [below](#standard-library-modules) |
 | an alias from `paths` in `package.vlt` | `"@app/*": "src/*"` makes `"@app/util/strings"` mean `src/util/strings.vlt` (or `.ts`, `.tsx`), resolved like a relative import ([`package.vlt`](/docs/tooling/manifest/)) |
 | `"pkg"`, `"pkg/sub"` | a dependency from `package.vlt`: its `src/lib.vlt`, or `src/sub.vlt` / `src/sub/index.vlt` (or `.ts`, `.tsx`, as for a relative import) ([Packages](/docs/tooling/packages/)) |
 | `"@scope/pkg"`, `"pkg/sub"` of an npm package | when no dependency has that name: the npm package in `node_modules` or the workspace, compiled from the TypeScript source its `package.json` `exports` point back to ([npm packages](/docs/tooling/packages/#npm-packages)) |
@@ -250,6 +349,29 @@ every OS, as TypeScript's `forceConsistentCasingInFileNames` requires: `"./Util"
 `util.vlt` on Windows or macOS either, since it would fail on Linux. The error names the file on
 disk and the specifier to write (`import it as "./util"`). Files whose names differ only in case
 (`Util.ts` next to `util.vlt`) are different modules everywhere.
+
+### Standard library modules
+
+A `"velt/x"` specifier names a standard library *module*: a folder of `std/` with an `index.vlt`,
+which is the module's public API (`"velt/net/http"` is `std/net/http/index.vlt`). The other files
+of `std/` are internal to the module whose folder holds them, and a program or package that
+imports one gets an error naming that module, with the import to write instead:
+
+```text
+error: `velt/encoding/json/scan` is internal to `velt/encoding/json`
+  = note: import what you need from "velt/encoding/json", the module's public API
+```
+
+The prelude (`std/prelude/`) and what implements the language and its globals (`std/lang/`) are
+never imported. Standard library code itself imports any std file.
+
+A `velt:` specifier is an error; std modules are `velt/<area>`.
+
+`velt` and `std` are reserved for the standard library: no package or dependency may have either
+name (``the package name `velt` is reserved for the standard library``). The database drivers and
+the HTTP server are packages, not std modules: `"sqlite"`, `"postgres"`, `"redis"` and
+`"http-server"` are imported by the name of the dependency that provides them
+([Packages](/docs/packages/)).
 
 The prelude (strings, arrays, `Map`, `Math`, `JSON`, `Error`, `Comparable`, `Mutex`, `assert`,
 …) is always in scope without an import ([Built-ins](/docs/reference/builtins/)).
@@ -272,7 +394,7 @@ program may mix them freely, and `velt run app.ts` works like `velt run app.vlt`
 - JSX is allowed in `.tsx` and `.vlt` files. In a `.ts` file it is an error, as in TypeScript;
   rename the file to `.tsx`. The [JSX provider](https://github.com/velt-lang/velt/blob/main/docs/internals/contracts/jsx.md#choosing-the-provider) is chosen the same way for every file:
   the `/** @jsxImportSource x */` comment before the first token, else the package's
-  `jsx.importSource`, else `velt:jsx`. Velt also reads the comment as `// @jsxImportSource x`;
+  `jsx.importSource`, else `velt/jsx`. Velt also reads the comment as `// @jsxImportSource x`;
   `tsc` reads only the block comment, so code shared with TypeScript uses that form.
 - Two files in one directory whose names differ only in the extension (`dup.vlt` and
   `dup.ts`) have the same module path: an import without an extension can't tell them apart,
@@ -300,21 +422,29 @@ library uses them to bind `velt_rt_*`, and only it may declare those (they take 
 handles). Outside the standard library, a `declare` may only name an export of the native
 library of its own package, and must match that export exactly
 ([Packages with native code](/docs/book/native-packages/)). Anything else is a compile error: a
-program or a package without native code can't declare C functions such as `free` or `memcpy`. Compiler intrinsics (`__intrinsic_*`) are reserved for
-the standard library too.
+program or a package without native code can't declare C functions such as `free` or `memcpy`.
+Compiler intrinsics (`declare intrinsic function`, in `velt/lang/intrinsics`) are reserved for the
+standard library too. A runtime function std declares writes the `string` it takes as `out` or
+`buf` (a string builder, or the slot for its result), so passing a place there modifies it, as a
+modifying method does.
+
+`declare system function` is the exception every module has: it binds a function of the
+platform's C library from the compiler's table of the ones it can call safely (`pread`, `fsync`,
+`fcntl`, ...), checked against the table's C signature for the target
+([System functions](/docs/reference/system-functions/)). The standard library uses no other way
+to reach them, so a package can do everything std does.
 
 Whether a module belongs to the standard library depends on where it was loaded from (the std
 root), never on its name: a user module whose path would start with `std/` (a `./std/`
 directory) is an error, and no package may be named `std`.
 
-**Planned** ([TypeScript alignment §4](https://github.com/velt-lang/velt/blob/main/docs/internals/design/ts-alignment.md#4-extend--full-power-zero-cost-module-scoped)):
-extensions scoped to the modules that import them.
+**Planned**: extensions scoped to the modules that import them.
 
 ## Examples
 
 ```ts
-import { join, basename } from "velt:path";
-import { gcd as greatestDivisor } from "velt:math";
+import { join, basename } from "velt/path";
+import { gcd as greatestDivisor } from "velt/math";
 
 export function describe(path: string): string {
   return `${basename(path)} in ${join("/srv", "app")}`;
@@ -324,8 +454,8 @@ console.log(describe("/tmp/a.txt"), greatestDivisor(12, 18));
 ```
 
 ```ts
-import * as path from "velt:path";
-import type { Stats } from "velt:fs";
+import * as path from "velt/path";
+import type { Stats } from "velt/fs";
 
 function size(s: Stats): u64 {
   return s.size;

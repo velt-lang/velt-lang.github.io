@@ -1,37 +1,61 @@
 ---
-title: "velt:collections/deque"
-description: "import { Deque } from \"velt:collections/deque\". A double-ended queue on a growable ring buffer. Pushing and popping at either end is amortized O(1), and indexing is O(1)."
+title: "velt/collections: Deque"
+description: "Deque<T> from velt/collections: a double-ended queue on a growable ring buffer, amortized O(1) at both ends and O(1) by index."
 layout: "docs"
 category: "Standard library"
 order: 70
+navTitle: "Deque"
 ---
 
-# velt:collections/deque
+# Deque
 
-`import { Deque } from "velt:collections/deque"`. A double-ended queue on a growable ring buffer.
-Pushing and popping at either end is amortized O(1), and indexing is O(1).
+`import { Deque } from "velt/collections"`. A double-ended queue on a growable ring buffer.
+Pushing and popping at either end is amortized O(1), and indexing is O(1). Where an array's
+`shift()` and `unshift()` move every element, a deque moves none.
+
+```ts
+import { Deque } from "velt/collections";
+
+const q = Deque.from([2, 3]);
+q.pushFront(1);
+q.pushBack(4);
+console.log(q.popFront(), q.popBack(), q.at(-1), q.length, q.toArray()); // 1 4 3 2 [ 2, 3 ]
+```
 
 - `new Deque<T>()`, `Deque.from(xs)`, `length` / `size`, `isEmpty()`, `clear()`.
 - `pushBack(v)`, `pushFront(v)`.
 - `popBack()`, `popFront()`: return `T | undefined` (`undefined` when empty).
-- `peekFront()`, `peekBack()`, `at(i: i64)`: return clones or `undefined`; a negative `i` counts from
-  the back.
-- `toArray()`: clones, front to back. `forEach(f)` visits the elements by position from the
-  front and reads the length again after each call, as a `for` loop over an array does: when
-  the callback changes the deque through another reference, elements pushed at the back are
-  visited, and a push or pop at the front shifts the positions still to come.
-
-```ts
-import { Deque } from "velt:collections/deque";
-
-function main() {
-  const q = Deque.from([2, 3]);
-  q.pushFront(1);
-  q.pushBack(4);
-  console.log(q.popFront(), q.popBack(), q.at(-1), q.length, q.toArray()); // 1 4 3 2 [ 2, 3 ]
-}
-```
+- `peekFront()`, `peekBack()`, `at(i: i64)`: return copies, or `undefined`; a negative `i` counts
+  from the back.
+- `toArray()`: copies, front to back.
+- `forEach(f)` visits the elements by position from the front and reads the length again after
+  each call, as a `for` loop over an array does: when the callback changes the deque through
+  another reference, elements pushed at the back are visited, and a push or pop at the front
+  shifts the positions still to come.
 
 An element type may allow `null` or `undefined` (`Deque<i64 | null>`): a stored `null` reads as
 `null`, and a stored `undefined` reads as `undefined`, as an empty deque's `popFront()` does, the
 same as with an array's `shift()`.
+
+## A breadth-first walk
+
+```ts
+import { Deque } from "velt/collections";
+
+const edges = new Map<i64, i64[]>([[1, [2, 3]], [2, [4]], [3, [4]], [4, []]]);
+const seen = new Set<i64>([1]);
+const queue = new Deque<i64>();
+queue.pushBack(1);
+const order: i64[] = [];
+while (!queue.isEmpty()) {
+  const n = queue.popFront()!;
+  order.push(n);
+  for (const next of edges.get(n) ?? []) {
+    if (!seen.has(next)) {
+      seen.add(next);
+      queue.pushBack(next);
+    }
+  }
+}
+console.log(order); // [ 1, 2, 3, 4 ]
+```

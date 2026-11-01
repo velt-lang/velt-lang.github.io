@@ -10,16 +10,22 @@
  *   ```ts planned  designed but not implemented yet: skipped
  *
  * `vlt` and `tsx` fences follow the same rules; `title="…"` is allowed with any of them.
- * A snippet without `main` is completed: declarations (`import`, `function`, `class`,
- * `struct`, `interface`, `type`, `enum`, `extend`, `export …`, `const UPPER_CASE`) stay at
- * module level, and every other top-level statement moves, in order, into a generated
- * `async function main()`.
+ * Each snippet is checked as written, as the root file of a program: Velt runs a root
+ * file's top-level statements like Node (top-level `await` included), and a file with
+ * only declarations, or with `function main()`, checks too. So a snippet means what it
+ * would mean in a file of its own.
+ *
+ * A snippet that imports an official package (`http-server`, `sqlite`, `postgres`, `redis`)
+ * is checked inside a package that depends on it by path: set VELT_PACKAGES to the `packages/`
+ * directory of a velt checkout at the release the docs describe (the database packages build
+ * their native code with cargo the first time). Without VELT_PACKAGES such snippets are skipped.
  *
  * Known failures (scripts/check-examples-known.json, each with its issue) are reported but
  * don't fail the check; one that starts passing does, so the list stays current.
  *
  * Usage: node scripts/check-examples.mjs [filter]   (filter: a substring of "file:line")
- * Env:   VELT=<path to velt>, EXAMPLES_DUMP=<dir> to keep the completed programs.
+ * Env:   VELT=<path to velt>, VELT_PACKAGES=<velt checkout>/packages, EXAMPLES_DUMP=<dir> to keep
+ *        the checked files.
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -31,6 +37,24 @@ const DOCS = join(ROOT, 'src/pages/docs');
 const VELT = process.env.VELT ?? 'velt';
 const LANGS = new Set(['ts', 'vlt', 'tsx']);
 const filter = process.argv[2];
+const PACKAGES_DIR = process.env.VELT_PACKAGES;
+const PACKAGES = ['http-server', 'sqlite', 'postgres', 'redis'];
+
+/** The official packages a snippet imports (`import … from "sqlite"`, `"http-server/websocket"`). */
+export function packagesOf(source) {
+    const names = new Set();
+    for (const m of source.matchAll(/^\s*(?:import|export)\b[^"'\n]*?(?:from\s*)?["']([^"']+)["']/gm)) {
+        const name = m[1].split('/')[0];
+        if (PACKAGES.includes(name)) names.add(name);
+    }
+    return [...names].sort();
+}
+
+/** package.vlt for a snippet that uses `pkgs`, each by path from VELT_PACKAGES. */
+const manifest = (pkgs) =>
+    `import type { Package } from "velt/package";\n\nexport const pkg: Package = {\n  name: "example",\n  version: "0.1.0",\n  dependencies: {\n${pkgs
+        .map((p) => `    ${JSON.stringify(p)}: { path: ${JSON.stringify(join(PACKAGES_DIR, p).replace(/\\/g, '/'))} },`)
+        .join('\n')}\n  },\n};\n`;
 const KNOWN = JSON.parse(readFileSync(join(import.meta.dirname, 'check-examples-known.json'), 'utf8')).known;
 const knownOf = (s) => KNOWN.find((k) => s.origin.startsWith(`${k.file}:`) && s.source.split('\n')[0].trim() === k.first);
 
@@ -66,47 +90,6 @@ export function snippets(rel, text) {
     return { out, errors };
 }
 
-const DECLARATIONS = ['import ', 'export ', 'function ', 'function*', 'async function ', 'async function*', 'class ', 'abstract class ', 'struct ', 'interface ', 'type ', 'enum ', 'extend ', 'extend<', 'declare ', 'namespace '];
-
-function isDeclaration(first) {
-    if (DECLARATIONS.some((k) => first.startsWith(k))) return true;
-    // `const MAX = 100;`: a module constant, by naming convention.
-    const name = first.startsWith('const ') ? first.slice(6).split(/[ :=]/)[0] : '';
-    return name !== '' && /^[A-Z0-9_]+$/.test(name);
-}
-
-/** The program a snippet stands for. */
-export function complete(source) {
-    const lines = source.replace(/\n$/, '').split('\n');
-    if (lines.some((l) => /^(export )?(async )?function main\(/.test(l))) return source;
-    // An item starts at a non-blank line without indentation that doesn't close a bracket;
-    // column-0 comments belong to the item that follows them.
-    const items = [];
-    let comments = [];
-    for (const line of lines) {
-        const startsItem = line !== '' && !/^[ \t})\]]/.test(line) && !line.startsWith('//');
-        if (line.startsWith('//')) comments.push(line);
-        else if (startsItem || items.length === 0) {
-            items.push([...comments, line]);
-            comments = [];
-        } else {
-            items[items.length - 1].push(...comments, line);
-            comments = [];
-        }
-    }
-    let decls = '';
-    let stmts = '';
-    for (const item of items) {
-        const first = item.find((l) => !l.startsWith('//') && l.trim() !== '') ?? '';
-        const text = item.join('\n') + '\n';
-        if (isDeclaration(first)) decls += text;
-        else stmts += text;
-    }
-    if (!stmts.trim()) return `${decls}\nfunction main() {}\n`;
-    const body = stmts.replace(/\n$/, '').split('\n').map((l) => `  ${l}`).join('\n');
-    return `${decls}\nasync function main() {\n${body}\n}\n`;
-}
-
 function run(file) {
     return new Promise((resolve) => {
         const child = spawn(VELT, ['check', file], { cwd: join(file, '..') });
@@ -129,7 +112,8 @@ async function main() {
         problems.push(...errors);
         all.push(...out.filter((s) => !filter || s.origin.includes(filter)));
     }
-    const checked = all.filter((s) => s.expect !== 'skipped');
+    const needPackages = PACKAGES_DIR ? [] : all.filter((s) => s.expect !== 'skipped' && packagesOf(s.source).length > 0);
+    const checked = all.filter((s) => s.expect !== 'skipped' && !needPackages.includes(s));
     const dir = process.env.EXAMPLES_DUMP ?? mkdtempSync(join(tmpdir(), 'velt-examples-'));
     mkdirSync(dir, { recursive: true });
 
@@ -140,8 +124,13 @@ async function main() {
             const name = s.origin.replace(/[/.:]/g, '_');
             const sub = join(dir, name);
             mkdirSync(sub, { recursive: true });
-            const program = complete(s.source);
-            const file = join(sub, `main.${s.lang === 'tsx' ? 'tsx' : 'vlt'}`);
+            const program = s.source;
+            const pkgs = packagesOf(program);
+            if (pkgs.length) {
+                writeFileSync(join(sub, 'package.vlt'), manifest(pkgs));
+                mkdirSync(join(sub, 'src'), { recursive: true });
+            }
+            const file = join(sub, pkgs.length ? 'src' : '', `main.${s.lang === 'tsx' ? 'tsx' : 'vlt'}`);
             writeFileSync(file, program);
             const { code, output } = await run(file);
             const shown = () => program.split('\n').map((l, i) => `${String(i + 1).padStart(4)} | ${l}`).join('\n');
@@ -157,7 +146,8 @@ async function main() {
     await Promise.all(Array.from({ length: Math.max(1, availableParallelism()) }, worker));
     if (!process.env.EXAMPLES_DUMP) rmSync(dir, { recursive: true, force: true });
 
-    const skipped = all.length - checked.length;
+    const skipped = all.length - checked.length - needPackages.length;
+    if (needPackages.length) console.log(`${needPackages.length} example(s) import a package and were not checked: set VELT_PACKAGES to check them.\n`);
     if (known.length) console.log(`Known failures, not counted:\n  ${known.join('\n  ')}\n`);
     if (problems.length) {
         console.error(problems.join('\n\n'));

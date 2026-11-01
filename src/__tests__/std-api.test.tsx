@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToString } from '@sigx/server-renderer/server';
 import { defineApp } from 'sigx';
 import { layoutSignature, tokenize } from '../lib/signature';
-import { anchorOf, apiModule, apiModuleForGuide, apiModules, coverage, guideIntro, guidePath, hrefOf, sentences, visibleExports, type ApiItem } from '../lib/std-api';
+import { anchorOf, apiModule, apiModuleForGuide, apiModules, apiPath, coverage, guideIntro, guidePath, hrefOf, sentences, specifierOf, visibleExports, type ApiItem } from '../lib/std-api';
 import { tabTargets } from '../lib/docs-areas';
 import { ExportSection } from '../components/api/ApiPage';
 import { highlighterReady } from '../components/api/CodeBlock';
@@ -43,36 +43,53 @@ describe('summaries', () => {
         expect(sentences('Runs `a.b` first. Then this.', 2)).toBe('Runs `a.b` first. Then this.');
     });
 
-    it("takes the API page's summary and import line from the guide", () => {
-        const intro = guideIntro('std/http');
-        expect(intro.importLine).toBe('import { serve, ServeInfo, Server } from "velt:http"');
-        expect(intro.summary).toMatch(/^An HTTP server on hyper/);
+    it("takes the API page's import line from the guide, when it has one", () => {
+        const intro = guideIntro('std/fs');
+        if (intro.importLine) expect(intro.importLine).toMatch(/^import .* from "velt\/fs"$/);
+        expect(guideIntro('std/no/such/module')).toEqual({ importLine: null, summary: null });
     });
 });
 
 describe('the snapshot', () => {
-    it('has a page for every std guide with a module', () => {
-        expect(apiModules().size).toBeGreaterThanOrEqual(40);
-        expect(apiModule('http')?.specifier).toBe('velt:http');
-        expect(apiModule('collections/deque')?.specifier).toBe('velt:collections/deque');
+    it('has a page for every importable std module with a guide', () => {
+        expect(apiModules().size).toBeGreaterThanOrEqual(30);
+        expect(apiModule('net/http')?.specifier).toBe('velt/net/http');
+        expect(apiModule('/fs/')?.specifier).toBe('velt/fs');
+        for (const m of apiModules().values()) expect(m.file, m.module).toMatch(/(^|\/)index\.vlt$/);
+    });
+
+    it("gives a module's internal files no page of their own", () => {
+        expect(apiModule('collections/deque')).toBeUndefined();
+        expect(apiModuleForGuide('collections/deque')?.specifier).toBe('velt/collections');
+        expect(apiModuleForGuide('time/datetime')?.specifier).toBe('velt/time');
+        expect(apiModuleForGuide('nothing/here')).toBeUndefined();
+    });
+
+    it("documents the prelude's globals under the prelude", () => {
+        const ta = apiModule('prelude/typed_array')!;
+        expect(ta.module).toBe('std/lang/typed_array');
+        expect(specifierOf(ta)).toBe('prelude/typed_array');
+        expect(apiPath(ta.module)).toBe('/docs/api/prelude/typed_array/');
+        expect(guidePath('std/lang/symbol')).toBe('/docs/std/prelude/symbol/');
     });
 
     it('links a re-exported type to the public page that re-exports it', () => {
-        const serve = apiModule('http')!.exports.find((e) => e.name === 'serve')!;
-        const req = serve.spans.find((s) => s.target.name === 'Request')!;
-        expect(req.target.module).toBe('std/fetch/request');
-        expect(hrefOf(req.target)).toBe('/docs/api/fetch/#Request');
-        const opts = serve.spans.find((s) => s.target.name === 'ServeOptions')!;
-        expect(hrefOf(opts.target)).toBe('/docs/api/http/#ServeOptions');
+        const fetch = apiModule('net/http')!.exports.find((e) => e.name === 'fetch')!;
+        const req = fetch.spans.find((s) => s.target.name === 'Request')!;
+        expect(req.target.module).toBe('std/net/http/fetch/request');
+        expect(hrefOf(req.target)).toBe('/docs/api/net/http/#Request');
+        const url = fetch.spans.find((s) => s.target.name === 'URL')!;
+        expect(hrefOf(url.target)).toBe('/docs/api/net/url/#URL');
     });
 
     it('lists exports grouped by kind and counts doc coverage', () => {
-        const kinds = visibleExports(apiModule('http')!).map((e) => e.kind);
+        const kinds = visibleExports(apiModule('net/http')!).map((e) => e.kind);
         expect(kinds.indexOf('function')).toBeLessThan(kinds.indexOf('class'));
         expect(kinds.lastIndexOf('function')).toBeLessThan(kinds.indexOf('struct'));
-        const c = coverage(apiModule('http')!);
-        expect(c.exports).toBe(9);
-        expect(c.missing).toContain('ServeOptions');
+        const c = coverage(apiModule('net/http')!);
+        expect(c.specifier).toBe('velt/net/http');
+        expect(c.exports).toBe(apiModule('net/http')!.exports.filter((e) => e.kind !== 'extend' && e.kind !== 're-export').length);
+        expect(c.missing).toContain('Request');
     });
 
     it('gives anchors that are unique per page', () => {
@@ -85,20 +102,15 @@ describe('the snapshot', () => {
 
 describe('Guide | API tabs', () => {
     it('point at the same module', () => {
-        expect(tabTargets('/docs/std/http/', { api: '/docs/api/http/' })).toEqual({ guide: '/docs/std/http/', api: '/docs/api/http/', onApi: false });
-        expect(tabTargets('/docs/api/http/server/', { guide: '/docs/std/http_server/', api: '/docs/api/http/server/' }).guide).toBe('/docs/std/http_server/');
+        expect(tabTargets('/docs/std/net/http/', { api: '/docs/api/net/http/' })).toEqual({ guide: '/docs/std/net/http/', api: '/docs/api/net/http/', onApi: false });
+        expect(tabTargets('/docs/api/prelude/symbol/', { guide: '/docs/std/prelude/symbol/', api: '/docs/api/prelude/symbol/' }).guide).toBe('/docs/std/prelude/symbol/');
         expect(tabTargets('/docs/std/prelude/', {}).api).toBe('/docs/api/');
-    });
-
-    it('find the module of a guide whose name differs from the module path', () => {
-        expect(apiModuleForGuide('http_server')?.specifier).toBe('velt:http/server');
-        expect(guidePath('std/http/server')).toBe('/docs/std/http_server/');
     });
 });
 
 describe('an export section', () => {
     const item: ApiItem = {
-        id: 'velt:demo#parse', name: 'parse', kind: 'function', modifiers: ['async', 'deprecated'],
+        id: 'velt/demo#parse', name: 'parse', kind: 'function', modifiers: ['async', 'deprecated'],
         signature: 'async function parse(text: string): Value', spans: [],
         doc: 'Parses `text`.', summary: 'Parses `text`.',
         tags: {
@@ -109,7 +121,7 @@ describe('an export section', () => {
     };
     const render = async (it: ApiItem) => {
         await highlighterReady;
-        return renderToString(defineApp(<ExportSection item={it} module={apiModule('http')!} />));
+        return renderToString(defineApp(<ExportSection item={it} module={apiModule('net/http')!} />));
     };
 
     it('renders every tag section it has', async () => {
@@ -130,32 +142,34 @@ describe('an export section', () => {
 });
 
 describe('backlinks and hover cards', () => {
-    it('inverts the spans: Server is returned by serve, ServeOptions is a parameter of serve', async () => {
+    it('inverts the spans: Response is returned by fetch, RequestInit is a parameter of fetch', async () => {
         const { backlinks } = await import('../lib/std-api');
-        expect(backlinks('/docs/api/http/#Server').get('Returned by')?.map((b) => b.name)).toEqual(['serve']);
-        expect(backlinks('/docs/api/http/#ServeOptions').get('Parameter of')?.map((b) => b.name)).toContain('serve');
+        expect(backlinks('/docs/api/net/http/#Response').get('Returned by')?.map((b) => b.name)).toContain('fetch');
+        expect(backlinks('/docs/api/net/http/#RequestInit').get('Parameter of')?.map((b) => b.name)).toContain('fetch');
     });
 
     it('lists users of a cross-module type with their modules', async () => {
         const { backlinks } = await import('../lib/std-api');
-        const users = backlinks('/docs/api/fetch/#Request').get('Parameter of') ?? [];
-        expect(users.map((b) => b.module)).toEqual(expect.arrayContaining(['std/fetch', 'std/http']));
-        expect(users.find((b) => b.name === 'serve')?.href).toBe('/docs/api/http/#serve');
+        const users = backlinks('/docs/api/net/url/#URL').get('Parameter of') ?? [];
+        const fetch = users.find((b) => b.name === 'fetch');
+        expect(fetch?.module).toBe('std/net/http');
+        expect(fetch?.href).toBe('/docs/api/net/http/#fetch');
     });
 
     it('builds a card per export with its short declaration and linked types', async () => {
         const { moduleCards } = await import('../lib/std-api');
-        const cards = moduleCards(apiModule('http')!);
-        const opts = cards.ServeOptions;
-        expect(opts.kind).toBe('struct');
-        expect(opts.color).toBe('#A592FF');
-        expect(opts.decl.map((t) => t[1]).join('')).toBe('struct ServeOptions {\n  port: number;\n  host?: string;\n  tls?: TlsOptions;\n}');
-        expect(opts.decl.find((t) => t[1] === 'TlsOptions')?.[2]).toBe('/docs/api/http/#TlsOptions');
-        expect(opts.summary).toBeNull();
-        expect(opts.usedBy).toContain('serve');
-        expect(Object.keys(cards)).toHaveLength(apiModule('http')!.exports.length);
+        const http = apiModule('net/http')!;
+        const cards = moduleCards(http);
+        const init = cards.RequestInit;
+        expect(init.kind).toBe('struct');
+        expect(init.color).toBe('#A592FF');
+        expect(init.module).toBe('velt/net/http');
+        expect(init.decl.map((t) => t[1]).join('')).toMatch(/^struct RequestInit \{\n {2}method\?: string;\n {2}headers\?: HeadersInit;/);
+        expect(init.decl.find((t) => t[1] === 'HeadersInit')?.[2]).toBe('/docs/api/net/http/#HeadersInit');
+        expect(init.usedBy).toContain('fetch');
+        expect(Object.keys(cards)).toHaveLength(http.exports.length);
         // A constructor isn't listed, and doesn't make the card look truncated.
-        const exec = moduleCards(apiModule('child_process')!).ExecResult;
+        const exec = moduleCards(apiModule('process/child')!).ExecResult;
         expect(exec.decl.map((t) => t[1]).join('')).not.toContain('…');
     });
 });

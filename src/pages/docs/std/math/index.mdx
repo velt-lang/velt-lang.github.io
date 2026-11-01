@@ -1,0 +1,29 @@
+---
+title: "velt/math"
+description: "Integer helpers (clamp, gcd, lcm, isPrime, fib) and BigInt, arbitrary-precision integers. Float math is the prelude's Math."
+layout: "docs"
+category: "Standard library"
+order: 230
+---
+
+# velt/math
+
+`import { gcd, BigInt } from "velt/math"`. Integer helpers and arbitrary-precision integers. Float
+math (`Math.sqrt`, `Math.floor`, `Math.random`, …) is the prelude's `Math`, a global as in
+JavaScript.
+
+## Integer helpers
+
+`clamp(x, lo, hi)`, `gcd(a, b)`, `lcm(a, b)`, `isPrime(n)` and `fib(n)`, all on `i64`.
+
+```ts
+import { clamp, gcd, lcm, isPrime, fib } from "velt/math";
+
+console.log(clamp(15, 0, 10), gcd(12, 18), lcm(4, 6), isPrime(97), fib(50)); // 10 6 12 true 12586269025
+```
+
+## BigInt
+
+[`BigInt`](/docs/std/math/bigint/) is an integer of any size, like JavaScript's `BigInt`, with
+arithmetic as methods (`a.add(b)`, `a.mulIntAssign(10)`); `BigIntError` is what `BigInt.parse`
+throws for text that is not an integer.

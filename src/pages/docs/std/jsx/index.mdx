@@ -1,0 +1,160 @@
+---
+title: "velt/jsx"
+description: "Server-side rendering of TSX to HTML: renderToString, renderToStream with async components, escaping as react-dom escapes, and every HTML, SVG and MathML element type-checked."
+layout: "docs"
+category: "Standard library"
+order: 440
+---
+
+# velt/jsx
+
+`import { renderToString, renderToStream, raw, Element } from "velt/jsx"`. Server-side rendering
+of TSX to HTML. It is the default JSX provider: a `.tsx` module compiles its JSX to calls into
+[`velt/jsx/jsx-runtime`](/docs/std/jsx/jsx-runtime/) and sees its types as `JSX.Element`,
+`JSX.IntrinsicElements`, …, and this module renders the result. The language side (where JSX is
+allowed, components, generics) is in the [TSX reference](/docs/reference/tsx/); a walkthrough is
+in [Server-rendered pages](/docs/book/ssr-pages/).
+
+```tsx
+import { renderToString, raw, Element } from "velt/jsx";
+
+type Post = { id: i64; title: string };
+
+async function loadPosts(): Promise<Post[]> {
+  await sleep(1); // a database query
+  return [{ id: 1, title: "Hello <world>" }, { id: 2, title: "Streams & JSX" }];
+}
+
+async function Posts(): Promise<Element> {
+  const posts = await loadPosts();
+  return <ul>{posts.map((p) => <li key={p.id}>{p.title}</li>)}</ul>;
+}
+
+function Page(props: { title: string; draft?: bool }): Element {
+  return (
+    <html>
+      <head><title>{props.title}</title></head>
+      <body>
+        <h1 class="title" style={{ fontSize: 24, color: "teal" }}>{props.title}</h1>
+        <input disabled={props.draft ?? false} placeholder="search" />
+        <Posts />
+        {raw("<!-- end -->")}
+      </body>
+    </html>
+  );
+}
+
+console.log(await renderToString(<Page title="Posts" />));
+// <html><head><title>Posts</title></head><body><h1 class="title" style="font-size:24px;color:teal">Posts</h1>
+// <input placeholder="search"><ul><li>Hello &lt;world&gt;</li><li>Streams &amp; JSX</li></ul><!-- end --></body></html>
+```
+
+## Rendering
+
+- `renderToString(el: Element): Promise<string>`: the HTML, after awaiting the async components.
+- `renderToStringSync(el): string`: for a tree without async components (it throws
+  `RenderError` if the tree has one).
+- `renderToStream(el: Element): BodyStream`: the HTML as a streamed response body (like React's
+  `renderToReadableStream`), for `new Response(renderToStream(el), init)`. The markup above each
+  pending async component is sent before the component is awaited, so it reaches the client
+  while the data loads; rendering stops once the client has gone away.
+- `raw(html: string): Element`: markup inserted without escaping, the only way to emit HTML from
+  a string. Never pass it user input.
+- `Fragment` is `<>…</>`.
+
+A streamed page, served with the [HTTP server package](/docs/packages/http-server/): the head and
+the heading are sent at once, and the list follows when the query is done.
+
+```tsx ignore title="src/server.tsx"
+import { renderToStream } from "velt/jsx";
+import { serve } from "http-server";
+
+await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
+  return new Response(renderToStream(<Page title="Posts" />), {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+});
+```
+
+A complete app, with components shared with a TypeScript client, async data loading and streamed
+pages, is
+[`examples/apps/ssr-blog`](https://github.com/velt-lang/velt/tree/main/examples/apps/ssr-blog) in
+the Velt repository.
+
+## Rendering rules
+
+- **Escaping.** Text and attribute values are escaped as react-dom escapes them (`&amp;` `&lt;`
+  `&gt;` `&quot;` `&#x27;`), so user data cannot inject markup. Numbers render like `${n}`;
+  `true`, `false` and `null` children render nothing.
+- **Attributes.** A `true` attribute renders as the bare name (`<input disabled>`); `false`,
+  `null` and `undefined` leave it out, so `title={props.title}` with `title?: string` left out
+  renders no `title`. `key` is not rendered.
+- **`style`** takes a string or an object, `style={{ fontSize: 14, color: c }}`, rendered with
+  react-dom 19's rules: camelCase names in kebab-case (`font-size`; `WebkitX` and `msX` get their
+  `-webkit-` / `-ms-` prefix; custom properties such as `"--accent"` stay as written), `px` after
+  numbers except 0, custom properties and unitless properties (`lineHeight`, `opacity`, `zIndex`,
+  `flexGrow`, …), values trimmed, empty strings left out, declarations joined by `;`.
+- **Void elements** (`area base br col embed hr img input link meta source track wbr`) have no end
+  tag, and children of one are a compile error (`<br>x</br>`); any other empty element is written
+  `<x></x>`, also inside `<svg>` and `<math>`.
+- **Checked tags and attributes.** `IntrinsicElements` lists every HTML, SVG 2 and MathML Core
+  element with its attributes and the global ones, under their HTML, SVG and MathML names
+  (`class`, `for`, `tabindex`, `viewBox`, `clipPath`), so a misspelled tag or attribute is a
+  compile error. Hyphenated and namespaced attributes (`data-*`, `aria-*`, `http-equiv`,
+  `stroke-width`, `xlink:href`) and custom elements (`<my-widget>`) are not checked. MathML's
+  true/false attributes take strings (`stretchy="false"`). There are no event handler attributes
+  (`onclick`): velt/jsx renders on the server, and client-side frameworks bring their own
+  provider.
+
+## Components
+
+Components are functions `(props: P) => Element`; velt/jsx calls each one as its element is
+created. **Async components**, `(props: P) => Promise<Element>`, start then too, so siblings load
+concurrently; rendering awaits them in document order.
+
+**Generic components** (`function List<T>(props: { items: T[]; render: (x: T) => Child })`) take
+their type arguments on the opening tag, `<List<number> items={xs} render={(n) => n} />`, or
+infer them like TypeScript from the props and the children.
+
+## Errors
+
+A component that throws, or an async one that rejects, makes rendering throw a `RenderError`
+whose `component` names it (`"<module path>#<Name>"`) and whose `message` includes the original
+error. The first failure in document order wins. In `renderToStream`, a failure cuts the response
+off.
+
+```tsx
+import { renderToString, Element } from "velt/jsx";
+
+async function Profile(props: { id: i64 }): Promise<Element> {
+  if (props.id < 0) {
+    throw new Error(`no user ${props.id}`);
+  }
+  return <p>user {props.id}</p>;
+}
+
+try {
+  await renderToString(<main><Profile id={-1} /></main>);
+} catch (e) {
+  console.log(e.component, "|", e.message); // main#Profile | Component main#Profile failed: Error: no user -1
+}
+```
+
+## Types
+
+`Element` is what every JSX expression is; its fields are internal, and its markup comes from the
+render functions. `Child` (`Element | Element[] | string | i64 | f64 | bool | null`) is what may
+appear between tags, `AttrValue` (`string | i64 | f64 | bool | Style | null`) an attribute's
+value, `Style` (`Record<string, string | f64>`) the object form of `style`, and `Text`
+(`string | i64 | f64 | bool | null`) text the compiler folds into strings. `IntrinsicElements`
+and `ElementChildrenAttribute` are the JSX namespace's types; the attribute types they are made
+of are in [velt/jsx/attrs](/docs/std/jsx/attrs/).
+
+## Performance
+
+Elements render as they are created: a tree without async components is already its HTML, kept
+as a tree of template strings that each element takes over from its children instead of copying
+their markup, so rendering copies the markup once (`renderToStream` writes the pieces into the
+response). Static markup is precompiled to constant strings with the dynamic text and attributes
+folded in, and a list such as `{rows.map((r) => <tr>…</tr>)}` whose rows hold only markup and
+text is built from strings, as a hand-written template would be.

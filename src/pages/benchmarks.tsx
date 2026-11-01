@@ -21,7 +21,7 @@ export default component(() => () => (
             <span class="font-mono text-[13px] uppercase tracking-[0.08em] text-orange">Benchmarks</span>
             <h1 class="m-0 font-display text-[clamp(38px,4.4vw,56px)] font-bold leading-[1.05] tracking-[-0.03em]">Every number, with its method.</h1>
             <p class="m-0 text-lg text-fg-3">
-                The HTTP server and the Redis, Postgres and SQLite drivers are written in Velt and measured against Rust, Go, Bun and Node.
+                Velt web servers and the Redis, Postgres and SQLite clients, measured against Rust, Go, Bun and Node.
                 Each benchmark names its machine and links the results file in{' '}
                 <a href={`${REPO_URL}/tree/main/bench`} class="text-cyan hover:text-cyan-hover">velt-lang/velt/bench</a>, which has the
                 method, the raw data and how to run it yourself.

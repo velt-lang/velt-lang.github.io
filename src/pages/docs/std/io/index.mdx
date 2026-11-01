@@ -1,0 +1,54 @@
+---
+title: "velt/io"
+description: "IoError, the error every failed I/O operation throws, with Node's codes and messages, and the module of the ReadableStream globals."
+layout: "docs"
+category: "Standard library"
+order: 210
+---
+
+# velt/io
+
+`import { IoError } from "velt/io"`. The error type the I/O modules share: files
+([velt/fs](/docs/std/fs/)), sockets ([velt/net](/docs/std/net/)), child processes and
+WebSockets all throw `IoError`. The module also holds the [streams](/docs/std/io/streams/)
+(`ReadableStream` and its reader and controller), which are globals and need no import.
+
+```ts
+import { IoError } from "velt/io";
+import { readFileSync } from "velt/fs";
+
+try {
+  readFileSync("/definitely/not/here");
+} catch (e) {
+  console.log(e instanceof IoError, e.code); // true ENOENT
+  console.log(e.message); // ENOENT: no such file or directory, open '/definitely/not/here'
+}
+```
+
+## `IoError`
+
+`class IoError extends Error { code: string }`. `code` is a Node-style name, so code that checks
+`err.code === "ENOENT"` in Node reads the same in Velt:
+
+| Code | Meaning |
+|---|---|
+| `ENOENT` | no such file or directory |
+| `EACCES` | permission denied |
+| `EEXIST` | the file already exists |
+| `EISDIR`, `ENOTDIR`, `ENOTEMPTY` | a directory where a file was expected, the other way round, a directory that is not empty |
+| `EINVAL`, `EILSEQ` | an invalid argument, text that is not valid UTF-8 |
+| `ETIMEDOUT`, `ECONNREFUSED`, `ECONNRESET`, `EADDRINUSE`, `EPIPE` | network failures |
+| `EOF` | the stream ended before the read could finish |
+| `EBADF` | the socket, file stream, child process or WebSocket was closed |
+| `ENOTSUP`, `UNKNOWN` | not supported, anything else |
+
+A failed file-system call has Node's message: the code, the operating system's description, the
+system call and the path, `ENOENT: no such file or directory, open 'data.txt'`
+(`rename 'a' -> 'b'` for two paths, and `symlink 'target' -> 'path'`). A failed read or write of
+an opened file names no path (`EISDIR: illegal operation on a directory, read`). The system calls
+named are Node's: `open`, `read`, `write`, `scandir`, `stat`, `lstat`, `readlink`, `symlink`,
+`mkdir`, `unlink`, `rmdir`, `rm`, `rename`, `copyfile`. The path is the one you passed (Node on
+Windows prints the absolute path).
+
+A package that wraps a native library turns its failures into `IoError`s with
+[velt/native](/docs/std/native/).

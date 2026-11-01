@@ -14,7 +14,7 @@ import { PageActions } from '../islands/PageActions';
 import { docGroups, docSequence, type DocGroup, type DocLink } from '../lib/docs-nav';
 import { API_PATH, CATALOG_PATH, DIAGNOSTICS_PATH, areaOf, stdModuleOf, type Area } from '../lib/docs-areas';
 import { ApiSidebar } from '../components/api/ApiSidebar';
-import { anchorOf, apiModule, guidePath, sourceUrl, visibleExports } from '../lib/std-api';
+import { anchorOf, apiModule, guidePath, sourceUrl, specifierOf, visibleExports } from '../lib/std-api';
 import { DOCS_VERSION, EDIT_BASE, RELEASES_URL, REPO_URL } from '../lib/site';
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
@@ -113,7 +113,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
     const md = path === '/docs/' ? '/docs.md' : `${path.replace(/\/$/, '')}.md`;
     const hasMd = !path.startsWith(API_PATH);
     const stdModule = stdModuleOf(path);
-    // A std module's API page (/docs/api/http/), from the velt doc JSON.
+    // A std module's API page (/docs/api/net/http/), from the velt doc JSON.
     const api = path.startsWith(API_PATH) && stdModule ? apiModule(stdModule) : undefined;
     if (api) {
         headings.splice(0, headings.length, { id: 'exports', text: 'Exports', level: 2 },
@@ -133,7 +133,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                 <details class="docs-menu w-full border-b border-line min-[900px]:hidden">
                     <summary class="flex min-h-12 cursor-pointer items-center gap-2 text-sm font-medium text-fg-3">
                         <MenuIcon size={18} />
-                        {api ? <span class="font-mono">{api.specifier} exports</span> : nav.title}
+                        {api ? <span class="font-mono">{specifierOf(api)} exports</span> : nav.title}
                         <ChevronDown size={16} cls="menu-chev ml-auto transition-transform" />
                     </summary>
                     <nav aria-label="Documentation" class="pb-6 pt-2">
@@ -146,7 +146,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                         </p>
                     </nav>
                 </details>
-                <nav aria-label={api ? `${api.specifier} API` : 'Documentation'} class="sticky-col hidden max-w-[290px] flex-[1_1_240px] py-8 min-[900px]:block">
+                <nav aria-label={api ? `${specifierOf(api)} API` : 'Documentation'} class="sticky-col hidden max-w-[290px] flex-[1_1_240px] py-8 min-[900px]:block">
                     {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : <Sidebar area={area} current={path} />}
                 </nav>
 
@@ -156,7 +156,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                             <nav aria-label="Breadcrumb" class="flex flex-wrap gap-2 text-[13px] text-muted">
                                 <a href="/docs/std/" class="text-muted hover:text-cyan">Standard library</a>
                                 <span aria-hidden="true">/</span>
-                                <a href={guidePath(api.module)} class="text-fg hover:text-cyan">{api.specifier}</a>
+                                <a href={guidePath(api.module)} class="text-fg hover:text-cyan">{specifierOf(api)}</a>
                                 <span aria-hidden="true">/</span>
                                 <span class="text-fg" aria-current="page">API</span>
                             </nav>

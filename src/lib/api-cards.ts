@@ -7,7 +7,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Plugin } from 'vite';
-import { apiModule, apiModules, moduleCards, moduleSlug } from './std-api';
+import { apiModule, apiModules, guideSlug, moduleCards } from './std-api';
 
 export const CARDS_PATH = '/api-cards/';
 
@@ -15,7 +15,7 @@ export const CARDS_PATH = '/api-cards/';
 export function writeApiCards(outDir: string): number {
     let n = 0;
     for (const m of apiModules().values()) {
-        const file = join(outDir, CARDS_PATH, `${moduleSlug(m.module)}.json`);
+        const file = join(outDir, CARDS_PATH, `${guideSlug(m.module)}.json`);
         mkdirSync(dirname(file), { recursive: true });
         writeFileSync(file, JSON.stringify(moduleCards(m)));
         n++;

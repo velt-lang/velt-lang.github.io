@@ -1,40 +1,69 @@
 ---
-title: "velt:crypto"
-description: "import { sha256Hex, randomBytes } from \"velt:crypto\". SHA-256 and SHA-1, HMAC, secure randomness and constant-time comparison."
+title: "velt/crypto"
+description: "SHA-256 and SHA-1, HMAC, secure random bytes and integers, and constant-time comparison. The hashes run on the CPU's SHA instructions where it has them."
 layout: "docs"
 category: "Standard library"
 order: 110
 ---
 
-# velt:crypto
+# velt/crypto
 
-`import { sha256Hex, randomBytes } from "velt:crypto"`. SHA-256 and SHA-1, HMAC, secure
-randomness and constant-time comparison. The hashes are Velt code: in release builds on a CPU
-with SHA instructions (arm64, and x86-64 with SHA-NI) they run on them through
-[`velt:simd`](/docs/std/simd/#sha-instructions): on an Apple M4, 1.39 cycles per byte for SHA-1 and
-1.38 for SHA-256 (about 3 GB/s), as fast as Rust's `sha1` crate and faster than `sha2` (also for
-one-block messages), and HMAC with either is faster than Rust's `hmac`. Elsewhere (other CPUs,
-WebAssembly, debug builds, or with `VELT_SIMD_DISABLE=sha`) they use portable rounds, about
-360 MB/s for SHA-256. The randomness comes from the OS generator.
-
-- `sha256(data: u8[]): u8[]` (32 bytes), `sha256Hex(s: string)`.
-- `sha1(data)` (20 bytes), `sha1Hex(s)`: SHA-1 is for legacy protocols only.
-- `hmacSha256(key, data)`, `hmacSha1(key, data)`.
-- `randomBytes(n: usize): u8[]`.
-- `randomInt(min, max): i64`: uniform in `[min, max)`. Like Node, it throws `CryptoError` (with
-  Node's message) when `min` or `max` is not a safe integer, `max <= min`, or `max - min` is 2^48 or
-  more.
-- `timingSafeEqual(a, b): bool`.
+`import { sha256Hex, hmacSha256, randomBytes } from "velt/crypto"`. SHA-256 and SHA-1, HMAC,
+secure randomness and constant-time comparison: what a program needs to sign and check tokens and
+webhooks, store content by hash, or make session ids.
 
 ```ts
-import { sha256Hex, hmacSha256, randomBytes, randomInt, timingSafeEqual } from "velt:crypto";
-import { utf8Encode, hexEncode } from "velt:encoding";
+import { sha256Hex, hmacSha256, randomBytes, randomInt, timingSafeEqual } from "velt/crypto";
+import { utf8Encode, hexEncode } from "velt/encoding";
 
-function main() {
-  console.log(sha256Hex("abc"));
-  const mac = hmacSha256(utf8Encode("key"), utf8Encode("The quick brown fox jumps over the lazy dog"));
-  console.log(hexEncode(mac));
-  const die = randomInt(1, 7);
-  console.log(randomBytes(16).length, die >= 1 && die < 7, timingSafeEqual(mac, mac.clone()));
-}
+console.log(sha256Hex("abc")); // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+const mac = hmacSha256(utf8Encode("key"), utf8Encode("The quick brown fox jumps over the lazy dog"));
+console.log(hexEncode(mac)); // f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8
+const die = randomInt(1, 7);
+console.log(randomBytes(16).length, die >= 1 && die < 7, timingSafeEqual(mac, mac.clone())); // 16 true true
 ```
+
+## Hashes and HMAC
+
+- `sha256(data: u8[]): u8[]` (32 bytes) and `sha256Hex(s: string): string`, the lowercase hex
+  digest of the UTF-8 bytes of `s`.
+- `sha1(data)` (20 bytes) and `sha1Hex(s)`. SHA-1 is broken for collision resistance: use it only
+  where a protocol requires it (the WebSocket handshake, git object ids).
+- `hmacSha256(key, data)` and `hmacSha1(key, data)`: the HMAC as bytes. `hexEncode` and
+  `base64Encode` from [velt/encoding](/docs/std/encoding/) turn bytes into text.
+
+To check a signature, compare the bytes with `timingSafeEqual(a, b): bool`, which takes the same
+time wherever the inputs differ, so an attacker cannot find a valid signature byte by byte from
+response times. Inputs of different lengths return `false` at once (Node throws there):
+
+```ts
+import { hmacSha256, timingSafeEqual } from "velt/crypto";
+import { hexDecode, utf8Encode } from "velt/encoding";
+
+function verifyWebhook(secret: string, body: string, signatureHex: string): bool {
+  const expected = hmacSha256(utf8Encode(secret), utf8Encode(body));
+  return timingSafeEqual(expected, hexDecode(signatureHex));
+}
+
+const sig = "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8";
+console.log(verifyWebhook("key", "The quick brown fox jumps over the lazy dog", sig)); // true
+```
+
+## Randomness
+
+- `randomBytes(n: usize): u8[]`: `n` bytes from the operating system's secure generator.
+- `randomInt(min, max): i64`: uniform in `[min, max)`. Like Node, it throws `CryptoError` (with
+  Node's message) when `min` or `max` is not a safe integer, `max <= min`, or `max - min` is 2^48
+  or more.
+
+For random numbers where security does not matter (simulations, shuffles, tests with a seed), use
+[velt/random](/docs/std/random/); for ids, [`velt/random/uuid`](/docs/std/random/uuid/).
+
+## Performance
+
+The hashes are Velt code. In release builds on a CPU with SHA instructions (arm64, and x86-64 with
+SHA-NI) they run on them through [velt/simd](/docs/std/simd/): on an Apple M4, 1.39 cycles per
+byte for SHA-1 and 1.38 for SHA-256 (about 3 GB/s), as fast as Rust's `sha1` crate and faster
+than `sha2`, also for one-block messages; HMAC with either is faster than Rust's `hmac`. Elsewhere
+(other CPUs, WebAssembly, debug builds, or with `VELT_SIMD_DISABLE=sha`) they use portable rounds,
+about 360 MB/s for SHA-256.

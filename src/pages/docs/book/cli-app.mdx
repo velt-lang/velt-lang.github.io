@@ -17,12 +17,19 @@ runtime to install and no warm-up, which suits command-line tools.
 
 ## The program
 
-```ts
-import { ArgParser, CliError } from "velt:cli";
-import { readFileSync } from "velt:fs";
-import { args } from "velt:process";
+```sh
+velt new count
+cd count
+```
 
-class InputError extends Error {}
+The work goes into a module, `src/count.vlt`: `run` takes the arguments and returns the lines
+to print, so tests can call it without starting a process.
+
+```ts title="src/count.vlt"
+import { ArgParser, CliError } from "velt/cli";
+import { readFileSync } from "velt/fs";
+
+export class InputError extends Error {}
 
 function parser(): ArgParser {
   return new ArgParser("count", "Counts lines, words and bytes.")
@@ -72,25 +79,34 @@ export function run(argv: string[]): string[] {
   const out = [`${lines} ${words(text).length} ${text.length} ${file}`];
   return out.concat(topWords(text, opts.getInt("top") ?? 0));
 }
+```
 
-function main(): i32 {
-  try {
-    for (const line of run(args())) {
-      console.log(line);
-    }
-    return 0;
-  } catch (e) {                                   // e: CliError | InputError
-    console.error(`count: ${e.message}`);
-    return e instanceof CliError ? 2 : 1;
+`src/main.vlt` is the process around it: arguments in, lines out, errors to stderr with an
+exit code.
+
+```ts ignore title="src/main.vlt"
+import { CliError } from "velt/cli";
+import { args } from "velt/process";
+import { run } from "./count";
+
+try {
+  for (const line of run(args())) {
+    console.log(line);
   }
+} catch (e) {                                     // e: CliError | InputError
+  console.error(`count: ${e.message}`);
+  process.exit(e instanceof CliError ? 2 : 1);
 }
 ```
 
 ```sh
-$ velt build --release count.vlt
+$ velt build --release
+$ cat poem.txt
+the cat sat
+on the mat
 $ ./target/velt/count poem.txt --top 2
-2 7 28 poem.txt
-3 the
+2 6 23 poem.txt
+2 the
 1 cat
 $ ./target/velt/count --nope
 count: Unknown option '--nope'
@@ -110,32 +126,40 @@ Options:
   -t, --top <n>  Also print the n most common words (default: 0)
 ```
 
+`velt run -- poem.txt --top 2` builds and runs it in one step; the arguments follow `--`.
+
 ## How it fits together
 
-- **Arguments**: [`velt:cli`](/docs/std/cli/)'s `ArgParser` follows Node's `util.parseArgs`
+- **Arguments**: [`velt/cli`](/docs/std/cli/)'s `ArgParser` follows Node's `util.parseArgs`
   rules (`--x`, `--x=v`, `-abc`, `--no-x`, `--`). Builder calls chain; `parse` throws a
   `CliError` for an unknown option or a missing value, and `help()` renders the usage text.
-  `parse` takes the argument array, so the logic is testable without a process.
-- **Exit codes**: `main` returns an `i32`, the process's exit code. Here usage errors exit
-  with 2 and input errors with 1. `exit(code)` from [`velt:process`](/docs/std/process/) exits
-  immediately from anywhere.
+  `parse` takes the argument array, so the logic is testable without a process. `args()` from
+  [`velt/process`](/docs/std/process/) is the program's arguments, `process.argv.slice(2)` in
+  Node's terms.
+- **Top-level code**: `main.vlt`'s statements are the program, as in a Node script; there is no
+  `main` to write. A file with `function main()` and no top-level statements runs `main`
+  instead, and a `main(): i32` returns the exit code
+  ([scripts](/docs/reference/modules/#scripts-top-level-statements)).
+- **Exit codes**: `process.exit(code)` ends the program at once with that code. Here usage
+  errors exit with 2 and input errors with 1; a program that finishes normally exits with 0,
+  and an uncaught error prints `Uncaught …` and exits with 1.
 - **Typed errors**: `read` converts the `IoError` from `readFileSync` (whose `code` is a
-  Node-style name such as `ENOENT`) into an `InputError`, so `main`'s `catch` sees exactly
+  Node-style name such as `ENOENT`) into an `InputError`, so the `catch` sees exactly
   `CliError | InputError` and can choose the exit code with `instanceof`.
-- **Output**: `console.log` goes to stdout, `console.error` to stderr. For large outputs,
-  build the text first and print it once, or write in chunks with
-  [`velt:fs_stream`](/docs/std/fs_stream/).
-- **Input**: `readFileSync` reads a whole file; [`velt:stdin`](/docs/std/stdin/) reads standard
-  input line by line or at once; [`velt:fs_stream`](/docs/std/fs_stream/) reads large files in
-  chunks.
+- **Output**: `console.log` goes to stdout, `console.error` to stderr, and
+  `process.stdout.write(s)` writes without a newline. For large outputs, build the text first
+  and print it once, or write in chunks with [`velt/fs`](/docs/std/fs/stream/)'s streams.
+- **Input**: `readFileSync` reads a whole file; [`velt/process`](/docs/std/process/stdin/)'s
+  `stdin`, `readLine` and `readAll` read standard input line by line or at once;
+  [`openRead`](/docs/std/fs/stream/) reads large files in chunks.
 
 ## Testing
 
 Because `run` takes the argument array and returns lines, tests call it directly. In
-`tests/count.test.vlt`:
+`tests/count.test.vlt`, with the poem in `tests/data/poem.txt`:
 
-```ts ignore
-import { run } from "../src/main";
+```ts ignore title="tests/count.test.vlt"
+import { run } from "../src/count";
 
 export function test_counts() {
   assertEq(run(["tests/data/poem.txt", "-l"]), ["2"]);
@@ -151,23 +175,31 @@ export function test_usage_error() {
 }
 ```
 
-`velt test` runs every exported `test_*` function ([Testing](/docs/book/testing/)).
+```sh
+$ velt test
+running tests/count.test.vlt (ran: not cacheable, it uses the file system)
+ok test_counts
+ok test_usage_error
+
+test result: ok. 2 passed; 0 failed
+```
+
+The tests import `src/count.vlt`, not `src/main.vlt`: importing a module runs its top-level
+statements. `velt test` runs every exported `test_*` function ([Testing](/docs/book/testing/)).
 
 ## Running other programs
 
-[`velt:child_process`](/docs/std/child_process/) runs other programs and captures their output:
+[`velt/process/child`](/docs/std/process/child/) runs other programs and captures their output:
 
 ```ts
-import { execSync } from "velt:child_process";
+import { execSync } from "velt/process/child";
 
-function main() {
-  const r = execSync("git", ["rev-parse", "--short", "HEAD"]);
-  console.log(r.ok ? r.stdout.trim() : `git failed (${r.code})`);
-}
+const r = execSync("git", ["rev-parse", "--short", "HEAD"]);
+console.log(r.ok ? r.stdout.trim() : `git failed (${r.code})`);
 ```
 
 ## Shipping it
 
-`velt build --release` produces one executable with no runtime dependency beyond the system C
-library. Build on the oldest Linux distribution you target (glibc is linked dynamically). See
-[Platforms](/docs/tooling/platforms/).
+`velt build --release` produces one executable, `target/velt/count`, with no runtime
+dependency beyond the system C library. Build on the oldest Linux distribution you target
+(glibc is linked dynamically). See [Platforms](/docs/tooling/platforms/).

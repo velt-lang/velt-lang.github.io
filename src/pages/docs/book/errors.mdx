@@ -76,9 +76,12 @@ function connect(host: string): i64 throws Timeout | Refused {
 }
 ```
 
-The body may throw only what the clause allows (``` `connect` throws `Overflow`, which its `throws` clause does not allow ```), and callers see exactly the declared type. Function types
-carry error types too: `(x: string) => i64 throws ParseError`. A function type without
-`throws` accepts only functions that can't throw.
+The body may throw only what the clause allows (``` `connect` throws `Overflow`, which its
+`throws` clause does not allow ```), and callers see exactly the declared type. Function types
+carry error types too: `(x: string) => i64 throws ParseError` allows at most `ParseError`. A
+function type written without `throws`, as TypeScript writes them, throws what the functions
+stored into it throw, inferred over the whole program, so a `try` around a call through it
+catches them as in JavaScript ([Dynamic calls](/docs/reference/errors/#dynamic-calls)).
 
 ## Errors as values
 
@@ -132,14 +135,20 @@ nobody awaits reports its error as uncaught. See [Async and concurrency](/docs/b
 ## Panics are bugs
 
 Some failures are programming errors, not conditions to handle: an index out of bounds,
-integer division by zero, a failed `assert`, `unwrap()` on `null`, an explicit `panic(msg)`.
-These **panic**: the program prints `panic: <message> at file:line:col` and exits with code
-101. Panics can't be caught.
+integer division by zero, `unwrap()` on `null`, an explicit `panic(msg)`. These **panic**: the
+program prints `panic: <message> at file:line:col` and exits with code 101. Panics can't be
+caught. A failed `assert` is not a panic: it throws an `AssertionError`, as in Node, so a test
+runner reports it and goes on ([Testing](/docs/book/testing/)).
 
-An error that escapes `main` prints `Uncaught <Class>: <message> at file:line:col` and exits with
-code 1. It names the error's actual class, even when the function declared a base class such as
-`throws Error`, and the line it was thrown on; an error from the standard library (a missing
-file, say) points at the line of your code that made the call.
+An error that escapes the program prints `Uncaught …` with the message and the line it was
+thrown on, and exits with code 1. It names the error's actual class, even when the function
+declared a base class such as `throws Error`; an error from the standard library (a missing
+file, say) points at the line of your code that made the call:
+
+```
+Uncaught NotFound [Error]: no user 7 at main.vlt:3:3
+Uncaught IoError: ENOENT: no such file or directory, open 'config.json' at main.vlt:2:14
+```
 
 ## Designing errors for an application
 

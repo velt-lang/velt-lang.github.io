@@ -18,7 +18,7 @@ export const ModuleSwitcher = component<{ current: string; meta: string; modules
     let input: HTMLInputElement | null = null;
 
     const matches = () => {
-        const q = state.query.trim().toLowerCase().replace(/^velt:/, '');
+        const q = state.query.trim().toLowerCase().replace(/^velt[:/]/, '');
         return q ? props.modules.filter((m) => m.name.toLowerCase().includes(q)) : props.modules;
     };
     const close = (focus: boolean) => {

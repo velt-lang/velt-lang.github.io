@@ -8,7 +8,7 @@ import { ApiIndex } from '../../../components/api/ApiIndex';
 
 export const meta = {
     title: 'Standard library API',
-    description: 'API reference for every velt: module: exports, signatures and doc comments, generated from the standard library sources with velt doc.',
+    description: 'API reference for every velt/ module and the prelude globals: exports, signatures and doc comments, generated from the standard library sources with velt doc.',
     layout: 'docs',
 };
 

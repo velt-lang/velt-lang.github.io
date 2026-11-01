@@ -62,11 +62,13 @@ class Order {
   items: string[] = [];
 }
 
-function main() {
+function checkout() {
   const order = new Order();       // the only reference
   order.items.push("tea");
   console.log(order.items.length); // 1
 }                                  // freed here, deterministically
+
+checkout();
 ```
 
 **Calls pass the same object.** Passing an object to a function costs nothing: the function sees
@@ -109,22 +111,29 @@ to optimize. One rule follows from it: a call may not modify a value that anothe
 arguments can also reach.
 
 ```ts error
-function append(a: i64[], b: i64[]) {
+function append(a: number[], b: number[]) {
   for (const x of b) {
     a.push(x);
   }
 }
 
-function main() {
-  const xs = [1, 2];
-  append(xs, xs);           // error: this call may modify `xs` through another argument
-}
+const xs = [1, 2];
+append(xs, xs);
+```
+
+```
+main.vlt:8:12: error: cannot use `xs` here: this call may modify it through another argument
+  --> main.vlt:8:8: may be modified through this argument
+  = note: a value the callee may modify must not be reachable through another argument of the same call; use a separate variable or `.clone()`
 ```
 
 That rule is what lets the compiler assume no aliasing for values with one owner, as Rust does,
 and generate code that keeps values in registers. Two variables that refer to the same array
 (`const ys = xs; append(xs, ys)`) are fine and behave as in JavaScript: that array type is then
-reference-counted and the compiler makes no such assumption for it.
+reference-counted and the compiler makes no such assumption for it. Variables destructured
+from distinct parts of one value are separate too: after `const [a, b] = pair`,
+`append(a, b)` compiles; `append(pair[0], a)` does not
+([Exclusive access](/docs/reference/memory/#exclusive-access)).
 
 ## Sharing across tasks
 
@@ -169,14 +178,14 @@ console.log(ping("db:5432"));
 ## Reference cycles
 
 Reference counting can't free a cycle: if `a.next = b` and `b.next = a`, neither count reaches
-zero, and both objects stay allocated until the program exits. Break the cycle by hand (set one
-link to `null`) when you are done with such a structure. **Planned**
-([semantics stage 3](https://github.com/velt-lang/velt/blob/main/docs/internals/design/semantics.md#reference-cycles--without-a-collector)):
-`weak` references for back-pointers (`parent: weak Node | null`) and a compile-time warning
-when a type can form a reference cycle. There is still no cycle collector.
-
-The design and its rationale are in
-[JavaScript semantics without a GC](https://github.com/velt-lang/velt/blob/main/docs/internals/design/semantics.md).
+zero, and both objects stay allocated until the program exits. That includes an object holding
+a closure that captured it (`this.onChange = () => this.render()`). Break the cycle by hand
+(set one link to `null`) when you are done with such a structure, or hold the back-pointer in a
+`WeakRef`, or the association in a `WeakMap` or `WeakSet`: they don't keep their targets
+alive, and let go of them the moment the last ordinary reference goes (Node waits for a
+garbage collection) ([prelude](/docs/std/prelude/)). **Planned**: `weak` fields for
+back-pointers (`parent: weak Node | null`) and a compile-time warning when a type can form a
+reference cycle. There is no cycle collector.
 
 ## Performance
 

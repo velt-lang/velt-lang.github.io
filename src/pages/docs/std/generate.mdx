@@ -1,0 +1,195 @@
+---
+title: "velt/generate"
+description: "The source generator API: write, in Velt, the body of a generic function for each type a program uses it with, at compile time and without reflection at run time."
+layout: "docs"
+category: "Standard library"
+order: 175
+---
+
+import { Callout } from '@/components/mdx';
+
+# velt/generate
+
+`import { InstanceRequest, Output } from "velt/generate"`. What a
+[source generator](/docs/reference/source-generators/) is written with. A library declares a
+generic function without a body, and a generator, a Velt function that reads a description of
+the types, writes the body for each type the program uses the function with. It is how a library
+serializes, compares or prints values of your types without you writing code per type, and
+without reflection at run time: std's own `JSON.stringify` and `JSON.parse<T>` are generated this
+way, on nothing a package could not use.
+
+<Callout kind="warn" title="Experimental">
+Source generators work, and std depends on them, but the API may still change between releases.
+</Callout>
+
+## A generator in three files
+
+A library `show` that writes any value as text: the type's name, then its fields in order, with
+strings quoted.
+
+The library declares the function. `declare generated("./gen")` names the generator module as an
+import would: a relative path, a module of a package (`some-package/gen`), or a std module.
+
+```ts ignore title="show/index.vlt"
+/** `value` as text: the type's name, then its fields in order; strings quoted. */
+export declare generated("./gen") function show<T>(value: T): string;
+```
+
+The generator module exports a function of the same name, which gets the instance the program
+needs (an `InstanceRequest`) and writes its body into an `Output`:
+
+```ts title="show/gen.vlt"
+import { InstanceRequest, Output } from "velt/generate";
+
+export function show(req: InstanceRequest, out: Output): void {
+  const t = req.model.type(req.args[0]); // the type `T` of this instance
+  const v = req.params[0]; // the name of the parameter `value`
+  if (t.kind == "number" || t.kind == "boolean") {
+    out.line(`return \`\${${v}}\`;`);
+  } else if (t.kind == "string") {
+    out.line(`return "'" + ${v} + "'";`);
+  } else if (t.kind == "array") {
+    const elem = out.instance("show", [t.args[0]]); // `show` of the element type
+    out.line(`const parts: string[] = [];`);
+    out.line(`for (const e of ${v}) { parts.push(${elem}(e)); }`);
+    out.line(`return "[" + parts.join(", ") + "]";`);
+  } else if (t.kind == "class" || t.kind == "struct") {
+    out.line(`let s = ${out.literal(t.display + " {")};`);
+    let sep = " ";
+    for (const f of t.fields) {
+      const field = out.instance("show", [f.type]);
+      out.line(`s += ${out.literal(sep + f.name + ": ")} + ${field}(${v}.${f.name});`);
+      sep = ", ";
+    }
+    out.line(`return s + " }";`);
+  } else {
+    out.error(`show cannot write a ${t.kind}`, t.at);
+    out.line(`return "";`);
+  }
+}
+```
+
+The program calls `show` as any generic function. It never names the generator:
+
+```ts ignore title="main.vlt"
+import { show } from "./show";
+
+class Point {
+  x: f64 = 1.5;
+  y: f64 = -2;
+}
+
+class Shape {
+  name: string = "triangle";
+  corners: Point[] = [new Point(), new Point()];
+}
+
+console.log(show(new Point())); // Point { x: 1.5, y: -2 }
+console.log(show(new Shape())); // Shape { name: 'triangle', corners: [Point { x: 1.5, y: -2 }, Point { x: 1.5, y: -2 }] }
+console.log(show([1, 2, 3])); // [1, 2, 3]
+```
+
+`velt run main.vlt` builds the generator, runs it for `show<Point>`, `show<Shape>`,
+`show<number[]>` and the instances they ask for (`show<string>`, `show<Point[]>`, …), checks the
+code it wrote with the rest of the program, and runs the program. Each type gets its own function,
+also through generic code: a `show<T>` call in a function that is called with `Point` needs
+`show<Point>`.
+
+A type the generator refuses, such as a `Map` in `show(new Map<string, i64>())`, is reported at the
+call that needs it, as any compile error:
+
+```text
+main.vlt:4:13: error: show cannot write a map
+```
+
+## `InstanceRequest`
+
+What the compiler asks for: the body of one instance.
+
+- `fn`: the generated function's name.
+- `args`: the instance's type arguments, as ids into the model.
+- `params`: the names of the instance's parameters, in order. Generated code refers to them by
+  these names.
+- `model`: a `Model` of every type the instance reaches. `model.type(id)` returns a `Type`. Types
+  refer to each other by id, so recursive types are fine.
+
+## `Type`, `Field` and the other parts of the model
+
+A `Type` has:
+
+- `kind`: `number`, `boolean`, `string`, `void`, `never`, `symbol`, `literal`, `enum`, `array`,
+  `tuple`, `option`, `union`, `object`, `class`, `struct`, `interface`, `map`, `record`, `set`,
+  `shared`, `date`, `function`, `generator`, `any`, `unknown`, `promise` or `opaque`.
+- `display`, the type as messages show it (`User`, `number[]`); `repr`, the number type (`f64`,
+  `i32`, …); `literal`, a literal type's value.
+- `args`: the element (`array`, `set`), payload (`option`, `promise`, `shared`), key and value
+  (`map`, `record`) or tuple elements, by kind; `arms`, a union's members in order.
+- `fields`: `Field`s, each with `name`, `type`, `optional`, `readonly`, `isPrivate`,
+  `isEsPrivate`, `hasDefault`, `isGetter`, `stdPrivate` and `via` (for a field an extension of the
+  type adds to its objects).
+- `members`: an enum's `EnumMember`s (`name`, `value`); `base` and `subclasses` of a class;
+  `methods`, the `Method`s (`name`, `params`, `ret`) that std's operations call by name, such as
+  `toJSON` and `toString`.
+- Flags for the edge cases a serializer meets: `mayBeProxy` (a typed `Proxy` may stand for a value
+  of it), `hasProperties`, `classValue`, `dynamic` (`any`, `unknown`, `object`), `privateField` (a
+  std type's runtime state), and `ctorAccess` and `factories` for a class whose constructor is
+  `private` or `protected`.
+- `at`: where the type is declared, for `out.error`.
+
+An optional field (`legs?: i32`) reads as `T | undefined`: the model gives `T` and
+`optional: true`, so generated code tests the value before passing it on. The reference lists
+the rest of the model's rules ([writing a generator](/docs/reference/source-generators/)).
+
+## `Output`
+
+- `line(code)` and `body(code)` write the body; the compiler writes the function's signature.
+- `helper(code)` adds a top-level declaration next to the instance, named with `fresh("name")`,
+  a name no other instance uses.
+- `instance(fn, [typeIds])`: the name of the function generated for another instance of a
+  generated function of the same generator module, which is generated in the same run.
+- `typeName(id)` writes a type of the model in generated code, also one that is not exported, is
+  declared inside a function or has no name.
+- `literal(s)` writes a string as a Velt string literal; `quote(s)`, exported on its own, does the
+  same outside an `Output`.
+- `error(message, at, labels)` reports an error at a type's or a field's `at` (-1: at each call
+  that needs the instance). The first line of `message` is the error, each further line a note;
+  `labels` (optional) are `[at, text]` pairs that point at other places of the model. The program
+  is then not built.
+
+Compute names from `out` into variables before writing a line that uses them
+(`const field = out.instance(…); out.line(…)`): one call cannot both change `out` and read it in
+an argument.
+
+`serve`, `Session` and `GeneratorEntry` are the host's loop, which the compiler builds into the
+generator program; a generator does not call them.
+
+## What a generator may do
+
+A generator is a pure function of its request: it may not read files, the network, the
+environment, the clock or random numbers, start processes or call native code. The compiler
+checks this from everything the generator's code can reach, and reports what it found:
+
+```text
+main.vlt:2:13: error: the generator `./gen` failed
+  = note: error: a source generator cannot reach the clock: it runs at compile time and gets everything from its request
+```
+
+That is what lets the compiler cache what a generator writes, and what makes running a
+dependency's generator at compile time safe. Generators are built once and cached, and so is
+their output: a build that needs the same code for the same types reuses it. Changing a
+generator, or a type it was given, runs it again.
+
+Generated code that does not compile is reported at the call that needed it, with the line of
+the generated code in a note. The `show` generator above passes an optional field on without
+testing it, so a class with `legs?: i64` gets:
+
+```text
+main.vlt:7:13: error: the code generated for `show<Pet>` by `./gen` does not compile (a bug in the generator)
+  = note: <generated>/show/1.vlt:6:36: mismatched types
+  = note:     s += ", legs: " + __gen_r1_n2_show(value.legs);
+  = note: expected i64, found i64 | undefined
+```
+
+What generated code may use (the declaring module's scope, the private members of the types it
+was asked for, `__construct`, `__arm` and `__member`) is in the
+[reference](/docs/reference/source-generators/).

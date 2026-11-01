@@ -11,7 +11,8 @@ const walk = (dir: string): string[] =>
         return statSync(f).isDirectory() ? walk(f) : n.endsWith('.mdx') ? [f] : [];
     });
 const pages = walk(ROOT)
-    .map((f) => relative(ROOT, f).replace(/\\/g, '/').replace(/\.mdx$/, ''))
+    // A folder module's page is its index.mdx: net/http/index.mdx is `net/http`.
+    .map((f) => relative(ROOT, f).replace(/\\/g, '/').replace(/\.mdx$/, '').replace(/\/index$/, ''))
     .filter((p) => p !== 'index');
 const listed = CATEGORIES.flatMap((c) => c.modules.map(([page]) => page));
 

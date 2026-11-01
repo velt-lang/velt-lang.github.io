@@ -1,55 +1,89 @@
 ---
-title: "velt:cli"
-description: "import { ArgParser } from \"velt:cli\". Argument parsing with Node util.parseArgs rules and a commander-style builder. parse takes the argv array, so it is easy to test."
+title: "velt/cli"
+description: "Command-line argument parsing with Node util.parseArgs rules and a commander-style builder: flags, options with defaults, positionals and generated help."
 layout: "docs"
 category: "Standard library"
 order: 60
 ---
 
-# velt:cli
+# velt/cli
 
-`import { ArgParser } from "velt:cli"`. Argument parsing with Node `util.parseArgs` rules and a
-commander-style builder. `parse` takes the argv array, so it is easy to test. Pass it `args()`
-from `velt:process`.
-
-- `new ArgParser(program, description = "")`: every parser has `-h, --help`, which you can
-  redeclare.
-- Builder methods change the parser and return it (the same object), so they chain:
-  - `.flag(name, { short?, help? })`
-  - `.option(name, { short?, default?, help?, valueName? })`
-  - `.positional(name, help = "")`
-- `parse(args): ParsedArgs`: throws `CliError` for an unknown option, a missing value, or a
-  value given to a flag. `help(): string` returns aligned usage text.
-- Accepted syntax: `--x`, `--x=v`, `--x v`, `--no-x`, `-abc`, `-o v`, `-ov`, `--` and `-`.
-- `ParsedArgs`:
-  - `positionals`, `flag(name)`
-  - `get(name): string | null`: the last value, else the default, else the named positional
-  - `getOr(name, d)`, `getAll(name)`, `has(name)`
-  - `getInt(name): i64 | null`: throws `CliError` if the value is not an integer
+`import { ArgParser } from "velt/cli"`. Command-line argument parsing with Node `util.parseArgs`
+rules and a commander-style builder. `parse` takes the argument array, so a parser is easy to
+test; in a program, pass it `args()` from [`velt/process`](/docs/std/process/).
 
 ```ts
-import { ArgParser } from "velt:cli";
-import { args } from "velt:process";
+import { ArgParser } from "velt/cli";
+import { args, exit } from "velt/process";
 
-function main(): i32 {
-  const p = new ArgParser("resize", "Resizes images.")
-    .flag("verbose", { short: "v", help: "Print progress" })
-    .option("width", { short: "w", default: "800", help: "Target width", valueName: "px" })
-    .positional("input", "Image to resize");
-  try {
-    const a = p.parse(args());
-    if (a.flag("help")) {
-      console.log(p.help());
-      return 0;
-    }
-    console.log(a.flag("verbose"), a.getInt("width"), a.get("input"));
-  } catch (e) {
-    console.error(e.message);
-    return 2;
+const parser = new ArgParser("resize", "Resizes images.")
+  .flag("verbose", { short: "v", help: "Print progress" })
+  .option("width", { short: "w", default: "800", help: "Target width", valueName: "px" })
+  .positional("input", "Image to resize");
+
+try {
+  const a = parser.parse(args());
+  if (a.flag("help")) {
+    console.log(parser.help());
+    exit(0);
   }
-  return 0;
+  console.log(a.flag("verbose"), a.getInt("width"), a.get("input"));
+} catch (e) {
+  console.error(e.message); // Unknown option '--hieght'
+  exit(2);
 }
 ```
 
-Notes: positionals are optional and extra ones are allowed; check `positionals.length`. An
-option's value is taken verbatim even if it starts with `-`.
+`resize -v --width=1024 photo.jpg` prints `true 1024 photo.jpg`; `resize --help` prints the
+usage text:
+
+```text
+Usage: resize [options] [input]
+
+Resizes images.
+
+Arguments:
+  input             Image to resize
+
+Options:
+  -h, --help        Show this help
+  -v, --verbose     Print progress
+  -w, --width <px>  Target width (default: 800)
+```
+
+## Declaring arguments
+
+`new ArgParser(program, description = "")` starts a parser. Every parser has `-h, --help`,
+which you can declare again to change it. The builder methods change the parser and return it,
+so they chain:
+
+- `.flag(name, { short?, help? })`: a boolean switch.
+- `.option(name, { short?, default?, help?, valueName? })`: an option that takes a value.
+  `valueName` is the placeholder in the help text (default `value`).
+- `.positional(name, help = "")`: a named positional argument.
+
+The accepted syntax is Node's: `--x`, `--x=v`, `--x v`, `--no-x` (a flag set to false), `-abc`
+(three short flags), `-o v`, `-ov`, `--` (everything after it is positional) and `-` (a
+positional).
+
+## Reading the result
+
+`parse(args)` returns a `ParsedArgs`:
+
+- `flag(name): bool`.
+- `get(name): string | null`: the option's last value, else its default, else the positional of
+  that name.
+- `getOr(name, fallback)`, `getAll(name)` (every value of a repeated option), `has(name)`.
+- `getInt(name): i64 | null`: the value as an integer.
+- `positionals: string[]`: every positional argument in order.
+
+Positionals are optional and extra ones are allowed: check `positionals.length` when your program
+needs a number of them. An option's value is taken as it is, even when it starts with `-`.
+
+## Errors
+
+`parse` throws `CliError` for an unknown option (`Unknown option '--hieght'`), a missing value
+(`Option '--width' requires a value`) and a value given to a flag (`Option '--verbose' does not
+take a value`). `getInt` throws `CliError` when the value is not an integer (`Option 'width' expects an
+integer, got 'abc'`). Print the message and
+exit with code 2, as the example does.

@@ -23,27 +23,50 @@ async function fetchPrice(item: string): Promise<f64> {
   return item.length as f64 * 1.5;
 }
 
-async function main() {
-  const tea = fetchPrice("tea");                  // starts now
-  const coffee = fetchPrice("coffee");            // runs concurrently with tea
-  console.log(await tea, await coffee);           // 4.5 9, after ~30 ms, not ~45
+const tea = fetchPrice("tea");                  // starts now
+const coffee = fetchPrice("coffee");            // runs concurrently with tea
+console.log(await tea, await coffee);           // 4.5 9, after ~30 ms, not ~45
 
-  const all = await Promise.all(["tea", "milk"].map((i) => fetchPrice(i)));
-  console.log(all);                               // [ 4.5, 6 ]
-}
+const all = await Promise.all(["tea", "milk"].map((i) => fetchPrice(i)));
+console.log(all);                               // [ 4.5, 6 ]
 ```
 
 - `await f()` runs `f` in place: no task, no allocation. Use it whenever you need the result
   right away.
 - `const p = f()` starts `f` now; it runs until its first `await`, then concurrently with you.
   It costs one small allocation.
-- `f();` on its own line is a compile error, "floating promise": either `await` it or
-  `spawn` it. In JavaScript a forgotten `await` silently drops errors.
+- Inside a function, `f();` on its own line is a compile error, "floating promise": either
+  `await` it or `spawn` it. In JavaScript a forgotten `await` silently drops errors.
 - A promise you never await still runs to completion, and the program waits for it before
   exiting, like Node.
 
 Started promises run on their creator's task, one at a time, like JavaScript's single thread.
 That is why they need no locks.
+
+## Top-level `await`
+
+The examples on this page are programs: their statements run from the top, and `await` works
+there as in a Node module. Among the top-level statements of the file a program starts from,
+a call on its own line starts the promise as Node does, and the program waits for it before
+exiting:
+
+```ts
+async function render(page: string): Promise<void> {
+  await sleep(5);
+  console.log("rendered", page);
+}
+
+render("home");               // starts now, as in Node
+console.log("started");
+await render("about");        // top-level await
+// started
+// rendered home
+// rendered about
+```
+
+A rejection nobody handles ends the program with exit code 1. Top-level `await` is for the
+file a program starts from; an imported module's statements run before the scheduler starts
+([Scripts](/docs/reference/modules/#scripts-top-level-statements)).
 
 ## Timeouts with `Promise.race`
 
@@ -73,13 +96,11 @@ async function priceWithin(item: string, ms: i64): Promise<f64> throws OutOfStoc
   return await Promise.race([price(), timeout()]);
 }
 
-async function main() {
-  console.log(await priceWithin("water", 100));               // 7.5, and the timer is dropped
-  try {
-    await priceWithin("a very long name", 10);
-  } catch (e) {
-    console.log(e.message);                                   // no price within 10 ms
-  }
+console.log(await priceWithin("water", 100));               // 7.5, and the timer is dropped
+try {
+  await priceWithin("a very long name", 10);
+} catch (e) {
+  console.log(e.message);                                   // no price within 10 ms
 }
 ```
 
@@ -103,23 +124,21 @@ async function fetchPrice(item: string): Promise<f64> throws OutOfStock {
   return 4.5;
 }
 
-async function main() {
-  try {
-    await Promise.all([fetchPrice("tea"), fetchPrice("caviar")]);
-  } catch (e) {                                   // e: OutOfStock
-    console.log("all failed:", e.message);
-  }
+try {
+  await Promise.all([fetchPrice("tea"), fetchPrice("caviar")]);
+} catch (e) {                                   // e: OutOfStock
+  console.log("all failed:", e.message);
+}
 
-  const results = await Promise.allSettled([fetchPrice("tea"), fetchPrice("caviar")]);
-  for (const r of results) {
-    switch (r.status) {
-      case "fulfilled":
-        console.log("ok", r.value);               // ok 4.5
-        break;
-      case "rejected":
-        console.log("failed:", r.reason.message); // failed: no caviar today
-        break;
-    }
+const results = await Promise.allSettled([fetchPrice("tea"), fetchPrice("caviar")]);
+for (const r of results) {
+  switch (r.status) {
+    case "fulfilled":
+      console.log("ok", r.value);               // ok 4.5
+      break;
+    case "rejected":
+      console.log("failed:", r.reason.message); // failed: no caviar today
+      break;
   }
 }
 ```
@@ -128,6 +147,43 @@ async function main() {
 running to completion; their results and any later rejections are dropped.
 `Promise.allSettled` reports each result as a discriminated union. `Promise.any` gives the first
 success, or an `AggregateError`.
+
+## Task scopes and timeouts
+
+`taskScope` from [`velt/task`](/docs/std/task/) is structured concurrency: it settles only once
+its body and every task it started with `scope.spawn` have finished, and fails with the first
+error, which aborts `scope.signal` so the siblings stop. `timeout(p, ms)` rejects with a
+`TimeoutError` when `p` is too slow.
+
+```ts
+import { AbortError, AbortSignal, TaskScope, taskScope, timeout, TimeoutError } from "velt/task";
+
+async function fetchPart(n: i64, signal: AbortSignal): Promise<i64> throws AbortError {
+  for (let i = 0; i < n; i++) {
+    signal.throwIfAborted();                 // stops once a sibling failed
+    await sleep(2);
+  }
+  return n * 10;
+}
+
+const total = await taskScope(async (scope: TaskScope<AbortError>): Promise<i64> throws AbortError => {
+  const a = scope.spawn(fetchPart(3, scope.signal));
+  const b = scope.spawn(fetchPart(5, scope.signal));
+  return (await a) + (await b);
+});
+console.log(total);                          // 80
+
+try {
+  await timeout(sleep(1000), 20);
+} catch (e) {
+  console.log(e instanceof TimeoutError);    // true
+}
+```
+
+Cancellation is cooperative, with `AbortController` and `AbortSignal` as in TypeScript: code
+that takes a signal checks it, and a started promise is never cancelled behind the program's
+back, so `finally` blocks and `using` disposal run as usual
+([Cancellation](/docs/reference/async/#cancellation)).
 
 ## Using every core with `spawn`
 
@@ -143,14 +199,12 @@ function sumOfSquares(from: i64, to: i64): i64 {
   return total;
 }
 
-async function main() {
-  const chunks: Promise<i64>[] = [];
-  for (let c = 0; c < 4; c++) {
-    chunks.push(spawn(async () => sumOfSquares(c * 1000000, (c + 1) * 1000000)));
-  }
-  const parts = await Promise.all(chunks);       // four cores at once
-  console.log(parts.reduce((a, b) => a + b, 0)); // 7999999
+const chunks: Promise<i64>[] = [];
+for (let c = 0; c < 4; c++) {
+  chunks.push(spawn(async () => sumOfSquares(c * 1000000, (c + 1) * 1000000)));
 }
+const parts = await Promise.all(chunks);       // four cores at once
+console.log(parts.reduce((a, b) => a + b, 0)); // 7999999
 ```
 
 ## Sharing state between tasks
@@ -160,7 +214,12 @@ Spawned tasks run in parallel, so the compiler doesn't let them modify captured 
 the `spawn` it reaches), and an object a task captures is copied for it (a structured clone)
 when the rest of the program still uses it. Data races are compile errors. An async closure that
 never leaves its task (it is only called, stored or returned, never spawned or sent) may change
-what it captured, as in JavaScript. Share state between tasks explicitly:
+what it captured, as in JavaScript. Module state is the exception that works as in Node: a
+module-level `let` (also one among a program's top-level statements that a closure assigns) is
+one per process, and every task may update it without losing updates (`let n = 0;` and
+`spawn(async () => { n++; })` a hundred times gives 100;
+[module state](/docs/reference/variables/#module-state)). Share other state between tasks
+explicitly:
 
 - `shared(x)` creates an atomically reference-counted value: tasks that capture it refer to the
   same value. On 64-bit integers, `add`, `get` and `set` are atomic, and `add(n)` returns the new
@@ -171,21 +230,19 @@ what it captured, as in JavaScript. Share state between tasks explicitly:
   value (or pass `o.clone()` to keep your own).
 
 ```ts
-async function main() {
-  const seen = shared(new Mutex<string[]>([]));
-  const done = shared(0);
-  const workers: Promise<void>[] = [];
-  for (let w = 0; w < 3; w++) {
-    workers.push(spawn(async () => {
-      seen.with((v) => {
-        v.push(`worker ${w}`);
-      });
-      done.add(1);
-    }));
-  }
-  await Promise.all(workers);
-  console.log(done.get(), seen.with((v) => v.length));   // 3 3
+const seen = shared(new Mutex<string[]>([]));
+const done = shared(0);
+const workers: Promise<void>[] = [];
+for (let w = 0; w < 3; w++) {
+  workers.push(spawn(async () => {
+    seen.with((v) => {
+      v.push(`worker ${w}`);
+    });
+    done.add(1);
+  }));
 }
+await Promise.all(workers);
+console.log(done.get(), seen.with((v) => v.length));   // 3 3
 ```
 
 A `with` callback is synchronous: keep it short and don't `await` inside it. What it hands
@@ -194,14 +251,34 @@ copy. A promise started from the value runs after the lock is released, so it ge
 too, and one that would change the value is a compile error: take a copy out, await, and put
 the result back with another `with`.
 
+For a map that many tasks read and write at once, [`ConcurrentMap`](/docs/std/collections/concurrent_map/)
+from `velt/collections` takes `u64` or `string` keys and needs no `Mutex`: readers never slow
+each other, and a writer latches one node, not the whole map.
+
+```ts
+import { ConcurrentMap } from "velt/collections";
+
+const map: ConcurrentMap<string, u64> = ConcurrentMap.create(1000);
+const hits = shared(map);
+hits.set("/home", 0);
+const tasks: Promise<void>[] = [];
+for (let i = 0; i < 4; i++) {
+  tasks.push(spawn(async () => {
+    hits.add("/home", 1);                    // atomic
+  }));
+}
+await Promise.all(tasks);
+console.log(hits.get("/home"));              // 4
+```
+
 ## Streams with `for await`
 
-Work that arrives over time — jobs on a [channel](/docs/std/channel/), lines of a file,
+Work that arrives over time — jobs on a [channel](/docs/std/sync/channel/), lines of a file,
 WebSocket messages, ticks — is consumed with `for await`, as in TypeScript. A channel passes
 values between tasks and ends the loop once it is closed and drained:
 
 ```ts
-import { channel, Channel, ChannelClosed } from "velt:channel";
+import { channel, Channel, ChannelClosed } from "velt/sync";
 
 async function worker(id: i64, jobs: Channel<string>, results: Channel<string>): Promise<void> throws ChannelClosed {
   for await (const job of jobs) {
@@ -209,22 +286,20 @@ async function worker(id: i64, jobs: Channel<string>, results: Channel<string>):
   }
 }
 
-async function main() {
-  const jobs = channel<string>(8);
-  const results = channel<string>();
-  const workers = [spawn(worker(1, jobs, results)), spawn(worker(2, jobs, results))];
-  for (const job of ["resize", "upload", "notify"]) {
-    await jobs.send(job);
-  }
-  jobs.close();                    // the workers' loops end once the queue is drained
-  await Promise.all(workers);
-  results.close();
-  let n = 0;
-  for await (const line of results) {
-    n++;
-  }
-  console.log(n);                  // 3
+const jobs = channel<string>(8);
+const results = channel<string>();
+const workers = [spawn(worker(1, jobs, results)), spawn(worker(2, jobs, results))];
+for (const job of ["resize", "upload", "notify"]) {
+  await jobs.send(job);
 }
+jobs.close();                    // the workers' loops end once the queue is drained
+await Promise.all(workers);
+results.close();
+let n = 0;
+for await (const line of results) {
+  n++;
+}
+console.log(n);                  // 3
 ```
 
 Leaving a loop early (`break`) does not close the channel: the values still queued stay there
@@ -234,8 +309,9 @@ for other receivers. Your own sources are `async function*` generators
 
 ## Timers
 
-`sleep(ms)` pauses the current async function. [`velt:timers`](/docs/std/timers/) has
-`setImmediate` and `Ticker`, a drift-free interval you iterate with `for await (const n of ticker)` or pull with `await ticker.tick()`. `setTimeout` and `setInterval` are globals, as in
+`sleep(ms)` pauses the current async function. [`velt/time`](/docs/std/time/timers/) has
+`setImmediate` and `Ticker`, a drift-free interval you iterate with `for await (const n of
+ticker)` or pull with `await ticker.tick()`. `setTimeout` and `setInterval` are globals, as in
 TypeScript.
 
 ## Performance

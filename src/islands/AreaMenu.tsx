@@ -1,6 +1,6 @@
 /**
  * The docs area switcher (design/Api.dc.html, api-menu.png): a button with
- * the current area's tile that opens a menu of the five areas. Without JS the
+ * the current area's tile that opens a menu of the six areas. Without JS the
  * button is a plain link to the current area.
  */
 import { component } from 'sigx';

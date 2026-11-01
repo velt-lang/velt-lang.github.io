@@ -10,6 +10,7 @@ order: 60
 
 ```
 velt fmt [<file|dir>...] [--check]
+velt fmt (--workspace | -p <glob>... | --affected [<base>]) [--fail-fast] [--check]
 ```
 
 `velt fmt` formats Velt sources in place, with one style and no options, like `gofmt`. Without
@@ -27,6 +28,21 @@ may belong to a TypeScript project, so name them as files to format them. `targe
   (single quotes are kept when the text contains `"`), semicolons, trailing commas in lists that
   break over several lines, at most one blank line between statements. Template literals are
   printed verbatim. Formatting is idempotent and never changes the program.
+- A method chain that does not fit puts each `.name(...)` on its own line; an index or `!` stays
+  on the line of the call before it (`.split(" ")[0]`, `.find(f)!`). Unlike Prettier, this holds
+  for a computed index too (`.split(" ")[i]`): a line starting with `[` continues the line
+  before it, which the parser warns about.
+
+  ```ts ignore
+  const word = line
+    .trim()
+    .toUpperCase()
+    .split(" ")[i]
+    .toLowerCase()
+    .padStart(10, "x");
+  ```
+- In a [workspace](/docs/tooling/packages/#workspaces), `velt fmt` at the root formats every
+  member; `--workspace`, `-p` and `--affected` select members anywhere.
 - JSX is laid out like Prettier does it: an element that does not fit goes over several lines
   (in parentheses after `=`, `return` and `=>`), text is reflowed as a paragraph, and in an
   HTML element or a fragment a space next to a tag at a line break is written `{" "}` (it would

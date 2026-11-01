@@ -8,7 +8,7 @@
  */
 import { getSidebar } from 'virtual:ssg-navigation';
 import routes from 'virtual:ssg-routes';
-import { GROUPS } from './docs-groups';
+import { GROUPS, isModuleName } from './docs-groups';
 
 export interface DocLink {
     title: string;
@@ -28,7 +28,7 @@ export interface DocGroup {
 export { GROUPS };
 
 const COMPACT: Record<string, string[]> = {
-    std: ['/docs/std/http/', '/docs/std/fs/', '/docs/std/fetch/', '/docs/std/json/', '/docs/std/crypto/', '/docs/std/postgres/', '/docs/std/redis/'],
+    std: ['/docs/std/fs/', '/docs/std/net/http/', '/docs/std/encoding/json/', '/docs/std/process/', '/docs/std/time/', '/docs/std/collections/', '/docs/std/crypto/'],
 };
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
@@ -57,7 +57,7 @@ export function docGroups(): DocGroup[] {
                 const href = norm(i.href!);
                 const meta = pageMeta(href);
                 const title = String(meta.navTitle ?? i.title);
-                return { title, href, mono: title.startsWith('velt:') };
+                return { title, href, mono: isModuleName(title) };
             });
         const featured = COMPACT[g.id]?.map((h) => items.find((i) => i.href === h)).filter((i): i is DocLink => !!i);
         return { ...g, items, featured };

@@ -64,10 +64,8 @@ matching `install` script, beside released versions
 Create `hello.vlt`:
 
 ```ts
-function main() {
-  const name = "world";
-  console.log(`Hello, ${name}!`);
-}
+const name = "world";
+console.log(`Hello, ${name}!`);
 ```
 
 ```sh
@@ -76,6 +74,13 @@ velt run --release hello.vlt    # optimized build (LLVM -O3 when clang is instal
 velt build hello.vlt            # just build: ./target/velt/hello
 ```
 
+```
+$ velt run hello.vlt
+Hello, world!
+```
+
+A program runs its file's top-level statements in order, as Node runs a script; top-level
+`await` works too. There is no `main` to write ([Scripts](/docs/reference/modules/#scripts-top-level-statements)).
 The result is a native executable with no runtime to install: `target/velt/hello` (`.exe` on
 Windows) runs on its own.
 
@@ -88,6 +93,13 @@ velt run
 ```
 
 ```
+     Created binary package `hello` (app template)
+
+Next: cd hello && velt run && velt test
+```
+
+```
+$ velt run
 Hello, world!
 ```
 
@@ -95,38 +107,82 @@ Hello, world!
 
 ```
 hello/
-  package.vlt           the manifest: name, version, the velt version, dependencies
-  src/main.vlt          the entry point: `velt run` builds and runs it
-  src/greet.vlt         a module, imported by main and by the tests
-  tests/greet.test.vlt  tests: every exported `test_*` function
+  package.vlt               the manifest: name, version, the velt version, dependencies
+  src/main.vlt              the entry point: `velt run` builds and runs it
+  src/greet.vlt             a module, imported by main and by the tests
+  tests/greet.test.vlt      tests: every exported `test_*` function
   README.md
-  .gitignore            ignores target/, where builds go
-  .gitattributes        makes GitHub highlight .vlt files (as TypeScript)
+  .gitignore                ignores target/, where builds go
+  .gitattributes            makes GitHub highlight .vlt files (as TypeScript)
+  .vscode/launch.json       F5 builds and debugs the program in VS Code
+  .vscode/extensions.json   recommends the Velt and CodeLLDB extensions
 ```
 
 ```ts ignore
-import type { Package } from "velt:package";
+import type { Package } from "velt/package";
 
-export const pkg: Package = { name: "hello", version: "0.1.0", velt: "0.1" };
+export const pkg: Package = { name: "hello", version: "0.1.0", velt: "0.5" };
 ```
 
 The manifest is written in Velt but holds only data: `velt` reads it without running it
-([`package.vlt`](/docs/tooling/manifest/)). `velt: "0.1"` records the velt version the package
+([`package.vlt`](/docs/tooling/manifest/)). `velt: "0.5"` records the velt version the package
 was made with: the `velt` command runs that version, so installing a newer velt doesn't change
 how the package builds ([`velt toolchain`](/docs/tooling/cli/#velt-toolchain)). In an editor, the language server completes its
 fields, explains them on hover and reports the same errors `velt` would.
 
-`src/main.vlt` imports the greeting from its own module and the program arguments from the
-standard library:
+`src/greet.vlt` is a module with one exported function:
 
 ```ts ignore
-import { args } from "velt:process";
+// The greeting, in its own module so tests/greet.test.vlt can check it.
+
+/// A friendly greeting for `name` (a blank name greets the world).
+export function greet(name: string): string {
+  const who = name.trim();
+  return `Hello, ${who === "" ? "world" : who}!`;
+}
+```
+
+`src/main.vlt` imports it, and the program arguments from the standard library
+([`velt/process`](/docs/std/process/)):
+
+```ts ignore
+// Entry point: `velt run` builds and runs this.
+import { args } from "velt/process";
 import { greet } from "./greet";
 
 function main() {
   const argv = args();
   console.log(greet(argv.length > 0 ? argv[0] : "world"));
 }
+```
+
+A file that declares `function main()` and has no other top-level statements runs `main`; one
+with top-level statements runs those, as in Node. Both work; the template uses `main`.
+
+`tests/greet.test.vlt` checks the greeting:
+
+```ts ignore
+// `velt test` runs every exported `test_*` function in `*.test.vlt` files.
+import { greet } from "../src/greet";
+
+export function test_greets_by_name() {
+  assertEq(greet("Ada"), "Hello, Ada!");
+}
+
+export function test_blank_name_greets_the_world() {
+  assertEq(greet("  "), "Hello, world!");
+}
+```
+
+```
+$ velt run -- Ada
+Hello, Ada!
+$ velt test tests
+running tests/greet.test.vlt
+ok test_greets_by_name
+ok test_blank_name_greets_the_world
+
+test result: ok. 2 passed; 0 failed
 ```
 
 The everyday commands, inside the package:
@@ -137,12 +193,15 @@ The everyday commands, inside the package:
 | `velt run -- Ada` | pass arguments to the program (after `--`) |
 | `velt dev` | run, then hot-swap or restart on every save ([Hot reload](/docs/book/hot-reload/)) |
 | `velt test` | run the tests ([Testing](/docs/book/testing/)) |
+| `velt check` | type-check without building |
 | `velt fmt` | format the sources |
 | `velt build --release` | an optimized binary in `target/velt/hello` |
 
 Other templates start you off with a bigger skeleton: `velt new todo --template api` (a JSON
-HTTP API), `--template cli` (a command-line tool), `--template websocket` (a chat server and
-client), `--template lib` (a library to publish).
+HTTP API on the [`http-server`](/docs/packages/http-server/) package, which its `package.vlt`
+lists as a dependency), `--template cli` (a command-line tool), `--template websocket` (a chat
+server and client), `--template lib` (a library to publish). `velt init` does the same in the
+current directory.
 
 ## Editor setup
 
@@ -151,7 +210,7 @@ go-to-definition, completion and quick fixes, or point any LSP client at `velt l
 ([Editors](/docs/tooling/editors/)). With a debugger extension such as CodeLLDB installed too,
 F5 builds the package and stops on breakpoints (on Linux and macOS; on Windows see
 [Debugging](/docs/tooling/debugging/#vs-code)): `velt new` writes the `.vscode/launch.json` for
-it, and `velt init --editor vscode` adds one to an existing package.
+it, and `velt init --editor vscode` adds the `.vscode` files to an existing package.
 
 ## Next steps
 

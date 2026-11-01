@@ -1,0 +1,28 @@
+---
+title: "velt/time"
+description: "import { DateTime, Duration, delay, Ticker } from \"velt/time\". Dates and durations, timers, and a drift-free periodic schedule."
+layout: "docs"
+category: "Standard library"
+order: 350
+---
+
+# velt/time
+
+`import { DateTime, Duration, delay, Ticker } from "velt/time"`. Time:
+
+- [`DateTime` and `Duration`](/docs/std/time/datetime/): a UTC-first instant (JavaScript's
+  `Date` without its local-time pitfalls; months are 1-12) and a signed span with millisecond
+  precision, with parsing, formatting and calendar fields (`DateParts`); `DateTimeError`.
+- [Timers](/docs/std/time/timers/): `setTimeout`, `setInterval`, `setImmediate` and their
+  `clear…` functions (also globals, as in Node) returning a `Timer`; `delay(ms)`; `Ticker`, a
+  drift-free periodic schedule to `for await` over, stopped from any task with a `TickerStop`.
+
+```ts
+import { DateTime, Duration, delay } from "velt/time";
+
+const start = DateTime.now();
+await delay(20);
+const took = DateTime.now().since(start);
+console.log(took.compareTo(Duration.ofMs(20)) >= 0); // true
+console.log(DateTime.utc(2024, 2, 29).format("ddd D MMM YYYY")); // Thu 29 Feb 2024
+```
