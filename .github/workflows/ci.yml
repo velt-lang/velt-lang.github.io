@@ -91,7 +91,8 @@ jobs:
         if: steps.release.outputs.released != 'true'
         working-directory: velt-src
         run: |
-          cargo build -p veltc --bin velt -p velt_rt
+          cargo build -p veltc --bin velt
+          cargo build -p velt_rt   # its own command: `--bin` would apply to it too
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
           echo "VELT_RT_LIB=$PWD/target/debug/libvelt_rt.a" >> "$GITHUB_ENV"
 
