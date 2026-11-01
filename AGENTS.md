@@ -169,13 +169,16 @@ pnpm typecheck    # tsgo --noEmit
 
 - One page = one `.mdx` file under `src/pages/docs/<area>/`; the path is the URL
   (`src/pages/docs/reference/memory.mdx` → `/docs/reference/memory/`, an area's
-  `index.mdx` → `/docs/<area>/`). Areas: `book`, `reference`, `std`, `tooling`.
+  `index.mdx` → `/docs/<area>/`). Areas: `book`, `reference`, `std`, `packages`, `tooling`.
+  A std page's path is its module's import path: `velt/net/http` is
+  `std/net/http/index.mdx` (a module with submodules is a folder), `velt/fs` is `std/fs.mdx`.
+  Moving or deleting a page needs an entry in `src/data/redirects.ts`.
 - Frontmatter, every field required unless marked:
   ```yaml
   title: "Memory model"            # <title>, search, llms.txt, breadcrumb
   description: "One sentence…"     # meta description, search, llms.txt (≤ 180 chars)
   layout: "docs"
-  category: "Language reference"   # the sidebar group: The book | Language reference | Standard library | Tooling
+  category: "Language reference"   # the sidebar group: The book | Language reference | Standard library | Packages | Tooling
   order: 100                       # position in the group, in steps of 10
   navTitle: "Variables"            # optional: a shorter sidebar label
   ```
@@ -203,8 +206,9 @@ pnpm typecheck    # tsgo --noEmit
   (`DOCS_VERSION` in `src/lib/site.ts`). `pnpm check:examples` runs every
   `ts` / `vlt` / `tsx` fence through the installed `velt check` (CI does it
   with `DOCS_VERSION`): a plain fence must check, `ts error` must be rejected,
-  `ts ignore` (an excerpt, not a program) is skipped. A snippet without `main`
-  gets one around its statements. Don't document behavior users can't
+  `ts ignore` (an excerpt, not a program) is skipped. A snippet is checked as
+  written, as a program's root file: top-level statements run as in Node, so
+  examples need no `main`. Don't document behavior users can't
   install yet.
 
 ## Keeping the docs in sync with Velt

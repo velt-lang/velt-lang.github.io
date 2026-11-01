@@ -10,11 +10,15 @@ describe('docs areas', () => {
         expect(areaOf('/docs/reference/diagnostics/').id).toBe('errors');
         expect(areaOf('/docs/std/collections/deque').id).toBe('std');
         expect(areaOf('/docs/api/').id).toBe('std');
+        expect(areaOf('/docs/std/net/http/h2/').id).toBe('std');
+        expect(areaOf('/docs/packages/').id).toBe('packages');
+        expect(areaOf('/docs/packages/sqlite/').id).toBe('packages');
         expect(areaOf('/docs/tooling/cli/').id).toBe('tooling');
     });
 
     it('gives std modules Guide | API tabs, not the overview', () => {
-        expect(hasApiTabs('/docs/std/http/')).toBe(true);
+        expect(hasApiTabs('/docs/std/net/http/')).toBe(true);
+        expect(hasApiTabs('/docs/packages/sqlite/')).toBe(false);
         expect(hasApiTabs('/docs/api/')).toBe(true);
         expect(hasApiTabs('/docs/std/')).toBe(false);
         expect(hasApiTabs('/docs/book/')).toBe(false);

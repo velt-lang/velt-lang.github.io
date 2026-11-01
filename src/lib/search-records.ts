@@ -5,20 +5,22 @@
 import type { SearchIndexEntry } from '@sigx/ssg/client';
 import type { ErrorRecord } from './errors-index';
 import type { ApiSearchEntry } from './std-api';
+import { isModuleName } from './docs-groups';
 
-export type Kind = 'api' | 'book' | 'ref' | 'std' | 'tool' | 'err';
+export type Kind = 'api' | 'book' | 'ref' | 'std' | 'pkg' | 'tool' | 'err';
 
 /** Section colors, glyphs and labels: the same as the area switcher. */
 export const KINDS: Record<Kind, { label: string; group: string; color: string; glyph: string }> = {
     api: { label: 'API', group: 'APIs', color: '#F07BF5', glyph: 'ƒ' },
     std: { label: 'Std', group: 'Standard library', color: '#FF9F5A', glyph: '{}' },
+    pkg: { label: 'Packages', group: 'Packages', color: '#FF8FD8', glyph: '+' },
     book: { label: 'Book', group: 'Guides', color: '#5FE1F7', glyph: '→' },
     ref: { label: 'Reference', group: 'Reference', color: '#A592FF', glyph: '§' },
     tool: { label: 'Tooling', group: 'Tooling', color: '#3DDC97', glyph: '$' },
     err: { label: 'Errors', group: 'Errors', color: '#FFC93C', glyph: '!' },
 };
 /** Group order in the results. */
-export const ORDER: Kind[] = ['api', 'std', 'book', 'ref', 'tool', 'err'];
+export const ORDER: Kind[] = ['api', 'std', 'pkg', 'book', 'ref', 'tool', 'err'];
 
 export const DIAGNOSTICS = '/docs/reference/diagnostics/';
 
@@ -42,11 +44,12 @@ export function kindOf(path: string): Kind {
     if (p.startsWith(DIAGNOSTICS)) return 'err';
     if (p.startsWith('/docs/reference/')) return 'ref';
     if (p.startsWith('/docs/std/') || p.startsWith('/docs/api/')) return 'std';
+    if (p.startsWith('/docs/packages/')) return 'pkg';
     if (p.startsWith('/docs/tooling/')) return 'tool';
     return 'book';
 }
 
-const SECTION: Record<Kind, string> = { api: 'API', book: 'The book', ref: 'Reference', std: 'Std', tool: 'Tooling', err: 'Errors' };
+const SECTION: Record<Kind, string> = { api: 'API', book: 'The book', ref: 'Reference', std: 'Std', pkg: 'Packages', tool: 'Tooling', err: 'Errors' };
 
 const clip = (s: string, n = 90) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const pageTitle = (t: string) => t.replace(/ — Velt( docs)?$/, '');
@@ -58,7 +61,7 @@ export function buildRecords(pages: SearchIndexEntry[], errors: ErrorRecord[], a
         const kind = kindOf(p.path);
         const title = pageTitle(p.title);
         const href = norm(p.path);
-        out.push({ kind, title, meta: `${SECTION[kind]} · ${clip(p.description ?? '')}`, href, mono: title.startsWith('velt:'), page: true });
+        out.push({ kind, title, meta: `${SECTION[kind]} · ${clip(p.description ?? '')}`, href, mono: isModuleName(title), page: true });
         for (const h of p.headings ?? []) {
             if (h.level !== 2 && h.level !== 3) continue;
             out.push({ kind, title: h.text, meta: `${SECTION[kind]} · ${title}`, href: `${href}#${h.id}`, mono: false, page: false });
@@ -82,8 +85,8 @@ export function score(r: SearchRecord, query: string): number {
     const hay = `${title} ${r.meta.toLowerCase()}`;
     if (!terms.every((t) => hay.includes(t))) return 0;
     let s = 1;
-    if (title === q || title === `velt:${q}`) s += 100;
-    else if (title.startsWith(q) || title.startsWith(`velt:${q}`)) s += 60;
+    if (title === q || title === `velt/${q}`) s += 100;
+    else if (title.startsWith(q) || title.startsWith(`velt/${q}`)) s += 60;
     else if (new RegExp(`(^|[^a-z0-9])${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(title)) s += 40;
     else if (title.includes(q)) s += 25;
     else s += terms.filter((t) => title.includes(t)).length * 8;

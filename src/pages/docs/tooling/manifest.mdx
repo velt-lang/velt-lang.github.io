@@ -12,7 +12,7 @@ Every package has a `package.vlt` at its root: the manifest, written in Velt. `v
 `velt init` write one.
 
 ```ts ignore
-import type { Package } from "velt:package";
+import type { Package } from "velt/package";
 
 export const pkg: Package = {
   name: "hello",
@@ -22,6 +22,11 @@ export const pkg: Package = {
     json: "1.2",                // registry package, semver requirement
     http: { version: "0.3" },   // object form
     util: { path: "../util" },  // local package (version optional)
+    "http-server": {            // from a git repository
+      git: "https://github.com/velt-lang/velt",
+      tag: "v0.5.0",
+      path: "packages/http-server",
+    },
   },
   paths: { "@app/*": "src/*" }, // import { x } from "@app/util"  →  src/util.vlt (or .ts, .tsx)
 };
@@ -51,8 +56,10 @@ file and reports these errors without building anything.
 
 - `name`: lowercase letters and digits, starting with a letter, with single `-` or `_` between
   words (`text-kit`, `text_kit`; not `text--kit`, `text_-kit` or `textkit-`). Names that differ
-  only in `-` versus `_` count as the same in a registry. `std` is reserved for the standard
-  library, and names whose first word is `rt`, `sig` or `native` (`rt`, `rt-str`) because a
+  only in `-` versus `_` count as the same in a registry. `velt` and `std` are reserved for the
+  standard library (its modules are `velt/…`), as a package name and as a dependency's name
+  (``the package name `velt` is reserved for the standard library``), and so are names whose
+  first word is `rt`, `sig` or `native` (`rt`, `rt-str`) because a
   package's native functions are named `velt_<name>__…` and those prefixes are Velt's own
   (`velt_rt_…` is the runtime).
 - A name can also be scoped, as on npm: `@scope/name`, each part lowercase words as above
@@ -111,10 +118,15 @@ a requirement that names one (`"0.2.0-rc.1"`). Leave the field out to build with
 
 `import … from "json"` and `"json/sub"` resolve through `dependencies`: the dependency's
 `src/lib.vlt`, or `src/sub.vlt` / `src/sub/index.vlt` (or `.ts`, `.tsx`, tried like a relative
-import's files). Standard library imports (`"velt:x"`)
+import's files). Standard library imports (`"velt/x"`)
 and relative imports (`"./x"`) never do. Names that aren't identifiers are quoted
 (`"my-lib": "1.0"`, `"@sigx/reactivity": { path: "../reactivity" }`; a scoped dependency needs
-a `path`). `velt add` edits this object and keeps your comments. See
+a `path` or `git`). `{ git: "https://…", branch: "main", path: "packages/x" }` takes the package
+from a git repository ([git dependencies](/docs/tooling/packages/#git-dependencies)): a Velt package, or an
+npm package (or a whole workspace of them) compiled from its TypeScript sources. The official packages (`sqlite`, `postgres`, `redis`, `http-server`) come this way or by
+`path` ([official packages](/docs/tooling/packages/#official-packages)). `velt add` edits this object and keeps your comments. In a member of a
+[workspace](/docs/tooling/packages/#workspaces), `name: "workspace"` depends on another member, or on the
+requirement the workspace writes for `name`. See
 [Packages](/docs/tooling/packages/). A bare import that no dependency (and no `paths` alias) claims looks
 for an [npm package](/docs/tooling/packages/#npm-packages).
 
@@ -123,7 +135,7 @@ for an [npm package](/docs/tooling/packages/#npm-packages).
 Import aliases, like TypeScript's `compilerOptions.paths`, replace long `../../` chains:
 
 - A bare specifier that matches a pattern resolves to the target, relative to the package root,
-  before `dependencies` are consulted. `"velt:x"` and `"./x"` are never aliased.
+  before `dependencies` are consulted. `"velt/x"` and `"./x"` are never aliased.
 - A pattern has at most one `*`, at its end, and so does its target (both or neither). The
   longest matching pattern wins. Each pattern has one target.
 - Targets must stay inside the package (no `..`, not absolute).
@@ -135,7 +147,7 @@ Import aliases, like TypeScript's `compilerOptions.paths`, replace long `../../`
 jsx: { importSource: "sigx" },
 ```
 
-The module whose `jsx-runtime` compiles the package's JSX: a dependency, `"velt:jsx"` (the
+The module whose `jsx-runtime` compiles the package's JSX: a dependency, `"velt/jsx"` (the
 default), a `paths` alias, or `./dir` relative to the package root. A
 `/** @jsxImportSource x */` comment at the top of a file wins ([JSX](/docs/std/jsx/)); Velt also
 reads it from a `//` comment, `tsc` only from a block comment.
@@ -187,6 +199,20 @@ whose functions its Velt code declares ([Packages with native code](/docs/toolin
   `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`.
 - `wasm`: must be `false` (the default); WebAssembly libraries are not supported yet.
 
+## `build`
+
+```ts ignore
+build: { cpu: "x86-64-v3" },
+```
+
+How the package's program is built. Only the root package's applies.
+
+- `cpu`: the CPU the program is built for, as `velt build --cpu`: `"baseline"`, `"x86-64-v2"`
+  (the default on x86_64), `"x86-64-v3"`, `"x86-64-v4"`, `"native"` or a CPU name such as
+  `"znver4"` ([CPU](/docs/tooling/platforms/#cpu)). `--cpu` and `VELT_CPU` take precedence, and a CPU of
+  another architecture does not apply to a build for this one (`"x86-64-v3"` leaves arm64
+  builds at their default, `"neoverse-n1"` x86_64 builds at x86-64-v2).
+
 ## `tsCompat`
 
 ```ts ignore
@@ -194,7 +220,7 @@ tsCompat: ["src/components", "src/models"],
 ```
 
 Folders whose modules a TypeScript client shares, so they must stay in the
-[common subset](https://github.com/velt-lang/velt/blob/main/docs/internals/design/tsx.md#the-common-subset) of TypeScript and Velt (like the
+common subset of TypeScript and Velt (like the
 client's `tsconfig.json` `include`). `velt check --ts-compat` without paths lints every `.vlt`,
 `.ts` and `.tsx` file in them ([`velt check`](/docs/tooling/cli/#code-shared-with-typescript---ts-compat)),
 and the editor shows the findings, with their fixes, as you type
@@ -242,27 +268,18 @@ $ velt manifest --json
 }
 ```
 
-## Moving from `velt.toml`
-
-Packages used to have a `velt.toml`. It is no longer read: every command in a package that
-still has one stops with an error that prints the equivalent `package.vlt`. Save that as
-`package.vlt` (copy over any comments) and delete `velt.toml`.
-
-Package versions published with a `velt.toml` can't be installed any more; installing one says
-so. Their authors publish a new version with a `package.vlt`.
-
 ## `velt.lock.json`
 
 `velt install` writes `velt.lock.json`, which pins the exact version and content hash of every
 dependency. It is generated JSON, pretty-printed with a stable key order so diffs stay readable:
 `"version": 1` and a `"packages"` array with one entry per package (`name`, `version`, `source`:
-`"registry"` or `"path+<relative path>"`, `checksum`, `dependencies`, and for a package with
+`"registry"`, `"path+<relative path>"`, `"git+<url>?branch=main&path=<dir>#<commit>"` ([git dependencies](/docs/tooling/packages/#git-dependencies)) or,
+in a [workspace](/docs/tooling/packages/#workspaces), `"workspace+<member dir>"`, `checksum`, `dependencies`, and for a package with
 native code a `"native"` object with the checksum of its prebuilt library for every published
 target). In a package with a [`velt` field](#velt), it also records the velt version that builds the
 package, `"velt": "0.2.1"`: the one that created the lock, kept until `velt update` (or until
-the field no longer accepts it). The `velt` on your `PATH` runs that version in the package, installing it
+the field doesn't accept it). The `velt` on your `PATH` runs that version in the package, installing it
 if needed, so a laptop and CI build a commit with the same compiler even when newer patch
 versions are installed. Commit it for applications. `--locked` on `build`, `run`, `test` and
 `install` fails instead of changing it, and fails when a different velt runs than the lock
-records. A package that still has the former `velt.lock` (TOML) gets an error:
-delete it and run `velt install`.
+records.

@@ -1,0 +1,46 @@
+---
+title: "velt/collections"
+description: "Containers beyond the prelude's arrays and Map: Deque, PriorityQueue, SortedMap, BTreeMap, ConcurrentMap and Set, written in Velt."
+layout: "docs"
+category: "Standard library"
+order: 64
+---
+
+# velt/collections
+
+`import { Deque, PriorityQueue, SortedMap, BTreeMap, ConcurrentMap } from "velt/collections"`.
+Containers beyond the prelude's arrays and `Map`, written in Velt on public APIs. Every type is
+exported from `velt/collections` itself; the files behind it are internal, and importing one
+(`velt/collections/deque`) is an error that names the module to use.
+
+| Type | What it is | Use it for |
+|---|---|---|
+| [`Deque<T>`](/docs/std/collections/deque/) | a double-ended queue on a ring buffer: O(1) at both ends and by index | work queues, sliding windows, BFS |
+| [`PriorityQueue<T>`](/docs/std/collections/priority_queue/) | a binary heap: `pop` returns what `cmp` orders first | schedulers, Dijkstra, top-k |
+| [`SortedMap<K, V>`](/docs/std/collections/sorted_map/) | a map ordered by key, on sorted arrays | small maps that are read far more than written |
+| [`BTreeMap<K, V>`](/docs/std/collections/btree_map/) | a map ordered by key, as a B+ tree | large ordered maps, range queries |
+| [`ConcurrentMap<K, V>`](/docs/std/collections/concurrent_map/) | a map many threads read and write at once | shared caches, counters and indexes across tasks |
+| [`Set<T>`](/docs/std/collections/set/) | an insertion-ordered set of unique values, also a global as in JavaScript | membership, deduplication, set algebra |
+
+```ts
+import { Deque, PriorityQueue, BTreeMap } from "velt/collections";
+
+const queue = Deque.from([1, 2, 3]);
+queue.pushFront(0);
+console.log(queue.popBack(), queue.toArray()); // 3 [ 0, 1, 2 ]
+
+const heap = new PriorityQueue<i64>((a, b) => a - b);
+heap.push(5);
+heap.push(1);
+heap.push(4);
+console.log(heap.pop(), heap.pop()); // 1 4
+
+const index = new BTreeMap<string, i64>();
+index.set("pear", 3);
+index.set("apple", 1);
+console.log(index.keys(), index.ceilingKey("b")); // [ 'apple', 'pear' ] pear
+```
+
+For a plain key-value map, use the prelude's [`Map`](/docs/std/prelude/#map): it is a hash map
+in insertion order, as in JavaScript. Reach for `SortedMap` or `BTreeMap` when you need the keys
+in order (`first`, `floorKey`, `range`).

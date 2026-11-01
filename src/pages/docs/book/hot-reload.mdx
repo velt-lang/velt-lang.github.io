@@ -18,23 +18,23 @@ velt dev server.vlt       # one file
 
 ## A session
 
-Take a server that counts requests:
+Take a server that counts requests, in a package that depends on
+[`http-server`](/docs/packages/http-server/) ([Building an HTTP server](/docs/book/http-server/#setting-up)
+shows how):
 
-```ts
-import { serve } from "velt:http";
+```ts ignore title="src/main.vlt"
+import { serve } from "http-server";
 
-async function main() {
-  const hits = shared(0);
-  await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
-    hits.add(1);
-    return new Response(`hello #${hits.get()}\n`);
-  });
-}
+const hits = shared(0);
+await serve({ port: 8080 }, (req: Request) => {
+  hits.add(1);
+  return new Response(`hello #${hits.get()}\n`);
+});
 ```
 
 ```
-$ velt dev server.vlt
-velt dev: started in 410 ms
+$ velt dev
+velt dev: started in 611 ms
 ```
 
 In another terminal:
@@ -49,7 +49,7 @@ hello #2
 Change the greeting to `` `hi there #${hits.get()}\n` `` and save. `velt dev` prints:
 
 ```
-velt dev: hot-swapped 3 functions in 82 ms
+velt dev: hot-swapped 1 function in 582 ms
 ```
 
 ```
@@ -58,11 +58,11 @@ hi there #3
 ```
 
 The handler's code changed, but the counter kept its value and the server never stopped
-listening: the changed functions were swapped into the running program. Now add a line to
-`main` itself (say, `const start = 1;`) and save:
+listening: the changed function was swapped into the running program. Now add a statement to
+the top-level code itself (say, `console.log("starting");`) and save:
 
 ```
-velt dev: restarted (main changed (it already ran)) in 1475 ms
+velt dev: restarted (main changed (it already ran)) in 2280 ms
 ```
 
 ```
@@ -70,9 +70,10 @@ $ curl localhost:8080
 hi there #1
 ```
 
-`main` has already run, so a change to it can't be swapped in: the program restarts and the
-counter starts over. (These timings come from a debug build of `velt`; see
-[Speed](/docs/tooling/dev/#speed) for release numbers.)
+The program's top-level statements are its `main`, which has already run, so a change to them
+can't be swapped in: the program restarts and the counter starts over. (These timings come from
+a debug build of `velt` on a busy machine; see [Speed](/docs/tooling/dev/#speed) for release
+numbers.)
 
 ## Swap or restart
 
@@ -80,16 +81,67 @@ counter starts over. (These timings come from a debug build of `velt`; see
   are swapped in place. New calls run the new code; requests already in flight finish on the
   old code.
 - **Layout changes** restart the program: adding a field to a class, changing a function's
-  signature, changing what a closure captures, or editing `main` itself. `velt dev` says why:
-  `restarted (Point gained a field)`. The listening socket stays open across the restart, so
-  no request is refused.
+  signature, changing what a closure captures, or editing the top-level code (or `main`).
+  `velt dev` says why: `restarted (Stats gained a field)`. The listening socket stays open
+  across the restart, so no request is refused.
 - **Compile errors** are printed, and the previous version keeps running until you fix them.
 
-## Why it works without setup
+## Where state survives
 
-Hot reload in most languages needs care around global state. Velt has none to migrate: module
-scope holds only constants, functions and types, and state lives in values `main` creates (like
-`hits` above). That rule is what makes a swap safe by default.
+State that lives in values the program creates (`hits` above, a `Mutex` holding a store, a
+cache in a class) carries over a swap: the swapped-in code works on the same values.
+[Module state](/docs/reference/variables/#module-state), a `let` at module level that functions
+change, does not: the swapped-in code starts it over from its initializer.
+
+```ts ignore
+let count = 0;                                     // module state: 0 again after a swap
+const stats = shared(new Mutex<Stats>(new Stats())); // a value: keeps its data
+```
+
+So keep what must survive an edit in values, created by the top-level code or by a function
+such as `startServer`, and passed to or captured by the code that uses it. That rule is what
+makes a swap safe without any setup.
+
+## Stopping gracefully
+
+When a change needs a restart, and when you stop `velt dev` (Ctrl-C, or SIGTERM from a process
+manager), the program gets a stop request first and can finish what is in flight. The
+`http-server` package does this by itself: it stops accepting, finishes the requests in flight
+and lets the program exit, while `velt dev` keeps the listening socket for the next version.
+
+A server of your own takes part through [`velt/dev`](/docs/std/dev/): `joinStop()` returns an
+`AbortSignal` that is aborted when `velt dev` asks the program to stop (and `null` outside
+`velt dev`), and `drained()` says that the work in flight has finished.
+
+```ts
+import { drained, joinStop } from "velt/dev";
+import { listen } from "velt/net";
+
+const listener = await listen("127.0.0.1:9000");
+const stop = joinStop(); // null outside `velt dev`
+if (stop != null) {
+  spawn((async () => {
+    await stop.whenAborted();
+    listener.close(); // velt dev keeps the socket for the next version
+  })());
+}
+try {
+  while (true) {
+    const conn = await listener.accept();
+    await conn.write("hello\n");
+    conn.close();
+  }
+} catch (e) {
+  // `accept` fails with EBADF once the listener is closed
+}
+if (stop != null) {
+  drained();
+}
+```
+
+The program exits once everything that joined has drained, or after a bounded wait; `velt dev`
+stops a program that is still running 1.5 s after asking (`VELT_DEV_STOP_GRACE_MS` changes
+that).
 
 ## Debugging and limits
 

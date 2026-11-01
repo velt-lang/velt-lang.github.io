@@ -1,0 +1,86 @@
+---
+title: "velt/compress"
+description: "Decompression written in Velt: gzip, zlib, raw DEFLATE and Brotli, for whole buffers or for streams that arrive in pieces."
+layout: "docs"
+category: "Standard library"
+order: 105
+---
+
+# velt/compress
+
+`import { gunzip, brotliDecompress, InflateDecoder } from "velt/compress"`. Decompression, written
+in Velt: gzip (RFC 1952), zlib (RFC 1950), raw DEFLATE (RFC 1951) and Brotli (RFC 7932). They are
+what [`fetch`](/docs/std/net/http/) decodes compressed response bodies with. The module
+decompresses only; it has no compressor.
+
+## Whole buffers
+
+`gunzip(bytes)`, `inflate(bytes)` (zlib), `inflateRaw(bytes)`, `inflateHttp(bytes)` and
+`brotliDecompress(bytes)` take the whole compressed stream as a `u8[]` and return the bytes it
+decodes to.
+
+```ts
+import { gunzip } from "velt/compress";
+
+// "hi\n", gzip-compressed.
+const gz: u8[] = [31, 139, 8, 0, 0, 0, 0, 0, 0, 3, 203, 200, 228, 2, 0, 122, 122, 111, 237, 3, 0, 0, 0];
+console.log(gunzip(gz).utf8Slice()); // hi
+```
+
+- `gunzip` decodes several gzip members in a row as one stream, as the `gzip` tool writes them,
+  and sizes its output from the trailer, so the output is written once.
+- `inflateHttp` is HTTP's `content-encoding: deflate`: zlib, or raw DEFLATE when the data has no
+  zlib header, as servers send both.
+- The gzip and zlib checksums (CRC-32, Adler-32) are verified.
+- Empty input decodes to nothing for `gunzip`, `inflateHttp` and `brotliDecompress`.
+
+## Streams that arrive in pieces
+
+`new InflateDecoder(format)` (`"gzip"`, `"zlib"`, `"raw"`, or `"deflate"`, which is
+`inflateHttp`'s choice) and `new BrotliDecoder()` decode a stream that arrives in pieces:
+
+- `feed(bytes)` queues compressed bytes, and `finish()` says no more follow.
+- `read(max)` returns up to `max` decoded bytes: `[]` when it needs more input first, or when the
+  stream has ended (`done` is then true).
+
+The output comes in pieces of at most `max` bytes however much the input expands, so a small body
+that decodes to gigabytes can be processed a piece at a time. Only the window a stream may still
+refer back to is kept: 32 KiB for DEFLATE, up to 16 MiB for Brotli.
+
+```ts
+import { InflateDecoder } from "velt/compress";
+
+const gz: u8[] = [31, 139, 8, 0, 0, 0, 0, 0, 0, 3, 203, 200, 228, 2, 0, 122, 122, 111, 237, 3, 0, 0, 0];
+const d = new InflateDecoder("gzip");
+for (const b of gz) {
+  d.feed([b]); // one byte at a time, as a slow network might deliver it
+}
+d.finish();
+let text = "";
+while (!d.done) {
+  text += d.read(2).utf8Slice();
+}
+console.log(JSON.stringify(text)); // "hi\n"
+```
+
+## Errors
+
+Input that is not a valid stream, a checksum that does not match, or a stream that ends before it
+should throws `CompressError`.
+
+```ts
+import { gunzip, CompressError } from "velt/compress";
+
+try {
+  gunzip([31, 139, 8, 0]);
+} catch (e) {
+  console.log(e instanceof CompressError, e.message); // true unexpected end of file
+}
+```
+
+## Speed
+
+Measured against Rust's crates (`bench/stdport` in the Velt repository, instructions on
+x86-64), gzip decodes in 0.65 of `flate2`'s instructions and Brotli in 0.73 of
+`brotli-decompressor`'s. The gzip CRC-32 uses the CPU's carry-less multiplication
+([velt/simd](/docs/std/simd/)) where it has one, and tables elsewhere.

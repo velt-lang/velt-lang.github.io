@@ -134,17 +134,41 @@ export function groupExports(items: ApiItem[]): { title: string; kind: string; i
 
 export const API_ROOT = '/docs/api/';
 
-/** `std/collections/deque` → `collections/deque`. */
+/** `std/net/http` → `net/http`: the module's path under std/. */
 export const moduleSlug = (module: string) => module.replace(/^std\//, '');
 
-/** Guides whose page isn't named after the module's path. */
-const GUIDE_SLUG: Record<string, string> = { 'http/server': 'http_server' };
+/**
+ * Modules documented on a page whose path isn't the module's: the prelude's
+ * globals live in std/lang/, which is never imported, and are documented
+ * under the prelude's page.
+ */
+const GUIDE_SLUG: Record<string, string> = { 'lang/symbol': 'prelude/symbol', 'lang/typed_array': 'prelude/typed_array' };
 
-/** The guide page's name under /docs/std/: `http`, `collections/deque`, `http_server` for velt:http/server. */
+/** Modules whose exports are globals: their API page shows no import line. */
+export const isGlobalModule = (module: string) => /^std\/(lang|prelude)(\/|$)/.test(module);
+
+/**
+ * The page's name under /docs/std/ and /docs/api/: `net/http` for
+ * velt/net/http, `collections/deque`, `prelude/symbol` for the global Symbol.
+ */
 export const guideSlug = (module: string) => GUIDE_SLUG[moduleSlug(module)] ?? moduleSlug(module);
 
-export const apiPath = (module: string) => `${API_ROOT}${moduleSlug(module)}/`;
+export const apiPath = (module: string) => `${API_ROOT}${guideSlug(module)}/`;
 export const guidePath = (module: string) => `/docs/std/${guideSlug(module)}/`;
+
+/** What a module is called on its pages: its import path, or `prelude/symbol` for globals. */
+export const specifierOf = (m: Pick<ApiModule, 'module' | 'specifier'>) => (GUIDE_SLUG[moduleSlug(m.module)] ? guideSlug(m.module) : m.specifier);
+
+const STD_PAGES = join(process.cwd(), 'src/pages/docs/std');
+
+/**
+ * The guide page's file for a slug: `std/<slug>.mdx`, or `std/<slug>/index.mdx`
+ * for a module with submodules (`net/http`). Null when there is none.
+ */
+export function guideFile(slug: string): string | null {
+    for (const f of [join(STD_PAGES, `${slug}.mdx`), join(STD_PAGES, slug, 'index.mdx')]) if (existsSync(f)) return f;
+    return null;
+}
 
 /** An export's anchor on its module page: its name, or `kind-name` when an extend block shares it. */
 export function anchorOf(item: Pick<ApiItem, 'id' | 'name' | 'kind'>): string {
@@ -155,34 +179,52 @@ export function anchorOf(item: Pick<ApiItem, 'id' | 'name' | 'kind'>): string {
 }
 
 let pageModules: Map<string, ApiModule> | undefined;
+let bySlug: Map<string, ApiModule> | undefined;
 
 /**
- * The modules that get an API page: those with a guide page under
- * src/pages/docs/std/ (the public modules; the others are their internals).
+ * The modules that get an API page, keyed by module id: the importable ones
+ * (a folder's `index.vlt`) that have a guide page under src/pages/docs/std/.
+ * The other files are their internals; a guide about one part of a module
+ * (`collections/deque`) shares the module's API page. Sorted by the name the
+ * pages show.
  */
 export function apiModules(): Map<string, ApiModule> {
     if (pageModules) return pageModules;
-    const root = join(process.cwd(), 'src/pages/docs/std');
     pageModules = new Map(
         apiDoc()
-            .modules.filter((m) => m.module.startsWith('std/') && existsSync(join(root, `${guideSlug(m.module)}.mdx`)))
-            .sort((a, b) => a.specifier.localeCompare(b.specifier))
+            .modules.filter((m) => m.module.startsWith('std/') && /(^|\/)index\.vlt$/.test(m.file) && guideFile(guideSlug(m.module)))
+            .sort((a, b) => specifierOf(a).localeCompare(specifierOf(b)))
             .map((m) => [m.module, m]),
     );
+    bySlug = new Map([...pageModules.values()].map((m) => [guideSlug(m.module), m]));
     return pageModules;
 }
 
-export const apiModule = (slug: string) => apiModules().get(`std/${slug.replace(/\/$/, '')}`);
+/** The module of an API page, by its slug (`net/http`, `prelude/symbol`). */
+export const apiModule = (slug: string) => {
+    apiModules();
+    return bySlug!.get(slug.replace(/^\/+|\/+$/g, ''));
+};
 
-/** The module a guide page (`http_server`) documents, when it has an API page. */
-export const apiModuleForGuide = (slug: string) => [...apiModules().values()].find((m) => guideSlug(m.module) === slug.replace(/\/$/, ''));
+/**
+ * The API page for a guide: the guide's own module (`net/http`), else the
+ * nearest enclosing one (`collections/deque` → velt/collections).
+ */
+export function apiModuleForGuide(slug: string): ApiModule | undefined {
+    for (let s = slug.replace(/^\/+|\/+$/g, ''); s; s = s.includes('/') ? s.slice(0, s.lastIndexOf('/')) : '') {
+        const m = apiModule(s);
+        if (m) return m;
+    }
+    return undefined;
+}
 
 let homes: Map<string, string> | undefined;
 
 /**
  * Where a target is documented: its own module's page when that has one,
- * else the page of a public module that re-exports it (the internals of
- * `velt:http` are documented under `velt:http`). `null` when no page has it.
+ * else the page of a public module that re-exports it (`Request`, declared in
+ * an internal file of velt/net/http, is documented under velt/net/http).
+ * `null` when no page has it.
  */
 export function hrefOf(target: Target): string | null {
     if (!homes) {
@@ -252,7 +294,7 @@ export const summaryOf = (it: Pick<ApiItem, 'doc' | 'summary'>): string | null =
 // ─── From the module's guide ───────────────────────────────────────────────
 
 interface GuideIntro {
-    /** The guide's import line, e.g. `import { serve, Server } from "velt:http"`. */
+    /** The guide's import line, e.g. `import { readFile } from "velt/fs"`. */
     importLine: string | null;
     /** The guide's opening sentences (Markdown), without the import line. */
     summary: string | null;
@@ -268,8 +310,8 @@ const intros = new Map<string, GuideIntro>();
 export function guideIntro(module: string): GuideIntro {
     const cached = intros.get(module);
     if (cached) return cached;
-    const file = join(process.cwd(), 'src/pages/docs/std', `${guideSlug(module)}.mdx`);
-    const src = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    const file = guideFile(guideSlug(module));
+    const src = file ? readFileSync(file, 'utf8') : '';
     const body = src.replace(/^---[\s\S]*?\n---\n/, '');
     // The first paragraph after the `# heading`.
     const para = body.split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !p.startsWith('#') && !p.startsWith('import ') && !p.startsWith('<')) ?? '';
@@ -298,7 +340,7 @@ export interface Coverage {
 export function coverage(m: ApiModule): Coverage {
     const counted = m.exports.filter((e) => e.kind !== 'extend' && e.kind !== 're-export');
     const missing = counted.filter((e) => !e.doc).map((e) => e.name);
-    return { module: m.module, specifier: m.specifier, exports: counted.length, documented: counted.length - missing.length, missing };
+    return { module: m.module, specifier: specifierOf(m), exports: counted.length, documented: counted.length - missing.length, missing };
 }
 
 export const percent = (c: Pick<Coverage, 'exports' | 'documented'>) => (c.exports ? Math.round((c.documented / c.exports) * 100) : 100);
@@ -323,7 +365,7 @@ export interface Backlink {
     /** The using export's name (`serve`, `Server.close` for a member). */
     name: string;
     href: string;
-    /** The page module it is on (`std/http`). */
+    /** The module id of the page it is on (`std/net/http`). */
     module: string;
 }
 
@@ -343,7 +385,7 @@ let backlinkIndex: Map<string, Map<BacklinkKind, Backlink[]>> | undefined;
 export function backlinks(href: string): Map<BacklinkKind, Backlink[]> {
     if (!backlinkIndex) {
         backlinkIndex = new Map();
-        const pageOf = (h: string) => `std/${h.slice(API_ROOT.length).replace(/\/#.*$/, '')}`;
+        const pageOf = (h: string) => apiModule(h.slice(API_ROOT.length).replace(/\/#.*$/, ''))?.module ?? '';
         const add = (to: string, kind: BacklinkKind, from: Backlink) => {
             if (from.href === to) return;
             let roles = backlinkIndex!.get(to);
@@ -428,7 +470,7 @@ export function moduleCards(m: ApiModule): Record<string, Card> {
             kind: e.kind,
             color: kindInfo(e.kind).color,
             name: e.name,
-            module: m.specifier,
+            module: specifierOf(m),
             href,
             decl: tokenize(decl.text, decl.spans).map((t): CardToken => {
                 if (t.kind === 'link') {
@@ -469,11 +511,11 @@ export function apiSearchEntries(): ApiSearchEntry[] {
     for (const m of apiModules().values()) {
         for (const e of visibleExports(m)) {
             if (e.kind === 'extend' || e.kind === 're-export') continue;
-            out.push({ n: e.name, g: kindInfo(e.kind).glyph, m: m.specifier, s: plain(summaryOf(e)), h: `${apiPath(m.module)}#${anchorOf(e)}` });
+            out.push({ n: e.name, g: kindInfo(e.kind).glyph, m: specifierOf(m), s: plain(summaryOf(e)), h: `${apiPath(m.module)}#${anchorOf(e)}` });
             if (e.kind !== 'class' && e.kind !== 'interface') continue;
             for (const mem of e.members) {
                 if (mem.kind === 'constructor' || mem.kind === 'setter' || mem.name.startsWith('[')) continue;
-                out.push({ n: `${e.name}.${mem.name}`, g: MEMBER_GLYPH[mem.kind] ?? 'ƒ', m: m.specifier, s: plain(summaryOf(mem)), h: `${apiPath(m.module)}#${anchorOf(mem)}` });
+                out.push({ n: `${e.name}.${mem.name}`, g: MEMBER_GLYPH[mem.kind] ?? 'ƒ', m: specifierOf(m), s: plain(summaryOf(mem)), h: `${apiPath(m.module)}#${anchorOf(mem)}` });
             }
         }
     }

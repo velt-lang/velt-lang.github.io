@@ -1,0 +1,69 @@
+---
+title: "Packages"
+description: "The official Velt packages: http-server, sqlite, postgres and redis. What they are, why they are not std, and how a program depends on one."
+layout: "docs"
+category: "Packages"
+order: 5
+navTitle: "Overview"
+---
+
+# Official packages
+
+The Velt repository ships four packages next to the standard library: an HTTP server and three
+database drivers. A program imports one by its package name once its `package.vlt` lists it in
+`dependencies`.
+
+| Package | What it is |
+|---|---|
+| [http-server](/docs/packages/http-server/) | An HTTP/1.1 and HTTP/2 server written in Velt: `serve` with web-standard `Request` → `Response` handlers, HTTPS, streaming, graceful stops and WebSockets. |
+| [sqlite](/docs/packages/sqlite/) | Embedded SQLite with a synchronous API close to better-sqlite3, and a read-only SQLite engine written in Velt. |
+| [postgres](/docs/packages/postgres/) | A PostgreSQL client close to node-postgres: connections, a pool, transactions, batches, `COPY`. |
+| [redis](/docs/packages/redis/) | A Redis client close to ioredis: commands, pipelines, transactions and pub/sub on one multiplexed connection. |
+
+## Why they are not std
+
+The [standard library](/docs/std/) is the core every program can count on: files, processes,
+networking, `fetch` and the web types, encodings, collections, tasks. A server and a database
+driver are libraries, and each of these packages is written on public std APIs only, the ones
+any package can use: `Request`, `Response` and their server API in
+[`velt/net/http`](/docs/std/net/http/), [`velt/net/http/h2`](/docs/std/net/http/h2/),
+[`velt/dev`](/docs/std/dev/) for the graceful stop under `velt dev`, typed rows from
+[`velt/db`](/docs/std/db/), and [`velt/native`](/docs/std/native/) for the Rust half of a
+driver. So anyone can write another server or driver the same way. They live in the Velt
+repository's `packages/`.
+
+## Depending on a package
+
+Add the package to `dependencies` in [`package.vlt`](/docs/tooling/manifest/): from the Velt
+repository on GitHub as a [git dependency](/docs/tooling/packages/#git-dependencies), or from a
+local checkout as a path dependency. `velt install` fetches it and pins it in `velt.lock.json`:
+
+```ts ignore title="package.vlt"
+import type { Package } from "velt/package";
+
+export const pkg: Package = {
+  name: "app",
+  version: "0.1.0",
+  dependencies: {
+    "http-server": { git: "https://github.com/velt-lang/velt", branch: "main", path: "packages/http-server" },
+    // Or a local checkout of the repository:
+    // "http-server": { path: "../velt/packages/http-server" },
+  },
+};
+```
+
+```ts ignore title="src/main.vlt"
+import { serve } from "http-server";
+
+await serve({ port: 8080 }, (req: Request): Response => new Response("hello"));
+```
+
+`velt new <name> --template api` (and `--template websocket`) writes the `http-server`
+dependency for you, at the release tag of the `velt` that made the project.
+
+`sqlite`, `postgres` and `redis` include a Rust crate, their native code. A path dependency
+builds it with cargo the first time, so it needs a [Rust toolchain](https://rustup.rs); a git
+dependency builds it only when you allow that with `VELT_NATIVE_FROM_SOURCE=1`, since the build
+runs the package's build scripts. A package published to a registry carries prebuilt libraries,
+so its users need no Rust ([packages with native code](/docs/tooling/packages/#packages-with-native-code)).
+Each package's page has its exact entry.

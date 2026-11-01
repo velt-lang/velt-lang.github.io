@@ -1,0 +1,65 @@
+---
+title: "velt/fs: file streams"
+description: "openRead and openWrite from velt/fs: read files in chunks or line by line, and write them through a buffer, for files too large to hold in memory."
+layout: "docs"
+category: "Standard library"
+order: 170
+navTitle: "File streams"
+---
+
+# File streams
+
+`import { openRead, openWrite } from "velt/fs"`. Reads and writes files in chunks, for files too
+large to hold in memory or written a piece at a time (logs, exports). `FileReader` and
+`FileWriter` are handles: you can pass them to tasks and async functions, and `close()` releases
+the handle. Failures throw [`IoError`](/docs/std/io/).
+
+```ts
+import { openRead, openWrite, removeSync } from "velt/fs";
+import { tmpdir } from "velt/os";
+
+const path = `${tmpdir()}/velt-doc-stream.log`;
+const w = await openWrite(path);
+for (let i = 1; i <= 3; i++) {
+  await w.write(`line ${i}\n`);
+}
+await w.close();
+
+const r = await openRead(path);
+let n = 0;
+for await (const line of r.lines()) {
+  n++;
+  console.log(n, line); // 1 line 1, 2 line 2, 3 line 3
+}
+r.close();
+removeSync(path);
+```
+
+## Reading
+
+`openRead(path): Promise<FileReader>`. A `FileReader` has:
+
+- `read(max = 0): Promise<u8[]>`: the next bytes, empty at the end of the file.
+- `readString(max = 0): Promise<string>`: the next text, `""` at the end of the file.
+- `readLine(): Promise<string | null>`: the next line without `\n` or `\r\n`, or `null` at the end
+  of the file. Don't mix it with `readString` on one reader.
+- `lines(): AsyncGenerator<string, IoError>`: the remaining lines, as `readLine` reads them, for
+  `for await (const line of r.lines())`. Leaving the loop early keeps the reader open at the next
+  line (like Node's `filehandle.readLines()`, but the file is not closed for you).
+- `close()`.
+
+## Writing
+
+`openWrite(path, { append? } = {}): Promise<FileWriter>` creates or truncates the file, unless
+`append` is set. A `FileWriter` buffers 64 KiB:
+
+- `write(data: string)`, `writeBytes(data: u8[])`.
+- `flush()` writes the buffer out.
+- `close(): Promise<void>` flushes, releases the handle, and throws if the final flush fails.
+  Always `await w.close()`, so that write errors are reported.
+
+## Handles
+
+An unclosed handle stays open until the process exits. A handle is a value you can copy; once
+one copy is closed, the others throw `IoError` `EBADF` (`handle is closed`), and closing again
+does nothing.

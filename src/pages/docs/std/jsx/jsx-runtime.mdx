@@ -1,0 +1,45 @@
+---
+title: "velt/jsx/jsx-runtime"
+description: "The JSX provider module of velt/jsx: the JSX namespace and the factories compiled TSX calls. Programs import from velt/jsx instead."
+layout: "docs"
+category: "Standard library"
+order: 444
+---
+
+# velt/jsx/jsx-runtime
+
+The JSX provider module of [velt/jsx](/docs/std/jsx/). A module with JSX imports it implicitly:
+as the namespace `JSX` for types (`JSX.Element`, `JSX.IntrinsicElements`), and for the factories
+the compiled code calls (`jsx`, `Fragment`, `jsxComponent`, `jsxAsyncComponent`). It also has the
+server-side precompile exports (`jsxTemplate`, `jsxTemplateString`, `jsxEscape`,
+`jsxEscapeString`, `jsxAttr`, `jsxList`), so static markup compiles to constant strings.
+Programs import from `velt/jsx`, not from here; the module matters to tools and to authors of
+other providers ([TSX: the provider](/docs/reference/tsx/#the-provider)).
+
+The factories are ordinary functions. Called directly, as the compiler calls them:
+
+```ts
+import { jsx, jsxAsyncComponent } from "velt/jsx/jsx-runtime";
+import { Element, raw, renderToString } from "velt/jsx";
+
+async function Greeting(props: { name: string }): Promise<Element> {
+  await sleep(1);
+  return jsx("p", ["class"], ["hi"], [`Hello, ${props.name}`], null);
+}
+
+// <div title={t}>{"<b>"}{raw("<hr>")}<Greeting name="Ann & Bo" /></div>
+const el = jsx("div", ["title"], [`"quoted"`], [
+  "<b>",
+  raw("<hr>"),
+  jsxAsyncComponent((p: { name: string }) => Greeting(p), { name: "Ann & Bo" }, null, "doc#Greeting"),
+], null);
+console.log(await renderToString(el));
+// <div title="&quot;quoted&quot;">&lt;b&gt;<hr><p class="hi">Hello, Ann &amp; Bo</p></div>
+```
+
+## The generic provider
+
+`velt/jsx/generic/jsx-runtime` is the same provider without the precompile exports, so the
+compiler lowers every element to `jsx` / `Fragment` calls. It exists to check that both lowerings
+render byte-identical HTML: `/** @jsxImportSource velt/jsx/generic */` at the top of a file
+selects it.

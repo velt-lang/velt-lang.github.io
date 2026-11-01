@@ -32,7 +32,7 @@ const FEATURES = [
     {
         title: 'Every core, not one',
         icon: <ChipIcon size={28} color="#A592FF" />,
-        body: () => <>A multi-threaded scheduler from the start. Handlers spread over all cores, <C>spawn</C> puts work on another — and data races are compile errors.</>,
+        body: () => <>A multi-threaded scheduler. Handlers spread over all cores, <C>spawn</C> puts work on another — and data races are compile errors.</>,
     },
     {
         title: "Memory you don't think about",
@@ -112,12 +112,12 @@ export default component(() => () => (
                     <span class="size-[11px] rounded-full bg-line-3" />
                     <span class="size-[11px] rounded-full bg-line-3" />
                     <span class="size-[11px] rounded-full bg-line-3" />
-                    <span class="ml-3 font-mono text-[13px] text-fg-3">server.ts</span>
-                    <span class="ml-auto font-mono text-xs text-muted">velt run server.ts</span>
+                    <span class="ml-3 font-mono text-[13px] text-fg-3">src/main.vlt</span>
+                    <span class="ml-auto font-mono text-xs text-muted">velt run</span>
                 </div>
                 <pre class="overflow-x-auto px-[22px] py-5 font-mono text-[13.5px] leading-[1.7] text-fg">{hl(SERVER_TS)}</pre>
                 <div class="flex flex-wrap gap-x-5 gap-y-2 border-t border-line px-[22px] py-3.5 text-[13px] text-fg-3">
-                    <span>A complete HTTP server.</span>
+                    <span>A complete HTTP server, on the <a href="/docs/packages/http-server/" class="text-fg-3 underline decoration-line-3 underline-offset-2 hover:text-cyan">http-server</a> package.</span>
                     <span class="text-cyan">Every core answers requests.</span>
                 </div>
             </div>
@@ -189,8 +189,8 @@ export default component(() => () => (
                 <span class={`${eyebrow} text-orange`}>Benchmarks</span>
                 <h2 class={`${h2} text-[clamp(30px,3.4vw,44px)] leading-[1.1]`}>The whole stack is fast, not just the loop.</h2>
                 <p class="m-0 text-fg-3">
-                    The HTTP server, the Redis, Postgres and SQLite drivers are written in Velt and measured against Rust, Go, Bun
-                    and Node. Every number links to its method and raw data.
+                    Web servers and the Redis, Postgres and SQLite clients, measured against Rust, Go, Bun and Node. Every
+                    number links to its method and raw data.
                 </p>
                 <a href="/benchmarks/" class="inline-flex min-h-11 items-center gap-2 self-start font-medium text-cyan hover:text-cyan-hover">
                     All benchmarks and methods

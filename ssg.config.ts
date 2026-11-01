@@ -2,20 +2,21 @@ import { defineSSGConfig } from '@sigx/ssg';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { apiModule, coverageReport, guideIntro } from './src/lib/std-api';
+import { apiModule, coverageReport, guideIntro, specifierOf } from './src/lib/std-api';
 import { writeApiCards } from './src/lib/api-cards';
+import { REDIRECTS } from './src/data/redirects';
 
 /**
  * The API pages share one route, so their title and description come from
- * the module: "velt:http API — Velt docs" and the guide's opening sentence.
+ * the module: "velt/net/http API — Velt docs" and the guide's opening sentence.
  */
 function apiPageHead(html: string, path: string): string {
     const slug = path.match(/^\/docs\/api\/(.+?)\/?$/)?.[1];
     const m = slug ? apiModule(slug) : undefined;
     if (!m) return html;
     const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    const title = esc(`${m.specifier} API`);
-    const description = esc(`API reference for ${m.specifier}: ${(guideIntro(m.module).summary ?? m.summary ?? '').replace(/`|\[|\]\([^)]*\)/g, '')}`.trim());
+    const title = esc(`${specifierOf(m)} API`);
+    const description = esc(`API reference for ${specifierOf(m)}: ${(guideIntro(m.module).summary ?? m.summary ?? '').replace(/`|\[|\]\([^)]*\)/g, '')}`.trim());
     return html
         // Replacer functions: a `$` in the text must come out as written.
         .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
@@ -87,7 +88,7 @@ export default defineSSGConfig({
         docs: {
             path: '/docs',
             showDrafts: 'dev',
-            sectionOrder: ['Overview', 'The book', 'Language reference', 'Standard library', 'Tooling'],
+            sectionOrder: ['Overview', 'The book', 'Language reference', 'Standard library', 'Packages', 'Tooling'],
         },
     },
 
@@ -111,6 +112,10 @@ export default defineSSGConfig({
         },
     },
 
+    // Old URLs (std pages before the velt/<area> layout, modules that became
+    // packages): a meta-refresh page at each, and _redirects for hosts with 301s.
+    redirects: REDIRECTS,
+
     // Every internal link and #fragment must resolve: a broken link fails the build.
     linkCheck: 'error',
 
@@ -132,13 +137,14 @@ export default defineSSGConfig({
             'JavaScript are left out on purpose (`eval`, prototypes, decorators, `with`, `delete`, loose `==`);',
             'read [Velt for TypeScript developers](https://veltlang.com/docs/book/ts-developers.md) before writing',
             'code. Velt adds integer types (`i64`, `u8`…), typed errors (`throws`), `extend`, `spawn` and',
-            '`velt:*` standard modules. Every docs page has a markdown rendition at its URL with the trailing',
+            '`velt/*` standard modules. Every docs page has a markdown rendition at its URL with the trailing',
             'slash replaced by `.md`; the whole corpus is https://veltlang.com/llms-full.txt.',
         ].join('\n'),
         sections: [
             { title: 'The book', pages: docsArea('book') },
             { title: 'Language reference', pages: docsArea('reference') },
             { title: 'Standard library', pages: docsArea('std') },
+            { title: 'Packages', pages: docsArea('packages') },
             { title: 'Tooling', pages: docsArea('tooling') },
         ],
         // Keep llms-full.txt ingestible: the std modules are indexed above and

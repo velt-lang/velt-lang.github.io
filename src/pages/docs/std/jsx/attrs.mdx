@@ -1,0 +1,37 @@
+---
+title: "velt/jsx/attrs"
+description: "The attribute types velt/jsx's IntrinsicElements is made of (HtmlAttrs, AnchorAttrs, SvgAttrs, MathAttrs, …), for JSX providers that extend them."
+layout: "docs"
+category: "Standard library"
+order: 442
+---
+
+# velt/jsx/attrs
+
+`import { HtmlAttrs, AnchorAttrs, SvgAttrs, MathAttrs } from "velt/jsx/attrs"`. The attribute
+types [velt/jsx](/docs/std/jsx/)'s `IntrinsicElements` is made of, for JSX providers that extend
+them. Programs that render TSX don't import them: the compiler checks attributes through
+`JSX.IntrinsicElements`.
+
+- `HtmlAttrs` holds the global attributes (`id`, `class`, `style`, `title`, `tabindex`, …).
+- Every other HTML type is `HtmlAttrs & { … }` with the element's own attributes: `AnchorAttrs`
+  for `<a>`, `ButtonAttrs` for `<button>`, `InputAttrs` for `<input>`, and so on.
+- The SVG and MathML types are built the same way on `SvgAttrs` and `MathAttrs` (`CircleAttrs`,
+  `MoAttrs`, …).
+
+A provider that adds attributes of its own (event handlers for a client-side renderer, say)
+builds its `IntrinsicElements` from these types instead of listing every element again:
+
+```ts
+import { AnchorAttrs, HtmlAttrs } from "velt/jsx/attrs";
+
+type Handlers = { onclick?: string };
+
+type MyIntrinsicElements = {
+  a: AnchorAttrs & Handlers;
+  div: HtmlAttrs & Handlers;
+};
+
+const link: AnchorAttrs = { href: "/docs/", class: "nav" };
+console.log(link.href); // /docs/
+```

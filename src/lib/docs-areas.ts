@@ -3,7 +3,7 @@
  * and the sidebar lists that area's pages. One color per kind of content,
  * the same everywhere (search tiles, catalog, sidebar).
  */
-export type AreaId = 'learn' | 'language' | 'std' | 'tooling' | 'errors';
+export type AreaId = 'learn' | 'language' | 'std' | 'packages' | 'tooling' | 'errors';
 
 export interface Area {
     id: AreaId;
@@ -15,7 +15,7 @@ export interface Area {
     color: string;
     href: string;
     /** The sidebar group (docs-groups.ts) the area lists. */
-    group: 'book' | 'reference' | 'std' | 'tooling';
+    group: 'book' | 'reference' | 'std' | 'packages' | 'tooling';
 }
 
 export const DIAGNOSTICS_PATH = '/docs/reference/diagnostics/';
@@ -28,6 +28,7 @@ export const AREAS: Area[] = [
     { id: 'learn', label: 'Learn', meta: 'The book: getting started, tour, guides', glyph: '→', color: '#5FE1F7', href: '/docs/book/', group: 'book' },
     { id: 'language', label: 'Language', meta: 'Reference: types, classes, memory, TSX', glyph: '§', color: '#A592FF', href: '/docs/reference/', group: 'reference' },
     { id: 'std', label: 'Standard library', meta: 'guides and API', glyph: '{}', color: '#FF9F5A', href: '/docs/std/', group: 'std' },
+    { id: 'packages', label: 'Packages', meta: 'sqlite, postgres, redis, http-server', glyph: '+', color: '#FF8FD8', href: '/docs/packages/', group: 'packages' },
     { id: 'tooling', label: 'Tooling', meta: 'CLI, packages, manifest, editors, debugging', glyph: '$', color: '#3DDC97', href: '/docs/tooling/', group: 'tooling' },
     { id: 'errors', label: 'Errors', meta: 'Every compiler diagnostic, explained', glyph: '!', color: '#FFC93C', href: DIAGNOSTICS_PATH, group: 'reference' },
 ];
@@ -37,8 +38,9 @@ const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
 /** The area a docs path belongs to. The docs home counts as Learn. */
 export function areaOf(path: string): Area {
     const p = norm(path);
-    if (p.startsWith(DIAGNOSTICS_PATH)) return AREAS[4];
-    if (p.startsWith(API_PATH)) return AREAS[2];
+    const by = (id: AreaId) => AREAS.find((a) => a.id === id)!;
+    if (p.startsWith(DIAGNOSTICS_PATH)) return by('errors');
+    if (p.startsWith(API_PATH)) return by('std');
     return AREAS.find((a) => a.id !== 'errors' && p.startsWith(a.href)) ?? AREAS[0];
 }
 

@@ -9,7 +9,7 @@ import { ApiCards } from '../../islands/ApiCards';
 import { CopyTextButton } from '../../islands/CopyTextButton';
 import { COMING_FROM } from '../../data/coming-from';
 import {
-    anchorOf, apiPath, backlinks, BACKLINK_ORDER, guideIntro, guidePath, groupExports, kindInfo, moduleSlug, moduleSummary, sourceUrl, summaryOf, visibleExports,
+    anchorOf, apiModules, apiPath, backlinks, BACKLINK_ORDER, guideIntro, guidePath, guideSlug, groupExports, isGlobalModule, kindInfo, moduleSummary, sourceUrl, specifierOf, summaryOf, visibleExports,
     type ApiItem, type ApiModule,
 } from '../../lib/std-api';
 import { tint } from '../../lib/docs-areas';
@@ -111,6 +111,12 @@ const trivialSignature = (it: ApiItem) => new RegExp(`^(export )?(abstract )?(${
  */
 const BACKLINKS_SHOWN = 8;
 
+/** A page module's name for display (`velt/net/http`), from its module id. */
+const nameOf = (module: string) => {
+    const m = apiModules().get(module);
+    return m ? specifierOf(m) : module.replace(/^std\//, 'velt/');
+};
+
 const Backlinks = component<{ href: string; module: string }>(({ props, slots }) => () => {
     const roles = backlinks(props.href);
     const extra = slots.default?.();
@@ -130,7 +136,7 @@ const Backlinks = component<{ href: string; module: string }>(({ props, slots })
                     shown += take.length;
                     return (
                         <span class="api-backlinks-group">
-                            {mod !== props.module && <span class="font-mono text-[12.5px] text-dim">{mod.replace(/^std\//, 'velt:')}</span>}
+                            {mod !== props.module && <span class="font-mono text-[12.5px] text-dim">{nameOf(mod)}</span>}
                             {take.map((b) => <a href={b.href} data-card={b.href.replace(/(#[^.]*)\..*$/, '$1')}><code>{b.name}</code></a>)}
                         </span>
                     );
@@ -189,7 +195,7 @@ export const ExportSection = component<{ item: ApiItem; module: ApiModule }>(({ 
             </div>
             {it.reexportedFrom && (
                 <p class="m-0 text-[14px] text-muted">
-                    Re-exported from <code>{it.reexportedFrom.module.replace(/^std\//, 'velt:')}</code>
+                    Re-exported from <code>{it.reexportedFrom.module.replace(/^std\//, 'velt/')}</code>
                 </p>
             )}
             {!trivialSignature(it) && <SignatureBlock signature={it.signature} spans={it.spans} />}
@@ -279,8 +285,12 @@ const ExportsTable = component<{ items: ApiItem[]; module: string }>(({ props })
     </div>
 ), { name: 'ExportsTable' });
 
-/** The guide's import line (`import { serve, Server } from "velt:http";`), else the module's first function and type. */
+/**
+ * The guide's import line (`import { readFile, writeFile } from "velt/fs";`),
+ * else the module's first function and type. Globals have none.
+ */
 export function importLine(m: ApiModule): string {
+    if (isGlobalModule(m.module)) return '// Globals: in scope everywhere, no import.';
     const guide = guideIntro(m.module).importLine;
     if (guide && !guide.includes('…')) return `${guide};`;
     const named = groupExports(visibleExports(m))
@@ -315,14 +325,14 @@ export const ApiPage = component<{ module: ApiModule }>(({ props, slots }) => ()
     return (
         <>
             <div class="flex flex-wrap items-baseline gap-3">
-                <h1 class="m-0 font-mono text-[40px] font-medium leading-[1.1] tracking-[-0.02em] text-fg max-[480px]:text-[32px]">{m.specifier}</h1>
+                <h1 class="m-0 font-mono text-[40px] font-medium leading-[1.1] tracking-[-0.02em] text-fg max-[480px]:text-[32px]">{specifierOf(m)}</h1>
                 <span class="rounded-full border border-line-3 px-2.5 py-0.5 text-xs text-fg-3">API reference</span>
             </div>
             <p class="api-lead m-0 text-lg text-fg-3">
                 {summary && <DocInline md={summary} />} For a walkthrough, read <a href={guidePath(m.module)} class="text-cyan hover:text-cyan-hover">the guide</a>.
             </p>
             <ImportLine code={importLine(m)} />
-            {COMING_FROM[moduleSlug(m.module)] && <ComingFromBox slug={moduleSlug(m.module)} />}
+            {COMING_FROM[guideSlug(m.module)] && <ComingFromBox slug={guideSlug(m.module)} />}
             {slots.default?.()}
             <section id="exports" class="flex scroll-mt-6 flex-col gap-3 pt-2">
                 <h2 class="m-0 font-display text-[26px] font-semibold tracking-[-0.02em] text-fg">Exports</h2>

@@ -1,6 +1,6 @@
 ---
 title: "Building an HTTP server"
-description: "This guide builds a small JSON API for todos: routing, request bodies, validation, errors as status codes, shared state, and tests."
+description: "This guide builds a small JSON API for todos on the http-server package: routing, request bodies, validation, errors as status codes, shared state, and tests."
 layout: "docs"
 category: "The book"
 order: 50
@@ -10,41 +10,82 @@ navTitle: "An HTTP server"
 # Building an HTTP server
 
 This guide builds a small JSON API for todos: routing, request bodies, validation, errors as
-status codes, shared state, and tests. The server is [`velt:http`](/docs/std/http/), which runs
-on hyper and tokio: HTTP/1.1 with keep-alive, HTTP/2, and HTTPS through rustls. Handlers run
-concurrently on every core.
+status codes, shared state, and tests. The server is the [`http-server`](/docs/packages/http-server/)
+package, written in Velt: HTTP/1.1 with keep-alive, HTTP/2, HTTPS and WebSockets. Handlers take
+the web-standard `Request` and return a `Response`, and run concurrently on every core.
 
 `velt new todo --template api` generates a larger version of the same design, split into
 modules, with tests.
 
+## Setting up
+
+The HTTP server is a package, not part of the standard library. Start a project and add it to
+`package.vlt`'s `dependencies`:
+
+```sh
+velt new todo
+cd todo
+```
+
+```ts ignore title="package.vlt"
+import type { Package } from "velt/package";
+
+export const pkg: Package = {
+  name: "todo",
+  version: "0.1.0",
+  velt: "0.5",
+  dependencies: {
+    "http-server": {
+      git: "https://github.com/velt-lang/velt",
+      tag: "v0.5.0", // the release of your velt (`velt --version`)
+      path: "packages/http-server",
+    },
+  },
+};
+```
+
+There is no public package registry yet, so the package comes straight from the Velt repository
+([git dependencies](/docs/tooling/packages/#git-dependencies)). `velt install`, or the first
+`velt run`, fetches it and records the commit in `velt.lock.json`. With a checkout of the
+repository, `velt add http-server --path ../velt/packages/http-server` writes a path dependency
+instead. `velt new todo --template api` writes the git dependency for you.
+
 ## Hello, HTTP
 
-```ts
-import { serve } from "velt:http";
+Replace `src/main.vlt` with:
 
-async function main() {
-  const server = await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
-    return Response.json({ path: new URL(req.url).pathname, method: req.method });
-  });
-  console.log(`listening on http://127.0.0.1:${server.port}`);
-}
+```ts ignore title="src/main.vlt"
+import { serve } from "http-server";
+
+const server = await serve({ port: 8080 }, (req: Request) => {
+  return Response.json({ path: new URL(req.url).pathname, method: req.method });
+});
+console.log(`listening on http://127.0.0.1:${server.port}`);
 ```
 
 ```sh
-velt run hello.vlt
-curl localhost:8080/hi        # {"path":"/hi","method":"GET"}
+$ velt run
+listening on http://127.0.0.1:8080
 ```
 
-A listening server keeps the program running after `main` returns, like Node, until
-`server.close()`. The handler is an async arrow that receives a `Request` and returns a
-`Response`: the same global classes `fetch` uses, as in Deno and Bun. `req.url` is absolute
+```sh
+$ curl localhost:8080/hi
+{"path":"/hi","method":"GET"}
+```
+
+A listening server keeps the program running after its last statement, like Node, until
+`server.close()`. The handler receives a `Request` and returns a `Response`, or a promise of one:
+the same global classes `fetch` uses, as in Deno and Bun. `req.url` is absolute
 (`http://localhost:8080/hi`), so `new URL(req.url).pathname` is the path. `Response.json(value)`
 serializes any value with `JSON.stringify`, which is generated at compile time for your types.
 
 ## A JSON API
 
-```ts
-import { serve } from "velt:http";
+The API goes into its own module, `src/server.vlt`, with a `startServer(port)` function, so tests
+can start it too:
+
+```ts ignore title="src/server.vlt"
+import { serve, HttpServer } from "http-server";
 
 class ApiError extends Error {
   status: number;
@@ -126,9 +167,9 @@ function handle(store: Store, method: string, path: string, body: string): Reply
   }
 }
 
-async function main() {
+export async function startServer(port: number): Promise<HttpServer> {
   const store = shared(new Mutex<Store>(new Store()));
-  const server = await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
+  return await serve({ port }, async (req: Request): Promise<Response> => {
     const path = new URL(req.url).pathname;
     const method = req.method;
     const body = await req.text();
@@ -138,8 +179,16 @@ async function main() {
       headers: { "content-type": "application/json" },
     });
   });
-  console.log(`listening on http://127.0.0.1:${server.port}`);
 }
+```
+
+`src/main.vlt` starts it:
+
+```ts ignore title="src/main.vlt"
+import { startServer } from "./server";
+
+const server = await startServer(8080);
+console.log(`listening on http://127.0.0.1:${server.port}`);
 ```
 
 ```sh
@@ -147,6 +196,8 @@ $ curl -X POST localhost:8080/todos -d '{"title":" milk "}'
 {"id":1,"title":"milk","done":false}
 $ curl -X POST localhost:8080/todos -d '{}'
 {"error":"title is required"}
+$ curl -X POST localhost:8080/todos -d '{"title":1}'
+{"error":"bad JSON: expected string at $.title"}
 $ curl localhost:8080/todos/9
 {"error":"no todo 9"}
 $ curl -X PUT localhost:8080/todos
@@ -162,35 +213,42 @@ What to notice:
   narrow it.
 - **`JSON.parse<NewTodo>`** checks the body's shape: a wrong type is a `JsonError`
   (`expected string at $.title`), and an optional field (`title?: string`) may be missing.
-- **Shared state is explicit.** Handlers run concurrently on every core, so they can't modify
-  captured variables. The store lives in `shared(new Mutex<Store>(...))`, and
-  `store.with((s) => …)` locks it for the duration of the callback. Keep the work inside `with`
-  short and synchronous; the callback can't `await`.
-- **No global state.** The store is created in `main` and captured by the handler. That is
-  also what lets [`velt dev`](/docs/book/hot-reload/) hot-swap the handler's code while the store keeps
-  its data.
+- **Shared state is explicit.** Handlers run on several threads at once, so a handler can't
+  change a variable it captured: `let hits = 0;` in `startServer` and `hits++` in the handler is
+  a compile error at the `serve` call, whose fix (`shared(new Mutex(0))`) it shows. The store
+  lives in `shared(new Mutex<Store>(...))`, and `store.with((s) => …)` locks it for the duration
+  of the callback. Keep the work inside `with` short and synchronous; the callback can't `await`.
+  (A `let` at the top level of the program is module state, which handlers may change, as in
+  Node: [module state](/docs/reference/variables/#module-state).)
+- **State lives in values.** The store is created by `startServer` and captured by the handler,
+  so each server, a test's included, has its own. That is also what lets
+  [`velt dev`](/docs/book/hot-reload/) hot-swap the handler's code while the store keeps its
+  data.
 
 ## Requests and responses
 
 - `Request`: `method`, `url` (absolute: route on `new URL(req.url).pathname`, read the query
   from `url.searchParams`), `headers` (`get(name)` and `has(name)`, case-insensitive) and the
-  body, received while you read it: `await req.text()`, `await req.json<T>()`, or chunk by
-  chunk from `req.body`.
-- `new Response(body, { status, headers })`, `Response.json(value, { status })`;
-  `res.headers.set(name, value)` sets a header. A streamed body is `new Response(BodyStream.from(chunks))` with an async generator of `u8[]` chunks
-  ([velt:http](/docs/std/http/#the-response)).
-- The second handler argument, `info: ServeInfo`, says who connected (`info.remoteAddr`).
+  body, received while you read it: `await req.text()`, `await req.json<T>()`,
+  `await req.bytes()`, or chunk by chunk from `req.body`.
+- `new Response(body, { status, headers })`, `Response.json(value, { status })`,
+  `Response.redirect(url, status)`; `res.headers.set(name, value)` sets a header.
+- A body made while it is sent is a `BodyStream` from [velt/net/http](/docs/std/net/http/):
+  `new Response(BodyStream.from(chunks))` with an async generator of `u8[]` chunks. Each chunk
+  goes out as the generator yields it ([Server-rendered pages](/docs/book/ssr-pages/#streaming-pages)
+  streams HTML this way).
+- The handler's second argument, `info: ServeInfo`, says who connected:
+  `info.remoteAddr.hostname` and `info.remoteAddr.port`.
 - A handler that throws gets a `500 Internal Server Error`, and its error is printed to stderr.
-- `server.close()` stops accepting connections and lets in-flight requests finish;
-  `await server.shutdown()` also waits for them.
+
+The [http-server reference](/docs/packages/http-server/) has every option, limit and timeout.
 
 ## Testing it
 
 Start the server on port 0 (any free port), read the port from `server.port`, and call it with
-the global [`fetch`](/docs/std/fetch/). A test file in `tests/` (`tests/api.test.vlt`), assuming `main.vlt` was split so that a
-`startServer(port)` function in `src/server.vlt` returns the `Server`:
+the global [`fetch`](/docs/std/net/http/). In `tests/api.test.vlt`:
 
-```ts ignore
+```ts ignore title="tests/api.test.vlt"
 import { startServer } from "../src/server";
 
 export async function test_create_and_validate() {
@@ -205,7 +263,16 @@ export async function test_create_and_validate() {
 }
 ```
 
-`velt test` runs it ([Testing](/docs/book/testing/)).
+```sh
+$ velt test
+running tests/api.test.vlt (ran: not cacheable, it uses … the clock, the network)
+ok test_create_and_validate
+
+test result: ok. 1 passed; 0 failed
+```
+
+The test imports `src/server.vlt`, not `src/main.vlt`: importing a module runs its top-level
+statements, and `main.vlt`'s would start a server on port 8080. See [Testing](/docs/book/testing/).
 
 ## HTTPS and HTTP/2
 
@@ -213,30 +280,74 @@ Pass a PEM certificate chain and key, and the server speaks HTTPS and offers HTT
 ALPN:
 
 ```ts ignore
-const server = await serve({ port: 8443, tls: { cert: certPem, key: keyPem } }, handler);
+import { readFileSync } from "velt/fs";
+
+const server = await serve(
+  { port: 8443, tls: { cert: readFileSync("cert.pem"), key: readFileSync("key.pem") } },
+  handler,
+);
 ```
 
-[`fetch`](/docs/std/fetch/) speaks `http://` and `https://` (trusting Mozilla's root
-certificates plus the PEM CAs you pass in `ca`), and uses HTTP/2 when the server offers it. WebSockets are in
-[`velt:websocket`](/docs/std/websocket/).
+```sh
+$ curl -k --http2 -s -o /dev/null -w '%{http_version}\n' https://localhost:8443/
+2
+```
+
+Without TLS the server also takes HTTP/2 from a client that starts with it
+(`curl --http2-prior-knowledge`); `http2: false` turns HTTP/2 off. [`fetch`](/docs/std/net/http/)
+speaks `http://` and `https://` (trusting Mozilla's root certificates plus the PEM CAs you pass
+in `ca`), and uses HTTP/2 when the server offers it.
+
+## WebSockets
+
+`http-server/websocket` upgrades a request to a WebSocket. The handler returns the `101`
+response, and a spawned task talks on the socket, a [velt/net/websocket](/docs/std/net/websocket/)
+`WebSocket`:
+
+```ts ignore
+import { serve } from "http-server";
+import { isWebSocketRequest, upgradeWebSocket } from "http-server/websocket";
+import { WebSocket } from "velt/net/websocket";
+
+async function shout(ws: WebSocket): Promise<void> {
+  for await (const m of ws) {
+    await ws.send(m.text.toUpperCase());
+  }
+  await ws.close();
+}
+
+await serve({ port: 8080 }, (req: Request) => {
+  if (!isWebSocketRequest(req)) {
+    return new Response("WebSocket only", { status: 400 });
+  }
+  const up = upgradeWebSocket(req);
+  spawn(shout(up.socket));
+  return up.response;
+});
+```
+
+`connectWebSocket("ws://127.0.0.1:8080/")` from velt/net/websocket is the client. Topics
+(`ws.subscribe`, `ws.publish`) send one message to many sockets.
+`velt new chat --template websocket` generates a chat server with a terminal client.
+
+## Stopping and reloading
+
+`server.close()` stops accepting connections, lets in-flight requests finish and closes idle
+ones; `await server.shutdown()` also waits for them. Under
+[`velt dev`](/docs/book/hot-reload/), a change to a handler's code is swapped into the running
+server, and a change that needs a restart lets in-flight requests finish first; the listening
+socket stays open, so no request is refused.
 
 ## Databases
 
-[`velt:postgres`](/docs/std/postgres/) (async, with a connection pool), [`velt:sqlite`](/docs/std/sqlite/)
-(embedded) and [`velt:redis`](/docs/std/redis/) decode rows straight into your classes with the
-same compile-time JSON machinery: `const users: User[] = await db.query("SELECT …", [id])`.
+The database drivers are packages too, depended on like `http-server`:
+[`postgres`](/docs/packages/postgres/) (async, with a connection pool),
+[`sqlite`](/docs/packages/sqlite/) (embedded) and [`redis`](/docs/packages/redis/). The SQL
+drivers decode rows straight into your classes with the same compile-time machinery as
+`JSON.parse`.
 
 ## Performance
 
-The TechEmpower-style suite in `bench/web` runs all six test types against Rust (axum),
-Go (`net/http`), Bun and Node. On Linux arm64 (Debian 12 containers on an Apple M4, 10 cores
-shared by client, servers and PostgreSQL; [bench/web/RESULTS.md](https://github.com/velt-lang/velt/blob/main/bench/web/RESULTS.md)):
-
-| Test | Velt | Rust (axum) | Go | Bun | Node |
-|---|---:|---:|---:|---:|---:|
-| JSON | 741k req/s, 49 MB | 619k req/s, 29 MB | 327k req/s | 248k req/s | 100k req/s, 173 MB |
-| single query | 141k req/s, 25 MB | 133k req/s, 34 MB | 119k req/s | 42k req/s | 39k req/s, 188 MB |
-| fortunes | 115k req/s, 28 MB | 118k req/s, 40 MB | 89k req/s | 33k req/s | 23k req/s, 278 MB |
-
-Across every database test Velt is within 0.94–1.07× of Rust. Go leads on multi-query tests
-with 5 or more queries per request, because its driver batches them into one round trip.
+The TechEmpower-style suite in `bench/web` runs its six test types against Rust (axum),
+Go (`net/http`), Bun and Node, with the method and the numbers in
+[bench/web/RESULTS.md](https://github.com/velt-lang/velt/blob/main/bench/web/RESULTS.md).

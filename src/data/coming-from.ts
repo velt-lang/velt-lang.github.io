@@ -2,7 +2,8 @@
  * "Coming from" boxes on the std API pages (design/Api.dc.html): the closest
  * Node, Deno and Bun APIs for a module, and one sentence on the difference.
  * Hand-written: keep each in step with the module's guide, which names the
- * same APIs in its text. Keyed by the module's slug (`http`, `collections/set`).
+ * same APIs in its text. Keyed by the API page's slug, the module path
+ * (`net/http`, `process/child`).
  */
 export interface ComingFrom {
     node: string;
@@ -13,17 +14,11 @@ export interface ComingFrom {
 }
 
 export const COMING_FROM: Record<string, ComingFrom> = {
-    http: {
-        node: 'http.createServer',
-        deno: 'Deno.serve',
-        bun: 'Bun.serve',
-        note: "Closest to Deno's and Bun's `serve`: a handler takes a `Request` and returns a `Response`.",
-    },
-    fetch: {
+    'net/http': {
         node: 'fetch',
         deno: 'fetch',
         bun: 'fetch',
-        note: 'The same WHATWG `fetch`, `Request`, `Response` and `Headers` globals, with no import; failures are a typed `IoError` instead of `TypeError: fetch failed`.',
+        note: 'The same WHATWG `fetch`, `Request`, `Response` and `Headers` globals, with no import; a failed request rejects with a typed `IoError` (`code` such as `ECONNREFUSED`, message `fetch failed: …`) instead of a `TypeError`.',
     },
     fs: {
         node: 'fs/promises',
@@ -41,7 +36,7 @@ export const COMING_FROM: Record<string, ComingFrom> = {
         node: 'process',
         deno: 'Deno.env, Deno.args',
         bun: 'process',
-        note: 'The builtin `process` works as in Node, with no import; `velt:process` has the rest as functions: `argv()`, `envAll()`, `setEnv`, `exit`.',
+        note: 'The builtin `process` works as in Node, with no import; `velt/process` has the rest as functions: `argv()`, `envAll()`, `setEnv`, `exit`.',
     },
     crypto: {
         node: 'crypto.createHash',
@@ -49,7 +44,7 @@ export const COMING_FROM: Record<string, ComingFrom> = {
         bun: 'Bun.CryptoHasher',
         note: 'One call per digest (`sha256Hex(data)`) instead of a hash object, and synchronous, unlike Web Crypto.',
     },
-    child_process: {
+    'process/child': {
         node: 'child_process.spawn',
         deno: 'Deno.Command',
         bun: 'Bun.spawn',

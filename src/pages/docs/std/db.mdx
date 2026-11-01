@@ -1,39 +1,31 @@
 ---
-title: "velt:db"
-description: "import { CellKind, readRow, readRows, RowSource, RowError } from \"velt:db\". What database drivers share: typed rows from any source of tabular data."
+title: "velt/db"
+description: "What database drivers share: typed rows from any source of tabular data (RowSource, readRows), and the row decoder and parameter binder for native drivers."
 layout: "docs"
 category: "Standard library"
 order: 410
 ---
 
-# velt:db
+# velt/db
 
-`import { CellKind, readRow, readRows, RowSource, RowError } from "velt:db"`. What database
-drivers share: typed rows from any source of tabular data. A driver written in Velt (a database's wire protocol parsed in
-place, a file format) implements `RowSource`, and `readRows<T>` fills one `T` per row: each
-column fills the field of its name, as `JSON.parse<T>` fills fields from keys, with the same
-conversions (an integer into an `f64` field, an exact float into an integer field, `null` into a
-`T | null` field) and the same messages for a row that doesn't fit. velt:sqlite and
-velt:postgres read their rows the same way.
+`import { readRows, RowSource, CellKind, RowError } from "velt/db"`. What database drivers share:
+typed rows from any source of tabular data, and a statement's parameters handed to a native
+driver. The [SQLite](/docs/packages/sqlite/) and [PostgreSQL](/docs/packages/postgres/) packages
+read their rows this way, so a typed query there (`stmt.all<User>()`) fills its `User`s by the
+rules on this page. Use
+the module directly when you write a driver, or read a tabular format of your own into typed
+rows.
 
-- `interface RowSource`: `columnCount(): i64`, `columnName(i): string`, `next(): bool` (to the
-  next row, the first on the first call; false when there is none), `kind(i): CellKind` (what
-  column `i` of the current row holds), and one getter per kind: `bool(i)`, `int(i): i64`,
-  `float(i): f64`, `text(i): string`, `blob(i): u8[]`, `json(i): string` (a nested value as
-  JSON text). The reader asks a value's kind before taking it with that kind's getter.
-- `enum CellKind { Null, Bool, Int, Float, Text, Blob, Json }`.
-- `readRows<T, S extends RowSource>(src: S): T[]`: every remaining row.
-- `readRow<T, S extends RowSource>(src: S): T | null`: the next row, or null.
-- `RowError { message }`: a row that doesn't fit `T` (`expected i64 at $[0].id`, `expected field "name" at $[1]`). Extra columns are ignored.
+## Typed rows from any source
 
-For a row type of plain fields (numbers, bools, strings, `T | null` of those, `u8[]`) and a
-source class whose methods don't throw, the compiler reads the rows column by column from the
-source itself: each column is matched to its field once, and no text is made. Any other row
-type (nested objects, arrays, unions) is read through the JSON text of the rows, with the same
-result.
+A driver written in Velt (a database's wire protocol parsed in place, a file format) implements
+`RowSource`, and `readRows<T>` fills one `T` per row: each column fills the field of its name, as
+`JSON.parse<T>` fills fields from keys, with the same conversions (an integer into an `f64`
+field, an exact float into an integer field, `null` into a `T | null` field) and the same messages
+for a row that doesn't fit.
 
 ```ts
-import { CellKind, readRows, RowSource } from "velt:db";
+import { CellKind, readRows, RowSource } from "velt/db";
 
 // Rows of `key=value` pairs, one row per line.
 class Pairs implements RowSource {
@@ -81,12 +73,76 @@ struct Pair {
   value: i64;
 }
 
-function main() {
-  for (const p of readRows<Pair, Pairs>(new Pairs("a=1\nb=2"))) {
-    console.log(p.key, p.value); // a 1, then b 2
+for (const p of readRows<Pair, Pairs>(new Pairs("a=1\nb=2"))) {
+  console.log(p.key, p.value); // a 1, then b 2
+}
+```
+
+- `interface RowSource`: `columnCount(): i64`, `columnName(i): string`, `next(): bool` (to the
+  next row, the first on the first call; false when there is none), `kind(i): CellKind` (what
+  column `i` of the current row holds), and one getter per kind: `bool(i)`, `int(i): i64`,
+  `float(i): f64`, `text(i): string`, `blob(i): u8[]`, `json(i): string` (a nested value as JSON
+  text). The reader asks a value's kind before taking it with that kind's getter.
+- `enum CellKind { Null, Bool, Int, Float, Text, Blob, Json }`.
+- `readRows<T, S extends RowSource>(src: S): T[]`: every remaining row.
+- `readRow<T, S extends RowSource>(src: S): T | null`: the next row, or `null`.
+
+### Errors
+
+`readRows` and `readRow` throw `RowError { message }` for a row that doesn't fit `T`
+(`expected i64 at $[0].id`, `expected field "name" at $[1]`). Extra columns are ignored. An error
+the source's methods throw is thrown again as a `RowError` with its message.
+
+### Performance
+
+For a row type of plain fields (numbers, bools, strings, `T | null` of those, `u8[]`), the rows
+are read column by column from the source itself, by code generated for the row type at compile
+time: each column is matched to its field once, and no text is made. Any other row type (nested
+objects, arrays, unions) is read through the JSON text of the rows, with the same result.
+
+## Native drivers
+
+A driver in a [package with native code](/docs/book/native-packages/) hands its rows and
+parameters across without JSON text in between, through two objects its Rust library owns: a row
+cursor over its live result and a parameter sink for a statement (crate
+`velt_text::rows_cursor` on the Rust side). The library registers each one with the runtime and
+gives its Velt side a handle (a `u64`), never an address: std looks the handle up, so a number
+that names no open cursor or sink never reaches memory. The decoder and the binder are generated
+for each type at compile time.
+
+- `decodeRows<T>(cursor: u64): T[]`: every row of the cursor as a `T`, each column filling the
+  field of its name with the same conversions and messages as `readRows`. The cursor stays the
+  driver's: give it back afterwards, so the driver can release the result and report a failure it
+  met while stepping. Throws `RowError` for a row that doesn't fit, and for a handle that names no
+  open row cursor.
+- `decodeRow<T>(cursor: u64): T`: the row of a cursor the driver opened for a single row.
+- `bindParams<P>(sink: u64, params: P): bool`: hands `params` to the sink value by value: an
+  array, a tuple or a lone value by position, an object's fields by name, each value as its JSON
+  text would read back (an integral number an integer, `NaN` null, a `u8[]` field a blob). Returns
+  `false`, having done nothing, for a type it can't take that way (a nested object, a union): the
+  driver then takes `JSON.stringify(params)`, which binds the same values. `false` too for a
+  handle that names no open parameter sink.
+
+```ts ignore title="src/lib.vlt"
+import { bindParams, decodeRows } from "velt/db";
+
+declare function velt_mydb__bind_begin(stmt: u64): u64;
+declare function velt_mydb__query_bound(sink: u64): u64;
+declare function velt_mydb__query_json(stmt: u64, params: string): u64;
+declare function velt_mydb__close_rows(cursor: u64): void;
+
+export function query<T, P>(stmt: u64, params: P): T[] {
+  const sink = velt_mydb__bind_begin(stmt);
+  const cursor = bindParams<P>(sink, params)
+    ? velt_mydb__query_bound(sink)
+    : velt_mydb__query_json(stmt, JSON.stringify(params));
+  try {
+    return decodeRows<T>(cursor);
+  } finally {
+    velt_mydb__close_rows(cursor);
   }
 }
 ```
 
-Native drivers (written in Rust on the native SDK) offer the same through a row cursor
-([native_abi.md "Row cursors"](https://github.com/velt-lang/velt/blob/main/docs/internals/contracts/native_abi.md)).
+`packages/sqlite` and `packages/postgres` in the Velt repository are complete drivers built this
+way.

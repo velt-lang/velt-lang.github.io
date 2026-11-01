@@ -1,0 +1,27 @@
+---
+title: "velt/text"
+description: "import { RegExp, StringBuilder, escapeHtml } from \"velt/text\". Regular expressions, a string builder and HTML escaping."
+layout: "docs"
+category: "Standard library"
+order: 320
+---
+
+# velt/text
+
+`import { RegExp, StringBuilder, escapeHtml } from "velt/text"`. Text processing:
+
+- [Regular expressions](/docs/std/text/regex/): `RegExp` (also a global, as are regex literals),
+  its matches (`RegExpMatch`), `RegExpError`, and the `Pattern` interface `RegExp` implements.
+- [`StringBuilder`](/docs/std/text/string_builder/) (also a global): a string built by
+  appending, returned without a copy.
+- [HTML escaping](/docs/std/text/html/): `escapeHtml(s)`, for element content and quoted
+  attribute values.
+
+```ts
+import { escapeHtml } from "velt/text";
+
+const words = "one, two,three".split(/,\s*/);
+const b = new StringBuilder();
+for (const w of words) b.append(`<li>${escapeHtml(w)}</li>`);
+console.log(b.take()); // <li>one</li><li>two</li><li>three</li>
+```

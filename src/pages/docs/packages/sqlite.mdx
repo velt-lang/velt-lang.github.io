@@ -1,0 +1,282 @@
+---
+title: "sqlite"
+description: "Embedded SQLite with a synchronous API close to better-sqlite3, and a read-only SQLite engine written in Velt (sqlite/engine)."
+layout: "docs"
+category: "Packages"
+order: 20
+---
+
+import { Callout } from '@/components/mdx';
+
+# sqlite
+
+Embedded SQLite, compiled into the package's native library (Rust over rusqlite, no system
+library), with an API close to better-sqlite3. The package also holds a SQLite engine written in
+Velt, [`sqlite/engine`](#the-engine-written-in-velt), which reads databases today.
+
+```ts
+import { open, Database, Statement, Transaction, RunResult, OpenOptions, SqliteError } from "sqlite";
+import { openDatabase } from "sqlite/engine";
+```
+
+## Adding it to a program
+
+There is no public package registry yet. Depend on the package in the Velt repository, from git
+or from a local checkout, in `package.vlt`:
+
+```ts ignore title="package.vlt"
+import type { Package } from "velt/package";
+
+export const pkg: Package = {
+  name: "app",
+  version: "0.1.0",
+  dependencies: {
+    sqlite: { git: "https://github.com/velt-lang/velt", branch: "main", path: "packages/sqlite" },
+    // Or a local checkout of the repository:
+    // sqlite: { path: "../velt/packages/sqlite" },
+  },
+};
+```
+
+The driver is a Rust crate (the package's `native/` directory), so both forms build it with cargo
+the first time and need a [Rust toolchain](https://rustup.rs). A path dependency builds it
+directly (into `packages/sqlite/target/velt-native/`, again when it changes); a git dependency
+builds it only when you allow that with `VELT_NATIVE_FROM_SOURCE=1`, since the build runs the
+package's build scripts. A package published to a registry carries prebuilt libraries, and
+then needs no Rust ([packages with native code](/docs/tooling/packages/#packages-with-native-code)).
+`velt run` and debug builds link the library as a shared library; `velt build --release` links it
+statically.
+
+## A first database
+
+```ts title="src/main.vlt"
+import { open } from "sqlite";
+
+struct User {
+  id: i64;
+  name: string;
+}
+
+const db = open(":memory:");
+db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)");
+const insert = db.prepare("INSERT INTO users (name) VALUES (:name)");
+console.log(insert.runWith({ name: "Ann" }).lastInsertRowid); // 1
+db.transaction(() => {
+  for (const name of ["Bob", "Cy"]) {
+    insert.runWith({ name: name });
+  }
+  return 0;
+});
+const users: User[] = db.prepare("SELECT id, name FROM users ORDER BY id").all();
+const bob: User | null = db.prepare("SELECT * FROM users WHERE name = ?").getWith(["Bob"]);
+console.log(users.length, bob?.id); // 3 2
+db.close();
+```
+
+The driver is **synchronous**: a typical query takes microseconds, which is less than handing it
+to a thread pool and back would cost, and SQLite serializes writers anyway. Run a long query
+inside `spawn(...)` to keep it off the current task.
+
+## Opening a database
+
+`open(path, opts: OpenOptions = {}): Database` (also `Database.open(path, opts)`) opens, and by
+default creates, the database. `path` is a file, `":memory:"` (a private in-memory database) or a
+`file:` URI. Options:
+
+| Option | Default | |
+|---|---|---|
+| `readonly` | `false` | open read-only |
+| `fileMustExist` | `false` | throw `SQLITE_CANTOPEN` instead of creating the file |
+| `timeout` | 5000 | busy timeout in milliseconds |
+| `wal` | `false` | `journal_mode = WAL` |
+
+A `Database` is a handle: pass it around and capture it in handlers and tasks. Its methods:
+
+- `exec(sql)` runs one or more `;`-separated statements without parameters (schema scripts).
+- `prepare(sql): Statement` compiles one statement (throws for bad SQL). Preparing the same SQL
+  again is a cache hit.
+- `pragma(source): string` runs `PRAGMA <source>` and returns the first value as text
+  (`pragma("journal_mode = WAL")` is `"wal"`, `pragma("user_version")` is `"0"`).
+- `inTransaction: bool`, `transaction(fn)`, `begin(): Transaction`: [transactions](#transactions).
+- `close()` closes the connection. After `close()` through one copy of a `Database`, every copy
+  throws `SQLITE_MISUSE`; closing again does nothing.
+
+A connection is one SQLite connection with a lock around each call: tasks can share a
+`Database`, but their statements run one at a time and inside any transaction that is open. For
+parallel readers, open one connection per task with `wal: true`.
+
+## Statements
+
+A `Statement` runs with or without parameters:
+
+| Without parameters | With parameters | Returns |
+|---|---|---|
+| `run()` | `runWith(params)` | `RunResult { changes, lastInsertRowid }` |
+| `get<T>()` | `getWith<T>(params)` | the first row, or `null` |
+| `all<T>()` | `allWith<T>(params)` | every row |
+
+`T` is usually inferred from the annotation (`const u: User | null = s.getWith(…)`). A statement
+releases itself when dropped; `close()` releases it at once (later calls throw `SQLITE_MISUSE`).
+
+### Parameters
+
+Parameters bind as their `JSON.stringify` text would; [velt/db](/docs/std/db/)'s `bindParams`
+hands numbers, strings, bools, `null` and `u8[]` to SQLite directly, without making the text.
+
+- An object binds `:name`, `@name` and `$name` by field name. Extra fields are ignored; a missing
+  one throws `SQLITE_RANGE`.
+- An array, or a single number or string, binds `?` by position.
+- Integer → INTEGER, float → REAL, string → TEXT, bool → 0/1, null → NULL, `u8[]` → BLOB.
+  `JSON.stringify` writes a whole-number `f64` such as `3.0` as `3`, so it binds as INTEGER: a
+  `REAL` column converts it back, a column with no declared type keeps it as an integer.
+
+### Rows
+
+Rows are decoded by velt/db's `decodeRows` (as `JSON.parse<T>` would decode them), so a column
+fills the field with the same name; rename with `AS`.
+
+| SQLite | Velt field |
+|---|---|
+| INTEGER | integer types (exact for all of i64), `f64` |
+| REAL | `f64` |
+| TEXT | `string` |
+| BLOB | `u8[]` |
+| NULL | `T \| null` |
+
+A row that doesn't fit `T` throws `SQLITE_MISMATCH`. SQLite has no boolean type: a column
+declared `BOOLEAN` decodes into a `bool` field, but a 0/1 from an expression needs an integer
+field.
+
+## Transactions
+
+`transaction(fn)` (`fn: () => T throws E`) runs `fn` in a transaction, commits after `fn` returns
+and returns its result. If `fn` throws, or any operation on the connection failed in the meantime
+(even one `fn` caught), it rolls back and throws that error: the transaction is all-or-nothing.
+Nested calls use savepoints: a failed inner transaction undoes only its own work, and the outer
+one continues if `fn` catches its error.
+
+```ts
+import { open, SqliteError } from "sqlite";
+
+const db = open(":memory:");
+db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)");
+try {
+  db.transaction(() => {
+    db.prepare("INSERT INTO users (name) VALUES (?)").runWith(["Ann"]);
+    db.prepare("INSERT INTO users (name) VALUES (?)").runWith(["Ann"]);
+    return 0;
+  });
+} catch (e) {
+  console.log(e.code); // SQLITE_CONSTRAINT_UNIQUE: neither row was inserted
+}
+```
+
+`begin()` returns a `Transaction` (a savepoint when one is already open) with `commit()` and
+`rollback()`, to decide yourself:
+
+```ts ignore
+const tx = db.begin();
+db.prepare("UPDATE accounts SET balance = balance - ? WHERE id = ?").runWith([100, 1]);
+if (overdrawn(db)) {
+  tx.rollback();
+} else {
+  tx.commit();
+}
+```
+
+## Errors
+
+`SqliteError { code, message }`. `code` is SQLite's name, for example `"SQLITE_ERROR"`,
+`"SQLITE_CONSTRAINT_UNIQUE"`, `"SQLITE_BUSY"`, `"SQLITE_RANGE"` (parameters),
+`"SQLITE_MISMATCH"` (a row that doesn't fit `T`) or `"SQLITE_MISUSE"` (a closed handle, several
+statements passed to `prepare`).
+
+## The engine written in Velt
+
+<Callout kind="info" title="In development">
+`sqlite/engine` reads databases today: `SELECT` only. `INSERT`, `UPDATE`, `DELETE` and DDL come
+next; the driver above will move onto it once it writes.
+</Callout>
+
+`sqlite/engine` runs queries over a SQLite database file with no C library: the file format, the
+SQL parser, the planner and the execution are Velt. Answers are SQLite's, value for value: type
+affinity, collations, NULL rules, integer overflow to REAL and the text form of REAL values are
+kept, and tests and a differential fuzzer compare it with C SQLite. Rows a query does not order
+come in the order SQLite's plan gives them where this engine picks the same plan; where SQLite's
+cost model would pick another plan they can come in another order.
+
+```ts
+import { open } from "sqlite";
+import { openDatabase } from "sqlite/engine";
+
+struct Post {
+  id: i64;
+  title: string;
+  likes: i64;
+}
+
+// Written by C SQLite, read by the Velt engine.
+const c = open("blog.db");
+c.exec(`
+  CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY, title TEXT);
+  CREATE TABLE IF NOT EXISTS likes (post_id INTEGER);
+  CREATE INDEX IF NOT EXISTS likes_post ON likes (post_id);
+`);
+c.close();
+
+const db = openDatabase("blog.db");
+const top: Post[] = db
+  .prepare(`SELECT p.id, p.title, (SELECT count(*) FROM likes l WHERE l.post_id = p.id) AS likes
+            FROM posts p ORDER BY likes DESC, p.id LIMIT ?`)
+  .allWith([10]);
+for (const p of top) {
+  console.log(p.id, p.title, p.likes);
+}
+```
+
+- `openDatabase(path): Database` reads the file into memory; `new Database(bytes)` takes the
+  bytes of a database file. A file that is not a database throws `SQLITE_CORRUPT`, a missing one
+  `SQLITE_CANTOPEN`.
+- `Database.prepare(sql): Statement` parses and plans one `SELECT` (a trailing `;` is fine).
+  Plans are cached by their text (the 200 used last). SQL the engine can't run yet fails here,
+  with a message naming it.
+- `Statement` reads rows as the driver's does: `all<T>()`, `get<T>()` (stops after the first
+  row), `allWith<T>(params)`, `getWith<T>(params)`, with the same row decoding (through velt/db's
+  `readRows`, straight from the engine's values) and the same parameters (`?`, `?NNN`, `:name`,
+  `@name`, `$name`). It also has `columns(): string[]`, `values()` and `valuesWith(params)`
+  (every value as a `Val`, whose storage class is one of `NULL`, `INTEGER`, `REAL`, `TEXT`,
+  `BLOB`; `quote(v)` prints one as an SQL literal), and `plan(): string[]`, how each FROM item
+  is read, in the words of SQLite's `EXPLAIN QUERY PLAN`
+  (`SEARCH posts USING INTEGER PRIMARY KEY (rowid=?)`).
+- Errors are the driver's `SqliteError`, so one `catch` handles both, with SQLite's messages
+  (`no such column: x`, `misuse of aggregate: count()`).
+
+**What runs:** `SELECT` with joins (inner, cross, `LEFT`, `USING`, `NATURAL`), `WHERE`,
+`GROUP BY`, `HAVING`, `DISTINCT`, `ORDER BY` (with `NULLS FIRST`/`LAST` and collations),
+`LIMIT` and `OFFSET`; views; subqueries in FROM, scalar, `IN (SELECT …)`, `EXISTS` and correlated
+ones; `WITH` and `WITH RECURSIVE`; `UNION`, `UNION ALL`, `INTERSECT`, `EXCEPT`; `VALUES`. Every
+operator, `CASE`, `CAST`, `COLLATE` (BINARY, NOCASE, RTRIM), `LIKE … ESCAPE`, `GLOB`, `BETWEEN`,
+`IS [NOT] DISTINCT FROM`. The core text and number functions, `printf`, the date and time
+functions with SQLite's modifiers (but `localtime` and `utc`), the aggregates with `DISTINCT`
+and `FILTER`, and window functions (`row_number`, `rank`, `lag`, `lead`, `first_value`, the
+aggregates over a window, …) with `PARTITION BY`, `ORDER BY`, `ROWS` and `GROUPS` frames.
+
+**Not yet** (an error at `prepare`): statements other than `SELECT`, `RIGHT` and `FULL` joins,
+`RANGE` frames with a `PRECEDING` or `FOLLOWING` offset, `ORDER BY` inside an aggregate, the
+math functions (`sqrt`, `pow`, `floor`, …), JSON functions and operators, `random()`, tables
+`WITHOUT ROWID`, table-valued functions and row values.
+
+**How it runs:** `prepare` compiles the statement into closures, not bytecode. Each FROM item
+becomes a loop over a b-tree cursor, read through its cheapest path given the WHERE and ON terms:
+a rowid lookup or range, an index (with equalities on its leading columns and a range on the
+next), a covering index, or a full scan. An `ORDER BY` that an index already gives needs no sort,
+and `LIMIT` then stops the loops early. Columns are decoded from the record only when read.
+
+## Testing it
+
+The package's tests (`velt test` in `packages/sqlite`) need nothing but the package: they open
+`:memory:` databases and temporary files.
+
+<Callout kind="info" title="Not available on WebAssembly">
+The driver is a native library, which a WebAssembly build can't use.
+</Callout>

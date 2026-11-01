@@ -1,0 +1,404 @@
+---
+title: "velt/encoding/json"
+description: "Typed JSON: JSON.parse<T> checks the text against your types, JSON.stringify writes any value as Node does, and JsonValue holds JSON whose shape you don't know."
+layout: "docs"
+category: "Standard library"
+order: 220
+---
+
+# velt/encoding/json
+
+`JSON` is a global, as in JavaScript: it needs no import. `JSON.parse<T>(text)` decodes into a
+type you name and checks the text against it, `JSON.stringify(x)` writes any value with a JSON
+form as Node writes it, and `JsonValue` holds JSON whose shape you don't know. The module
+`velt/encoding/json` exports `Value` (an alias of the global `JsonValue`) and the building blocks
+for code that writes JSON itself.
+
+A program whose code never names `JSON`, `JsonValue`, `JsonError`, `JsonParseOptions` or
+`JsonReplacer` doesn't load the JSON code at all, so it costs that program no compile time.
+
+```ts
+type User = { name: string; age: i64; tags: string[] };
+
+const u = JSON.parse<User>(`{"name":"Ada","age":36,"tags":["admin"]}`);
+console.log(u.name, u.age + 1, u.tags.length); // Ada 37 1
+console.log(JSON.stringify(u)); // {"name":"Ada","age":36,"tags":["admin"]}
+
+try {
+  JSON.parse<User>(`{"name":"Ada","age":"36","tags":[]}`);
+} catch (e) {
+  console.log(e.message); // expected i64 at $.age
+}
+```
+
+## Parsing into types
+
+`JSON.parse<T>(text, options?): T` builds a `T` from the text or throws `JsonError`. There is no
+untyped `JSON.parse` that returns `any`: name the type, or use `JSON.parseValue` for a
+[`JsonValue`](#jsonvalue). The type can also come from the context, as TypeScript writes it:
+`const u: User = JSON.parse(text)` and `JSON.parse(text) as User` decode a `User`.
+
+`T` may be built from:
+
+- numbers, `bool`, `string`, arrays, `T | null`;
+- structs, classes, object types and interfaces of fields;
+- tuples (`[string, f64]`), an array of exactly that length;
+- `Map<string, V>` and `Record<string, V>`, an object with any keys. A record with literal keys
+  (`Record<"cpu" | "mem", i64>`) needs every key and skips other members;
+- `JsonValue`, any JSON value, kept as it is;
+- values from a fixed set, which are checked: literal types (`kind: "task"`), unions of literal
+  types (`"low" | "normal" | "high"`), string enums (from their strings) and numeric enums (from
+  their values). Anything else fails with the allowed values, e.g.
+  `expected one of "low", "normal", "high" at $.tags[1]`.
+
+Maps with other key types, functions, promises and `shared` values have no JSON form; using them
+is a compile error (``cannot convert to or from JSON: `Map<i64, string>` has no JSON form``).
+
+**Optional and nullable fields.** An optional field (`a?: T`) may be missing, and is then absent
+(`undefined`); a field declared `a: T | null` may be missing, and is then `null`. Every other
+field is required (`expected field "name" at $`). An explicit JSON `null` for an `a?: T` field,
+whose type has no `null`, leaves it absent too; for an `a?: T | null` field it is a present
+`null`. `JSON.parse(text) as T` and `const t: T = JSON.parse(text)` fail on that `null` instead
+(`expected string at $.a`).
+
+**Numbers.** Integers stay exact: an integer field reads the digits exactly, also beyond 2^53 (up
+to the `i64` range). A `u64` field takes its whole range, up to 18446744073709551615; a larger
+number, a negative one or a fraction fails with `expected u64`. There is no `Date` type to decode
+dates into: dates stay strings.
+
+**Duplicate keys.** A key that appears twice in an object keeps its last value, in the position of
+its first occurrence, as in JavaScript. Unlike JavaScript, every occurrence must still be valid
+for the type: `{"age":"x","age":2}` fails with `expected i64 at $.age`.
+
+**Strings.** `\uXXXX` escapes decode to UTF-16 code units, as in JavaScript: an escaped pair is one
+character, and a lone surrogate stays a lone surrogate (`JSON.parse<string>('"\\ud800"').length`
+is 1). `JSON.stringify` writes it back as `\ud800`; printing it gives U+FFFD.
+
+### Unions
+
+A union decodes when `JSON.parse` can tell its members apart from the JSON value:
+
+- by the value's kind: `string | i64 | bool | null`, an array, or an object;
+- literal and enum members by value, before a plain member of the same kind (`"auto" | f64`);
+- several object members by a discriminant, a field with a different literal type in each
+  (`{ kind: "join"; … } | { kind: "leave"; … }`) found anywhere in the object, or else by a
+  required field only one member has. Then the first such field in the document decides: with
+  `Circle = { r: f64 }` and `Rect = { w: f64; h: f64 }`, `{"w":3,"h":2,"r":1}` is a `Rect`, and
+  its `r` is an unknown key. A discriminant avoids the question.
+
+```ts
+type Event =
+  | { kind: "join"; user: string }
+  | { kind: "leave"; user: string; reason: string | null };
+
+for (const e of JSON.parse<Event[]>(`[{"kind":"join","user":"ada"},{"user":"bo","kind":"leave"}]`)) {
+  if (e.kind == "leave") {
+    console.log("left:", e.user, e.reason); // left: bo null
+  } else {
+    console.log("joined:", e.user); // joined: ada
+  }
+}
+```
+
+An unknown tag fails with `expected one of "join", "leave" at $.kind`. A union with two number
+types, two array types, a `Map` or `Record` beside another object, object members without a
+discriminant or distinguishing field, or two literal or enum members with the same value is a
+compile error that explains which members clash.
+
+### Parse options
+
+`JSON.parse<T>(text, options)` takes `JsonParseOptions`:
+
+- `unknownKeys: "reject"` makes an object key the target type has no field for an error
+  (`unknown field at $.extra`); the default, `"ignore"`, skips it.
+- `maxDepth: n` limits how deeply arrays and objects nest (`JSON nested deeper than 64 levels at
+  $.a (byte 812)`). The default is 128, so a deeply nested document from an untrusted source
+  fails with a `JsonError` instead of overflowing the stack. A typed decoder uses stack space for
+  every level: raise the limit only as far as your data needs.
+- `comments: "skip"` reads line (`//`) and block comments as whitespace, and
+  `trailingCommas: true` accepts a comma before `]` and `}`: JSONC, the format of `tsconfig.json`
+  and editor settings. Node's `JSON.parse` has neither.
+
+```ts
+type Settings = { name: string; paths: string[] };
+
+const text = `{
+  // the project
+  "name": "app",
+  "paths": ["src", "lib",], /* lib last */
+}`;
+const s = JSON.parse<Settings>(text, { comments: "skip", trailingCommas: true });
+console.log(s.name, s.paths.length); // app 2
+```
+
+### Errors
+
+Text that is not JSON fails with Node's message: `JSON.parse<number[]>("{bad")` throws
+`Expected property name or '}' in JSON at position 1 (line 1 column 2)`, as `JSON.parse` does in
+Node 22, even where the decoder would stop earlier at a value of the wrong type. Positions count
+UTF-16 units, as in JavaScript. With `comments` or `trailingCommas`, a malformed document fails
+with Velt's own message (`invalid JSON at $.paths[2]: unexpected character ']' (byte 126)`), since
+Node's would describe the comment itself.
+
+A `JsonError` is a `SyntaxError` (`e.name` is `"SyntaxError"`, and `e instanceof SyntaxError`
+holds), and an uncaught one is reported as Node reports `JSON.parse`'s (`Uncaught SyntaxError:
+…`). In Velt's own messages (a value of the wrong type, an unknown field, nesting too deep), a
+path of more than 20 segments keeps its first and last 10 with `…` between.
+
+## Writing JSON
+
+`JSON.stringify(x)` writes any value with a JSON form, with no whitespace. `JSON.stringify` of an
+`any`, `unknown` or `object` writes the value held, as Node does
+([types](/docs/reference/types/#any-and-unknown)).
+
+- A `Map` is written as an object, in insertion order. JavaScript writes a `Map` as `{}`; Velt
+  writes its entries.
+- A `Record` is written in JavaScript's key order, as `JSON.parse` builds an object: array-index
+  keys such as `"2"` first, ascending, then the others in insertion order.
+- An optional field (`a?: T`) is left out while it is absent or holds `undefined`, as JavaScript
+  leaves out a missing property; a `null` is written.
+- A class value is written as its dynamic class, a subclass's fields too.
+
+### Formatting and replacers
+
+`JSON.stringify(x, replacer, space)` writes as JavaScript does.
+
+`space` indents: a number of spaces (its integer part, at most 10; 0 or less writes no
+whitespace) or a string (its first 10 characters, such as `"\t"`). Every member and element goes
+on its own line, `"key": value` gets a space after the colon, and an empty array or object stays
+`[]` / `{}`.
+
+`replacer` is `null`, an array of keys (strings, or numbers written as `String(n)`), which keeps
+only those keys in objects at any depth, in the array's order, or a function:
+
+```ts
+interface Item {
+  id: number;
+  tags: string[];
+  note: string;
+}
+
+const item: Item = { id: 7, tags: [], note: "x" };
+console.log(JSON.stringify(item, null, 2));
+// {
+//   "id": 7,
+//   "tags": [],
+//   "note": "x"
+// }
+console.log(JSON.stringify(item, ["note", "id"])); // {"note":"x","id":7}
+```
+
+A replacer function `(key: string, value: JsonValue) => JsonValue | undefined` (the global type
+`JsonReplacer`) is called as JavaScript calls it: first with the key `""` and the whole value,
+then with each member and element of what it returned. `undefined` leaves a member out and writes
+an array element as `null`; for the value itself it throws a `TypeError` (JavaScript returns
+`undefined`, but Velt's `JSON.stringify` returns a string).
+
+```ts
+type User = { name: string; password: string; age: i64 };
+
+const u: User = { name: "ada", password: "pw", age: 36 };
+console.log(JSON.stringify(u, (key, value: JsonValue) => (key == "password" ? undefined : value)));
+// {"name":"ada","age":36}
+```
+
+Annotate the value parameter of a replacer written in place, `(key, value: JsonValue) => …`.
+The value is a `JsonValue`, not a
+JavaScript value, so `typeof value` and arithmetic on it would not do what they do in Node: read
+it with `isNumber()`, `asNumber()` and the other [`JsonValue` methods](#jsonvalue).
+
+### `toJSON()`
+
+`JSON.stringify` writes a class with a `toJSON()` method (its own or inherited) as what the method
+returns, as JavaScript does: a `Date` (and a subclass of `Date`) as its ISO string (`null` when
+invalid), a `URL` as its `href`, and your class as whatever its `toJSON()` makes. `toJSON(key:
+string)` gets the key, as in JavaScript: the property name of a member, the index (`"0"`) of an
+array element, `""` for the value passed to `JSON.stringify` itself.
+
+```ts
+class Stamp extends Date {}
+
+class Money {
+  cents: number;
+  constructor(cents: number) {
+    this.cents = cents;
+  }
+  toJSON(): string {
+    return `${this.cents / 100} EUR`;
+  }
+}
+
+class Field {
+  toJSON(key: string): string {
+    return `field ${key}`;
+  }
+}
+
+console.log(JSON.stringify({ at: new Stamp(0), price: new Money(1250) }));
+// {"at":"1970-01-01T00:00:00.000Z","price":"12.5 EUR"}
+console.log(JSON.stringify({ a: new Field(), list: [new Field()] }));
+// {"a":"field a","list":["field 0"]}
+```
+
+Other parameters of `toJSON` need default values. A `toJSON` of another shape (an `async` one, a
+generator, a key that is not a `string`, a parameter without a default, type parameters of its
+own, or one that can throw) is a compile error, so it is never silently left out.
+`JSON.parse<T>` does not use `toJSON`.
+
+## Classes and private state
+
+`JSON.stringify` writes a class's `private` fields, as Node does, and skips ES private fields
+(`#x`), as JavaScript does:
+
+```ts
+class Account {
+  name: string = "ada";
+  private secret: string = "pw";
+  #pin: string = "1234";
+}
+
+console.log(JSON.stringify(new Account())); // {"name":"ada","secret":"pw"}
+```
+
+`JSON.parse<T>` fills fields without running the constructor, so it cannot build a class or
+struct with a `private` or `#` field, wherever it appears in `T`; the error names the field:
+
+```ts error
+class Account {
+  name: string = "ada";
+  private secret: string = "pw";
+}
+
+// error: cannot convert to or from JSON: `Account` has a private field `secret`, which decoding cannot set
+const a = JSON.parse<Account>('{"name":"ada","secret":"pw"}');
+```
+
+For the same reason it cannot decode a class whose constructor is `private` or `protected`: that
+would bypass the class's factories and their checks. Decode a plain object type and call the
+factory:
+
+```ts
+class Money {
+  private constructor(readonly cents: i64) {}
+
+  static of(cents: i64): Money {
+    if (cents < 0) throw new Error("negative amount");
+    return new Money(cents);
+  }
+}
+
+type MoneyJson = { cents: i64 };
+
+const text = JSON.stringify(Money.of(250)); // {"cents":250}
+const m = Money.of(JSON.parse<MoneyJson>(text).cents);
+console.log(text, m.cents); // {"cents":250} 250
+```
+
+Types that hold runtime handles have no JSON form in either direction: std types with private
+state (`BigInt`, `RegExp`, `JsonValue`'s internals, HTTP requests and responses, `AbortSignal`,
+`Mutex`, sockets and files), the handles of packages with a native library (database
+connections), and your classes that extend one. So JSON can never carry or forge a handle. To
+send such a value, convert it to a type with public fields first (`n.toString()` for a `BigInt`,
+or an object literal of the data you need). A `toJSON()` method gives such a class a JSON form
+for `JSON.stringify`.
+
+## `JsonValue`
+
+`JsonValue` (exported as `Value` by `velt/encoding/json`) holds any JSON value, for documents
+whose shape you don't know or don't want to declare. `JSON.parseValue(text, options?)` parses
+one, and a field of type `JsonValue` in a `JSON.parse<T>` target keeps that part of the document
+as it is.
+
+```ts
+const v = JSON.parseValue(`{"tags":["a","b"],"n":1.5}`);
+const tags = v.get("tags");
+if (tags != null) {
+  console.log(tags.len(), tags.at(1)?.asString(), v.get("n")?.asNumber(), v.keys()); // 2 b 1.5 [ 'tags', 'n' ]
+}
+console.log(v); // { tags: [ 'a', 'b' ], n: 1.5 }
+
+const out = JsonValue.object();
+out.set("ok", JsonValue.of(true));
+out.set("items", JsonValue.from([1, 2, 3]));
+console.log(out.stringify()); // {"ok":true,"items":[1,2,3]}
+```
+
+- Navigation: `get(key)` and `at(i)`, both returning `JsonValue | null`; `has(key)` (the key is
+  present, even with a `null` value); `len()`; `keys()`.
+- Type tests: `isNull isBool isNumber isString isArray isObject`.
+- Conversions: `asNumber(): f64 | null`, `asBool()`, `asString()`, and `as<T>(options?)`, which
+  decodes into a `T` as `JSON.parse<T>` does.
+- Building: `JsonValue.object()`, `JsonValue.array()`, `JsonValue.of(x)` (a string, number,
+  `bool` or `null`), `JsonValue.from(x)` (the JSON form of any value `JSON.stringify` accepts),
+  `JsonValue.parse(text, options?)` (the same as `JSON.parseValue`).
+- Editing: `set(key, v)` (an existing key keeps its position), `delete(key)`, `push(v)`,
+  `setAt(i, v)`; each returns `false` when the value is not an object or array (or `i` is out of
+  range). There is no `v[k] = x` syntax: use `set`.
+- `stringify()` writes the JSON text, keys in JavaScript's key order. `clone()` is O(1).
+- `console.log(v)` and a template string (`` `${v}` ``) print the value the way Node prints the
+  parsed object (`{ a: 1, b: [ 2, 'x' ], c: null }`), not as JSON; call `stringify()` for the
+  JSON text.
+
+A `JsonValue` has value semantics: an edit never shows through a clone, through the value it was
+`set` into, or through a child from `get` or `at`. To change a nested value, edit the child and
+`set` it back. Only std makes `JsonValue`s: `new JsonValue(…)` is an error, and a class cannot
+extend it.
+
+`JsonValue.parse(text).revive(reviver)` does what JavaScript's `JSON.parse(text, reviver)` does
+(Velt's `JSON.parse` takes the options as its second argument): the reviver is applied from the
+innermost values out, each member's result replacing it and `undefined` deleting it, and last to
+the value itself under the key `""`.
+
+```ts
+const v = JSON.parseValue(`{"price": 12.5, "tax": 0.2}`).revive((key, value: JsonValue) =>
+  value.isNumber() ? JsonValue.of(value.asNumber()! * 100) : value,
+);
+console.log(v.stringify()); // {"price":1250,"tax":20}
+```
+
+### Cost
+
+A parsed value is a position in its document, kept as one flat array: no allocation per value,
+and a string is made only when it is read. `at`, `len` and `keys` are O(1) per member; `get`
+compares the keys of an object of at most 16 members in place, and looks a key of a larger one up
+in a hash index that its first `get` builds. So walking a whole value is linear in its size.
+
+Children share the document, so a child from `get` or `at`, or a `JsonValue` field that
+`JSON.parse<T>` decoded, keeps the whole document alive, its source text included:
+`JsonValue.parse(child.stringify())` makes a copy of its own. Editing a value first turns it into
+a tree of its own, which then copies a node another value shares before changing it
+(copy-on-write, one node at a time).
+
+## Writing JSON yourself
+
+`velt/encoding/json` exports what code that writes JSON into a
+[`StringBuilder`](/docs/std/text/) builds on, such as a server that writes a response body or a
+log line without building an intermediate string:
+
+- `writeJson<T>(w: StringBuilder, value: T)` appends what `JSON.stringify(value)` writes, for
+  every type `JSON.stringify` takes (`JSON.stringify` is `writeJson` into a new builder).
+- `appendJsonString(w, s)`, `appendJsonNumber(w, x)` and `appendJsonUint(w, n)` append a string,
+  an `f64` and a `u64` as `JSON.stringify` writes them, and `appendJsonValue(w, v)` a
+  `JsonValue`; the caller appends the punctuation and the keys.
+
+```ts
+import { appendJsonString, writeJson } from "velt/encoding/json";
+
+class Point {
+  x: f64 = 1;
+  y: f64 = 2.5;
+}
+
+const w = new StringBuilder();
+w.append("{\"label\":");
+appendJsonString(w, "say \"hi\"");
+w.append(",\"points\":");
+writeJson(w, [new Point()]);
+w.append("}");
+console.log(w.toString()); // {"label":"say \"hi\"","points":[{"x":1,"y":2.5}]}
+```
+
+`writeJson`'s body, and the decoder of every `JSON.parse<T>`, are generated for each type at
+compile time by a [source generator](/docs/std/generate/) written in Velt, which uses nothing a
+package could not use; the dynamic parts of a value (`any`, `unknown`, interface values) are
+written by Velt code over [velt/reflect](/docs/std/reflect/).

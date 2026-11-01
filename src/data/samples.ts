@@ -1,25 +1,27 @@
 /** Home page code samples, hand-highlighted (see src/components/Hl.tsx for the markers). */
 
-export const SERVER_TS = `[[k:import]] { serve } [[k:from]] [[s:"velt:http"]];
+/**
+ * src/main.vlt of a package that depends on http-server (as `velt new <name>
+ * --template api` sets it up). Check changes with `velt check` in such a package.
+ */
+export const SERVER_TS = `[[k:import]] { serve } [[k:from]] [[s:"http-server"]];
 
 [[k:interface]] [[t:User]] {
   id: [[t:string]];
   name: [[t:string]];
 }
 
-[[k:async function]] [[f:main]]() {
-  [[k:const]] users = [[k:new]] [[t:Map]]<[[t:string]], [[t:User]]>();
-  users.[[f:set]]([[s:"42"]], { id: [[s:"42"]], name: [[s:"Ada"]] });
+[[k:const]] users = [[k:new]] [[t:Map]]<[[t:string]], [[t:User]]>();
+users.[[f:set]]([[s:"42"]], { id: [[s:"42"]], name: [[s:"Ada"]] });
 
-  [[k:await]] [[f:serve]]({ port: [[n:8080]] }, [[k:async]] (req) => {
-    [[k:const]] id = [[k:new]] [[t:URL]](req.url).searchParams.[[f:get]]([[s:"id"]]) ?? [[s:""]];
-    [[k:const]] user = users.[[f:get]](id);
-    [[k:if]] (user === [[k:undefined]]) {
-      [[k:return]] [[t:Response]].[[f:json]]({ error: [[s:\`no user \${id}\`]] }, { status: [[n:404]] });
-    }
-    [[k:return]] [[t:Response]].[[f:json]](user);
-  });
-}`;
+[[k:await]] [[f:serve]]({ port: [[n:8080]] }, (req: [[t:Request]]): [[t:Response]] => {
+  [[k:const]] id = [[k:new]] [[t:URL]](req.url).searchParams.[[f:get]]([[s:"id"]]) ?? [[s:""]];
+  [[k:const]] user = users.[[f:get]](id);
+  [[k:if]] (user === [[k:undefined]]) {
+    [[k:return]] [[t:Response]].[[f:json]]({ error: [[s:\`no user \${id}\`]] }, { status: [[n:404]] });
+  }
+  [[k:return]] [[t:Response]].[[f:json]](user);
+});`;
 
 export const BEYOND_VLT = `[[k:class]] [[t:NotFound]] [[k:extends]] [[t:Error]] {}
 
@@ -41,7 +43,7 @@ export const BEYOND_VLT = `[[k:class]] [[t:NotFound]] [[k:extends]] [[t:Error]] 
 [[c:// Four tasks on four cores.]]
 [[k:const]] parts: [[t:Promise]]<[[t:i64]]>[] = [];
 [[k:for]] ([[k:let]] c = [[n:0]]; c < [[n:4]]; c++) {
-  parts.[[f:push]]([[f:spawn]]([[k:async]] () => [[f:sumOfSquares]](c * [[n:1e6]], (c + [[n:1]]) * [[n:1e6]])));
+  parts.[[f:push]]([[f:spawn]]([[k:async]] () => [[f:sumOfSquares]](c * [[n:1_000_000]], (c + [[n:1]]) * [[n:1_000_000]])));
 }
 [[k:await]] [[t:Promise]].[[f:all]](parts);`;
 

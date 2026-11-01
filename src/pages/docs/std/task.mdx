@@ -1,16 +1,16 @@
 ---
-title: "velt:task"
-description: "import { AbortError, TimeoutError, timeout, taskScope } from \"velt:task\"."
+title: "velt/task"
+description: "import { timeout, taskScope } from \"velt/task\". Cancellation with AbortController and AbortSignal, timeouts, task scopes and task placement."
 layout: "docs"
 category: "Standard library"
 order: 480
 ---
 
-# velt:task
+# velt/task
 
-`import { AbortError, TimeoutError, timeout, taskScope } from "velt:task"`. Cancellation with
+`import { AbortError, TimeoutError, timeout, taskScope } from "velt/task"`. Cancellation with
 TypeScript's `AbortController` / `AbortSignal` (global, as in Node; this module exports them
-too), timeouts, task scopes (structured concurrency) and task placement. [`fetch`](/docs/std/fetch/) takes a signal.
+too), timeouts, task scopes (structured concurrency) and task placement. [`fetch`](/docs/std/net/http/) takes a signal.
 
 Cancellation is cooperative. `abort()` marks the signal and wakes the tasks waiting for it;
 code that takes a signal checks it with `throwIfAborted()`, or races its work against
@@ -45,7 +45,7 @@ disposal run as usual.
   `AbortSignal.any` create them.
 
 ```ts
-import { AbortController, AbortSignal, AbortError, TimeoutError, timeout } from "velt:task";
+import { AbortController, AbortSignal, AbortError, TimeoutError, timeout } from "velt/task";
 
 async function download(name: string, signal: AbortSignal): Promise<string> throws AbortError {
   for (let chunk = 0; chunk < 10; chunk++) {
@@ -55,22 +55,20 @@ async function download(name: string, signal: AbortSignal): Promise<string> thro
   return `${name}: 10 chunks`;
 }
 
-async function main() {
-  const ac = new AbortController();
-  const job = download("big.iso", ac.signal);
-  await sleep(12);
-  ac.abort("user pressed cancel");
-  try {
-    console.log(await job);
-  } catch (e) {
-    console.log(e.message);            // user pressed cancel
-  }
+const ac = new AbortController();
+const job = download("big.iso", ac.signal);
+await sleep(12);
+ac.abort("user pressed cancel");
+try {
+  console.log(await job);
+} catch (e) {
+  console.log(e.message);            // user pressed cancel
+}
 
-  try {
-    console.log(await timeout(download("small.txt", AbortSignal.timeout(1000)), 20));
-  } catch (e) {
-    console.log(e.message);            // timed out after 20 ms
-  }
+try {
+  console.log(await timeout(download("small.txt", AbortSignal.timeout(1000)), 20));
+} catch (e) {
+  console.log(e.message);            // timed out after 20 ms
 }
 ```
 
@@ -105,7 +103,7 @@ body's, and every child's.
 - `scope.spawn` after the scope ended is an error (it panics).
 
 ```ts
-import { AbortSignal, AbortError, TaskScope, taskScope } from "velt:task";
+import { AbortSignal, AbortError, TaskScope, taskScope } from "velt/task";
 
 async function fetchPart(n: i64, signal: AbortSignal): Promise<i64> throws AbortError {
   for (let i = 0; i < n; i++) {
@@ -115,17 +113,15 @@ async function fetchPart(n: i64, signal: AbortSignal): Promise<i64> throws Abort
   return n * 10;
 }
 
-async function main() {
-  const total = await taskScope(
-    async (scope: TaskScope<AbortError>): Promise<i64> throws AbortError => {
-      const signal = scope.signal;
-      const a = scope.spawn(fetchPart(3, signal));
-      const b = scope.spawn(fetchPart(5, signal));
-      return (await a) + (await b);
-    },
-  );
-  console.log(total); // 80
-}
+const total = await taskScope(
+  async (scope: TaskScope<AbortError>): Promise<i64> throws AbortError => {
+    const signal = scope.signal;
+    const a = scope.spawn(fetchPart(3, signal));
+    const b = scope.spawn(fetchPart(5, signal));
+    return (await a) + (await b);
+  },
+);
+console.log(total); // 80
 ```
 
 ## Task placement
@@ -138,21 +134,31 @@ never wakes another thread.
 
 - `workerCount(): i64`: how many workers there are.
 - `currentWorker(): i64`: the worker running this task (`0` to `workerCount() - 1`); `0`
-  outside a task (a synchronous `main`).
+  outside a task.
 - `spawn(p, { worker: i })`: starts `p` on worker `i`, where it stays (`SpawnOptions` is
   `{ worker?: i64 }`; `{}` pins nothing). `p` must be a call or a task body: a promise that
   already started stays on its task (`a started promise stays on its task; pass the call`).
   The options must be an object literal (a variable holding them is an error); `worker` may
   be given once. An index out of range is a panic:
   `spawn: worker 7 is out of range (the runtime has 4 workers)`.
-- Tasks run on the runtime's own scheduler: every worker runs its own event loop, a task stays
-  on the worker it started on (an unpinned one starts on the spawning worker), and another
-  worker takes on part of a worker's tasks only while that one stays busy and the help raises
-  how much gets done. A pinned task never moves. A task that computes without pausing for more
-  than a few milliseconds doesn't hold up the rest of its worker: its timers, sockets and woken
-  tasks go to another worker meanwhile, except tasks pinned to that worker. When no other worker
-  can take them (one worker, or every other one computing too), a spare worker starts and does,
-  up to four in all; `workerCount()` counts each from then on. `VELT_SCHEDULER=stealing` or
+- Tasks run on the runtime's own scheduler: every worker runs its own event loop, a task stays on
+  the worker it started on (an unpinned one starts on the spawning worker), and another worker takes
+  on part of a worker's tasks only while that one stays busy and the help raises how much gets done.
+  A pinned task never moves. A task that computes without pausing for more than a few milliseconds
+  doesn't hold up the rest of its worker: its timers, sockets and woken tasks go to another worker
+  meanwhile, except tasks pinned to that worker. When no other worker can take them (one worker, or
+  every other one computing too), a spare worker starts and does, up to four in all; `workerCount()`
+  counts each from then on. Past those, they wait for a worker to finish its computation.
+  `VELT_RESCUE=0` turns this rescue off (for a worker that computes, nothing serves its timers and
+  sockets, no task moves away from it and no spare starts), for deterministic measurement only:
+  together with `VELT_THREADS=1` a program's instruction count does not depend on how its threads
+  are scheduled, but one task that computes
+  holds up everything on its worker. With more workers, tasks still move to sleeping ones (below,
+  and when a worker stays busy). Tasks spawned together that compute (`spawn` in a loop, then
+  `await Promise.all(...)`) start on idle workers well under a millisecond apart: once the first has
+  computed for 50 µs, the others, not started yet, go to sleeping workers, one each (on Windows,
+  whose timers are coarser, within about a millisecond). After many spawned tasks that each finished
+  at once, the first such group may take up to a millisecond. `VELT_SCHEDULER=stealing` or
   `per-core` selects one of tokio's schedulers instead (for comparison;
   [`VELT_SCHEDULER`](/docs/tooling/cli/)); with `stealing`, `{ worker }` is checked but the task
   may run on any worker, and `currentWorker()` can change at any `await`.
@@ -160,8 +166,8 @@ never wakes another thread.
   worker. `scope.spawn` takes no placement yet.
 
 ```ts
-import { channel, Channel } from "velt:channel";
-import { workerCount, currentWorker } from "velt:task";
+import { channel, Channel } from "velt/sync";
+import { workerCount, currentWorker } from "velt/task";
 
 type Call = { key: string; reply: (n: i64) => void };
 
@@ -188,17 +194,15 @@ async function caller(inbox: Channel<Call>): Promise<i64> {
   return n;
 }
 
-async function main() {
-  const inboxes: Channel<Call>[] = [];
-  for (let i = 0; i < workerCount(); i++) {
-    inboxes.push(channel<Call>());
-    spawn(shard(inboxes[i]), { worker: i });
-  }
-  // Next to shard 0: no call wakes another thread.
-  const n = await spawn(caller(inboxes[0]), { worker: 0 });
-  console.log(`${n} calls, main on worker ${currentWorker()}`);
-  for (const c of inboxes) {
-    c.close();
-  }
+const inboxes: Channel<Call>[] = [];
+for (let i = 0; i < workerCount(); i++) {
+  inboxes.push(channel<Call>());
+  spawn(shard(inboxes[i]), { worker: i });
+}
+// Next to shard 0: no call wakes another thread.
+const n = await spawn(caller(inboxes[0]), { worker: 0 });
+console.log(`${n} calls, main on worker ${currentWorker()}`);
+for (const c of inboxes) {
+  c.close();
 }
 ```

@@ -21,8 +21,7 @@ Velt differs** from TypeScript, and why.
 The differences come from three rules:
 
 1. **Valid TypeScript runs as it does in Node.** When Velt runs your code, it does what
-   TypeScript would. Velt's TypeScript support grows with every release, and the list below
-   shrinks with it.
+   TypeScript would.
 2. **Where JavaScript's behavior is a trap, the compiler stops.** Comparing `1 == "1"` or
    forgetting an `await` is a compile error, not a silent bug. The message says exactly what to
    write instead, and editors offer it as a quick fix.
@@ -34,7 +33,12 @@ The differences come from three rules:
 ## Programs are compiled
 
 - A program starts at its root file's top-level statements, as a TS file does, or at
-  `function main()` / `async function main()` (which may return an `i32` exit code). Top-level
+  `function main()` / `async function main()` (which may return an `i32` exit code) in a file
+  without top-level statements. That is a difference from Node, where a `main` that nothing
+  calls never runs. In a file with top-level statements, `main` is an ordinary function, as in
+  Node: the usual trailing `main();` or `main().catch(…)` calls it, and adding a statement to a
+  file that relied on `main` running by itself stops it from running (the compiler warns that
+  `main` is never called). Top-level
   statements run in a generated `main`; an imported module's run once when it is evaluated,
   in Node's order ([Scripts](/docs/reference/modules/#scripts-top-level-statements)).
 - A module-level `let` works as in Node: one per process, which every task (spawned tasks,
@@ -44,8 +48,12 @@ The differences come from three rules:
   constant value (`new Map()`, a call with effects, a function from a call) is evaluated once
   per process in the same way
   ([module constants from calls](/docs/reference/variables/#module-constants-initialized-by-a-call)).
-- Types are checked once, at compile time, and then gone: there are no runtime type checks,
-  no `any`, no `unknown`. Dynamic JSON is a `JsonValue`.
+- Types are checked once, at compile time, and then gone: the compiled code has no type tags
+  to test. `any` and `unknown` exist for values whose type is known only at run time: they hold
+  the value with its type, and converting one back (`const n: number = a`, `u as User`) checks
+  it there, stopping the program with a `TypeError` where Node would carry on with the wrong
+  value ([any and unknown](/docs/reference/types/#any-and-unknown)). Dynamic JSON is a
+  `JsonValue`.
 - Semicolons are optional, as in TypeScript: automatic semicolon insertion follows
   JavaScript's rules, so code formatted without semicolons (Prettier's `semi: false`, standard
   style) compiles as it is, and a line starting with `(`, `[`, `+`, `-` or `/` continues the
@@ -135,14 +143,12 @@ integer types).
 null check that narrows `user`.
 
 ```ts
-function main() {
-  const count = 0;
-  const name = "";
-  const port: number | null = null;
-  console.log(count || 10, name || "anon", port || 8080, port ?? 8080);   // 10 anon 8080 8080
-  if (!count && !name) {
-    console.log("both falsy");
-  }
+const count = 0;
+const name = "";
+const port: number | null = null;
+console.log(count || 10, name || "anon", port || 8080, port ?? 8080);   // 10 anon 8080 8080
+if (!count && !name) {
+  console.log("both falsy");
 }
 ```
 
@@ -162,8 +168,10 @@ contents.
 - **Object types are exact**: an object literal can't have extra fields, and you can't add a
   property later. Use a `Map` for dynamic keys. *Why*: every object has a fixed layout, so a
   field access is one load.
-- **Interfaces with methods are nominal**: a class implements one by declaring `implements`,
-  and an object literal does not satisfy one. An **interface with only fields** is an object
+- **Interfaces with methods are nominal for classes**: a class implements one by declaring
+  `implements`. An object literal implements one where it is expected, as in TypeScript
+  (`const h: Handler = { name: "x", run(req) { … } }`), with methods, function-valued fields
+  and getters ([Object literals implementing interfaces](/docs/reference/types/#object-literals-implementing-interfaces)). An **interface with only fields** is an object
   type, like `type User = { … }`, so model interfaces work as in TypeScript: literals satisfy
   them, `JSON.parse<User>` reads them, and as a bound (`<T extends HasId>`) any type with the
   fields fits. Unlike TypeScript, a class instance is not a `User` value (it is shared by
@@ -171,25 +179,31 @@ contents.
   `JSON.stringify` of one that contains itself fails as in JavaScript.
 - Interfaces may have **default method bodies**. `extend` adds methods to any type, including
   `string`, arrays and your unions.
-- `as` converts numbers and brands a value (`"u1" as UserId`, below); there are no other type
-  assertions. Narrow with `typeof`, `instanceof`, `==` or a discriminant instead.
+- `as` converts numbers, brands a value (`"u1" as UserId`, below) and converts an `any` or
+  `unknown`, checked at run time; there are no unchecked type assertions. Narrow with `typeof`, `instanceof`, `==` or a discriminant instead.
 - Enums are numeric or string enums; tagged data is a discriminated union (payload enums and
   `match` don't exist).
 - `Partial`, `Required`, `Readonly`, `Pick` and `Omit` work on concrete object types, also through
   generic aliases like `type WithoutChildren<P> = Omit<P, "children">` (not yet on a type
-  parameter inside a generic function, #350). `Pick` rejects a key that isn't a field (`Omit`
+  parameter inside a generic function). `Pick` rejects a key that isn't a field (`Omit`
   warns).
 - Intersections `A & B` of object types work as in TypeScript, unions distributing over them,
   and so do indexed access types (`User["name"]`) and branded primitives
   (`type UserId = string & { __brand: "UserId" }`, zero-cost). Parts with no value in common
-  are an error instead of `never`; classes, type parameters (#350) and function types
+  are an error instead of `never`; classes, type parameters and function types
   (overloads) can't be parts; `A & B` doesn't convert to `A` without a copy (`{ ...ab }`)
   ([Intersection types](/docs/reference/types/#intersection-types)).
 - `typeof x` in types, `keyof` of object types, `ReturnType<F>`/`Parameters<F>`, and index
   signatures without other members (`{ [key: string]: V }`, a `Record<string, V>`) work as in
   TypeScript ([Type queries](/docs/reference/types/#type-queries-and-keyof)).
-- Not available: mapped and conditional types, template literal types, the other utility types
-  (`Record` aside), index signatures next to named members, values in a `namespace` (namespaces
+- Conditional types (with `infer`), mapped types (with `as` renames and `+`/`-` modifiers),
+  template literal types and `Exclude`, `Extract`, `NonNullable` and `Awaited` work as in
+  TypeScript where their type arguments are known: they are evaluated at compile time into
+  ordinary types ([Conditional, mapped and template literal types](/docs/reference/types/#conditional-mapped-and-template-literal-types)).
+  In a generic body, a value of such a type can be stored, passed and returned, but not yet read
+  or converted.
+- Not available: a template literal type with a `string` hole outside a conditional type's
+  `extends`, index signatures next to named members, values in a `namespace` (namespaces
   of types work: [Namespaces](/docs/reference/modules/#namespaces)). Interfaces merge, and
   `declare global` / `declare module` blocks augment them
   ([declaration merging](/docs/reference/classes/#declaration-merging)); other declarations
@@ -197,8 +211,9 @@ contents.
 
 ## Classes
 
-- Single inheritance; `override` is required on redefined methods; there are no abstract
-  classes and no `protected` members (`private` is private to the declaring class); a
+- Single inheritance; `override` is required on redefined methods (not on the implementation
+  of an abstract method); abstract classes, abstract properties and `abstract new () => T`
+  work as in TypeScript; there are no `protected` members (`private` is private to the declaring class); a
   constructor can be `private` or `protected`, with TypeScript's rules. ES private names
   (`#x`, `#m()`, `#x in o`) work as in JavaScript: hidden from `console.log`, `JSON` and
   `Object.keys`, never inherited.
@@ -213,14 +228,16 @@ contents.
   in the field order, as `tsc --target es2022` emits them.
 - A method that is never overridden is called directly; only overridden methods use a vtable.
 - `struct` declares an object type with the same members as a class, built from a literal
-  (no constructor). **Planned**
-  ([semantics](https://github.com/velt-lang/velt/blob/main/docs/internals/design/semantics.md#js-fidelity-decisions)): `struct` goes away in
-  favor of `class` and `type Name = { … }` with `extend`.
+  (no constructor). **Planned**: `struct` gives way to `class` and `type Name = { … }` with
+  `extend`.
 
 ## Functions
 
-- No `function` expressions except generators (`const g = function* () { … }`; otherwise use
-  arrows), no `this` rebinding, no `arguments`.
+- Function expressions (`function (x) { … }`, also `async` and generic) work like arrows with
+  the same body; as an object literal's property, one is a method and `this` is the object. `f.call`, `f.apply` and
+  `f.bind` work. A function whose `this` is bound at the call, or that reads `arguments`,
+  declares a `this: any` parameter and is then a dynamic `Function`
+  ([Function expressions](/docs/reference/functions/#function-expressions)).
 - Overloads in TypeScript's form (bodiless signatures before one implementation) work for
   functions and methods ([Overloads](/docs/reference/functions/#overloads)). Optional and default parameters work, on arrows too; rest parameters
   (`...xs: T[]`) take spread arguments (`f(...xs)`) at their position. Callbacks may take fewer
@@ -236,7 +253,8 @@ contents.
 - Generators (`function*`, `*name()` methods, `yield`, `yield*`) work as in JS, lazily, with
   their return type written (`Generator<T>`, `Iterable<T>`, `Iterator<T>`,
   `IterableIterator<T>` or `IteratorObject<T>`). A `for...of` over
-  a generator call allocates nothing and runs like a hand-written loop. There is no `return value`, `next(value)` or `throw()`, and a `finally` block in a generator cannot `yield`,
+  a generator call allocates nothing and runs like a hand-written loop. There is no `return
+  value`, `next(value)` or `throw()`, and a `finally` block in a generator cannot `yield`,
   throw, or `break` out of it ([Generators](/docs/reference/functions/#generators)).
 - Async generators (`async function*`, `async *name()`) and `for await` work as in JS too
   (`AsyncGenerator<T>`); a `for await` over an async generator call allocates nothing
@@ -253,8 +271,8 @@ contents.
 - Functions may declare `throws A | B`; the compiler infers it otherwise, and checks it when
   written. Callbacks propagate errors: `xs.map((x) => parse(x))` throws what `parse` throws.
 - `attempt(() => f())` turns a throwing call into a value: `T | E`.
-- Index out of bounds, integer division by zero and failed assertions are **panics**: bugs that
-  stop the program (exit code 101) and can't be caught.
+- Index out of bounds and integer division by zero are **panics**: bugs that stop the program
+  (exit code 101) and can't be caught. A failed `assert` throws an `AssertionError`, as in Node.
 
 *Why*: no unwinding (each throwing call is a cheap check), and no error type is ever a
 surprise ([Error handling](/docs/book/errors/)).
@@ -262,8 +280,10 @@ surprise ([Error handling](/docs/book/errors/)).
 ## Async
 
 - Promises start when created, like JS, and a directly awaited call costs nothing.
-- **A promise that is neither awaited nor spawned is a compile error** ("floating promise").
-  *Why*: a forgotten `await` silently loses errors in JS.
+- **In a function, a promise that is neither awaited nor spawned is a compile error**
+  ("floating promise"). *Why*: a forgotten `await` silently loses errors in JS. Among the root
+  file's top-level statements, `render();` starts the promise as in Node, and the program waits
+  for it before exiting.
 - `spawn(f())` runs a task on another core; the runtime is multi-threaded. Data shared between
   tasks must be `shared(...)` or a `Mutex`, and data races are compile errors.
 - A promise's type carries its error type: `Promise<T, E>`.
@@ -279,15 +299,15 @@ surprise ([Error handling](/docs/book/errors/)).
   and `reject` may be kept and called later from any task. `setTimeout`, `setInterval` and
   their `clear` functions are globals and take any callback (`() => console.log("x")`,
   `() => save(doc)`, `async () => { … }`), and a pending timer keeps the
-  process alive unless it is `unref()`ed, as in Node ([`velt:timers`](/docs/std/timers/)). To wait, `await sleep(ms)`.
+  process alive unless it is `unref()`ed, as in Node ([`velt/time`](/docs/std/time/timers/)). To wait, `await sleep(ms)`.
 - A promise is a shared value, as in TypeScript: `const q = p`, `m.get(k)` on a `Map` of
   promises, `arr[i]`, a class or object field read by several callers, and `p.then(f); await p`
   all hold the same promise, and every `await` of it gets the result (the same object for an
   object result). A holder that goes to another task (`spawn`, a channel, a timer callback) is
   awaited there through a copy of the result
   ([Promises](/docs/reference/async/#promises)).
-- Std streams are async iterables: `for await` over a [channel](/docs/std/channel/), a file's
-  `lines()`, standard input's `lines()`, a WebSocket, a Redis subscriber or a `Ticker`. Unlike
+- Std streams are async iterables: `for await` over a [channel](/docs/std/sync/channel/), a file's
+  `lines()`, standard input's `lines()`, a WebSocket or a `Ticker`. Unlike
   a Node stream, whose iterator destroys the stream when the loop is left early, leaving the
   loop keeps the source open (a channel may have other receivers): close it yourself
   ([Std sources](/docs/reference/async/#std-sources)).
@@ -299,13 +319,13 @@ its last reference goes away, and `[Symbol.dispose]()` runs at that moment. Memo
 automatically: you write no annotations, and the compiler works out when each object is freed. Objects are shared references exactly
 like in JS (`const b = a; b.push(1)` changes `a`), and `.clone()` is an explicit deep copy.
 Values with a single owner cost nothing extra; only types the program actually shares get a
-reference count. Reference cycles are not freed (**planned**: `weak` references)
+reference count. Reference cycles are not freed; `WeakRef`, `WeakMap` and `WeakSet` work as in JS and let go of their targets at once (**planned**: `weak` fields)
 ([Memory without a garbage collector](/docs/book/memory/)).
 
 ## Modules
 
 - Named exports only: `export default` and default imports are errors with a fix.
-- Standard library modules use the `velt:` prefix: `import { readFile } from "velt:fs"`.
+- Standard library modules are imported as `velt/<module>`: `import { readFile } from "velt/fs"`.
 - Relative imports drop the extension: `import { x } from "./util"`. A folder is a module
   through its `index.vlt`, `index.ts` or `index.tsx`. `paths` aliases in `package.vlt` work like `compilerOptions.paths`.
 - Modules can be `.ts` and `.tsx` files as well as `.vlt`, so a folder can be shared with a
@@ -315,42 +335,42 @@ reference count. Reference cycles are not freed (**planned**: `weak` references)
 ## Not supported
 
 `var` in nested blocks and loops, `eval`, prototypes, `delete` (other than on a `Record`),
-`with`, getters on object literals, decorators, `Symbol` (other
-than `Symbol.dispose`, `Symbol.asyncDispose`, `Symbol.iterator` and `Symbol.asyncIterator` as
-method names), `BigInt` values (the type `bigint` has none yet, [Types](/docs/reference/types/#bigint); use [`velt:bigint`](/docs/std/bigint/)), Unicode
+`with`, decorators, symbols made at run time as object keys (a symbol key must be a module
+constant: [Symbols](/docs/reference/types/#symbols)), `BigInt` values (the type `bigint` has none
+yet, [Types](/docs/reference/types/#bigint); use [`velt/math`](/docs/std/math/bigint/)), Unicode
 identifiers. `x!` is checked (a `null` panics) where TypeScript trusts it, and `as const` keeps
 the value as it is. `Date` follows JS (months 0-11, local-time getters); its `toString()` has no
 time zone name and its `toLocale…` methods always format as `en-US`. JSX is supported for
-server-side rendering ([TSX](/docs/reference/tsx/), [`velt:jsx`](/docs/std/jsx/)).
+server-side rendering ([TSX](/docs/reference/tsx/), [`velt/jsx`](/docs/std/jsx/)).
 
 ## Quick reference
 
 | TypeScript / JavaScript | Velt today | Coming |
 |---|---|---|
 | `number` is always a float | the same; the compiler stores it as an integer where that gives the same result; `i64`, `u8`, … are opt-in | — |
-| `"5" + 1 === "51"` | the same, for numbers and booleans; a string `+` an object or array is a compile error | — |
+| `"5" + 1 === "51"` | the same: numbers and booleans as `String(x)` writes them, an array joined with commas, an object by its `toString()`; a function next to a string is a compile error | — |
 | `null` and `undefined` | both, as in Node, and `a?: T` is `T \| undefined`, and the standard library gives `undefined` where lib.d.ts does (`Map.get`, `find`, `pop`) | — |
 | `if (count)`, `port \|\| 8080` | the same (`0`, `NaN`, `""`, `null` and `undefined` are falsy; `\|\|` and `&&` return an operand) | — |
 | `==` coerces | no coercion: `==` is `===` except that `x == null` also matches `undefined`, and the reverse (objects by identity, `deepEqual` for contents); both sides have the same type | — |
 | objects are shared references | the same: arrays, maps, class instances, object types and closures are references, freed when the last reference goes | — |
-| garbage collector | deterministic freeing, no pauses; `[Symbol.dispose]()`, `using`, `await using` | `weak` references (stage 3) |
-| structural typing everywhere | object types and interfaces with only fields structural but exact; interfaces with methods nominal | — |
-| `any`, `unknown`, type assertions | none; `as` converts numbers; `JsonValue` for dynamic data | — |
+| garbage collector | deterministic freeing, no pauses; `[Symbol.dispose]()`, `using`, `await using`; `WeakRef`, `WeakMap`, `WeakSet`; cycles are not freed | `weak` fields |
+| structural typing everywhere | object types and interfaces with only fields structural but exact; a class implements an interface with methods by declaring `implements`, an object literal by fitting it | — |
+| `any`, `unknown`, type assertions | `any` and `unknown` hold a value with its type, checked when converted back (a `TypeError` instead of a wrong value); `as` converts numbers and dynamic values, no unchecked assertions; `JsonValue` for dynamic JSON | — |
 | `catch (e: unknown)` | `e` is the exact union of what the `try` can throw | — |
 | `Promise<T>` rejects with anything | `Promise<T, E>` carries its rejection type | — |
-| floating promises lose errors | a floating promise is a compile error | — |
+| floating promises lose errors | a floating promise in a function is a compile error; among the root file's top-level statements, `f();` starts it as in Node and the program waits for it | — |
 | an unhandled rejection prints the source line and a stack, and is reported when no handler is attached by the end of the turn | prints `Uncaught <Type>: <message> at file:line:col` and exits with code 1, reported only once nothing can await the promise any more: `const h = spawn(f()); await sleep(100); await h;` handles `h`'s rejection | — |
-| `new Promise(...)` | same, with an arrow-function executor; `await` of one abandoned unsettled is reported | `new Promise(...)` |
+| `new Promise(...)` | the same; `await` of one abandoned unsettled is reported | — |
 | single-threaded event loop | multi-core runtime; `spawn`, `shared`, `Mutex`; data races are compile errors | — |
-| top-level statements | the root file's run in a generated `main`; an imported module's run once when it is evaluated, in Node's order (no top-level `await` there) | — |
-| mutable module globals | constants only | — |
+| top-level statements | the same: the root file's run as the program, with top-level `await`; an imported module's run once when it is evaluated, in Node's order (no top-level `await` there) | — |
+| mutable module globals | the same: a module `let` is one per process, read and updated by every task, without lost updates ([module state](/docs/reference/variables/#module-state)) | — |
 | `arr.sort()` sorts as strings | `sort()` and `toSorted()` sort numbers numerically; with a comparator they work like TypeScript | — |
 | `xs.sort()`, `xs.reverse()`, `xs.fill(v)` return the array | they work in place and return nothing (returning the array would make it reference counted), but a chained access reads the changed array as in TypeScript (`xs.sort().join(",")`); other uses of the result are an error with the fix; `xs.toSorted()` and `xs.toReversed()` return sorted / reversed copies, as in ES2023 | — |
 | `xs.length = 0` | the same: setting `length` drops the elements past it; a larger `length` panics (arrays have no holes) | — |
-| `xs.splice(i, n, a, b)`, `xs.push(a, b)` | `splice(i, n)` removes; one `push(x)` per element | inserting `splice` and `push` with rest parameters |
+| `xs.splice(i, n, a, b)`, `xs.push(a, b)` | the same | — |
 | `p.then(f).catch(g)` | the same; `catch(g)` gives the promise's value type | `catch` changing the value type |
-| `process.stdout.write(s)`, `process.stderr.write(s)`, `process.env.X` | the same on the builtin `process` (`process.env.X` is `string \| null`, with no `undefined`, so `process.env.NOPE !== null` is `false`; assigning to it is `setEnv` and `delete` is `removeEnv`, from `velt:process`) | — |
-| `Object.keys(process.env)`, `{ ...process.env }` | `envAll()` from `velt:process`: a `Record<string, string>` snapshot, in the same order | — |
+| `process.stdout.write(s)`, `process.stderr.write(s)`, `process.env.X` | the same on the builtin `process` (`process.env.X` is `string \| undefined`; instead of assigning to it or `delete`, call `setEnv` and `removeEnv` from `velt/process`) | — |
+| `Object.keys(process.env)`, `{ ...process.env }` | `envAll()` from `velt/process`: a `Record<string, string>` snapshot, in the same order | — |
 | `process.argv` | the same layout, `[runtime, script, ...args]`: the script is the source file under `velt run`, the executable for a built program; each read is a new array, so changing it in place is an error (copy it first) | — |
 | `a.localeCompare(b, locale, options)` (the host's locale by default) | `a.localeCompare(b)`: the CLDR root collation, like `new Intl.Collator("und").compare(a, b)`; no locales | — |
 | `export default` | named exports only | — |
@@ -360,8 +380,8 @@ server-side rendering ([TSX](/docs/reference/tsx/), [`velt:jsx`](/docs/std/jsx/)
 | `IterableIterator<T>`, `IteratorObject<T>`, `AsyncIterableIterator<T>`, `IteratorResult<T, TReturn>` | the same interfaces (`[Symbol.iterator]()` returns `Iterator<T>`: no covariant returns); generators implement them, and such a value converts to an `Iterable<T>`. `IteratorResult<T, void>` is `IteratorResult<T>`; a real `TReturn` is an error | an `IterableIterator<T>` value converting to `Iterator<T>` (interface values don't convert to the interfaces they extend) |
 | spread, `Array.from`, array destructuring, `new Map` / `new Set` of any iterable (strings, `Map`s, `Set`s, generators) | the same: an iterable is iterated where it stands, destructuring takes only the values it needs and then closes the iterator, and over a direct generator call only the result is allocated | an array-typed spread source is evaluated before the literal's other elements (`[f(), ...g()]` with `g(): T[]` calls `g` first; the elements are still read in place); a nested pattern takes its values after the outer one has taken all of its own |
 | function expressions: `function* () {}`, `async function* () {}`, `function () {}` | generator expressions work, sharing the variables they use as in JS (no recursion through the expression's name); other function expressions are arrows | — |
-| object literals with methods: `{ *[Symbol.iterator]() { ... } }`, `{ m() { ... } }` | an object literal whose one member is an iterator method is an `Iterable<T>` (no `this`); other methods are errors | — |
+| object literals with methods: `{ *[Symbol.iterator]() { ... } }`, `{ m() { ... } }` | the same: `this` is the object; a literal implements the interface it is assigned to; one whose one member is an iterator method is an `Iterable<T>` | — |
 | an unreachable generator is never closed: its `finally` blocks never run | dropping the last reference to a suspended generator closes it: its `finally` blocks run and its `using` values are disposed then (there is no garbage collector to wait for) | — |
 | `next()` on a generator from inside its own body throws a catchable `TypeError` | it panics (`generator is already running`) | — |
-| (no equivalent) | `extend` adds members to any type | module-scoped extensions, retroactive `implements` |
-| JSX | server-side rendering through a `jsxImportSource` provider ([`velt:jsx`](/docs/std/jsx/)) | no client-side DOM; the differences are in [the reference](/docs/reference/tsx/#differences-from-typescript) |
+| (no equivalent) | `extend` adds members to any type, and `extend X implements I` makes any type implement an interface | module-scoped extensions |
+| JSX | server-side rendering through a `jsxImportSource` provider ([`velt/jsx`](/docs/std/jsx/)) | no client-side DOM; the differences are in [the reference](/docs/reference/tsx/#differences-from-typescript) |

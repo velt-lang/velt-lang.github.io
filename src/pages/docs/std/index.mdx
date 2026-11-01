@@ -1,6 +1,6 @@
 ---
 title: "Standard library guide"
-description: "The standard library is written in Velt and ships with the toolchain. Import a module with the velt: prefix, like Node's node: modules:"
+description: "The standard library is written in Velt and ships with the toolchain. Import a module by its path under velt/, like velt/fs or velt/net/http."
 layout: "docs"
 category: "Standard library"
 order: 10
@@ -9,21 +9,48 @@ navTitle: "Overview"
 
 # The Velt standard library
 
-The standard library is written in Velt and ships with the toolchain. Import a module with the
-`velt:` prefix, like Node's `node:` modules:
+The standard library is written in Velt and ships with the toolchain. A module is imported as
+`velt/<module>`, the path of its folder in the standard library:
 
-```ts ignore
-import { readFile, writeFile } from "velt:fs";
-import { Deque } from "velt:collections/deque";
+```ts
+import { readFile, writeFile } from "velt/fs";
+import { Deque } from "velt/collections";
+
+await writeFile("notes.txt", "hello");
+const queue = new Deque<string>();
+queue.pushBack(await readFile("notes.txt"));
+console.log(queue.length);
 ```
 
-The [prelude](/docs/std/prelude/) (strings, arrays, `Map`, `Math`, `JSON`, `Error`, promises, …) is in
-scope everywhere without an import, and so are Node's web globals: [`fetch`](/docs/std/fetch/),
-`Request`, `Response`, `Headers`, `AbortController`, `AbortSignal`, `URL`, `URLSearchParams`,
-`Set`, `RegExp`, [`Symbol`](/docs/std/symbol/), `TextEncoder`, `TextDecoder`, `btoa`, `atob`,
-`DOMException`, `structuredClone`, `ArrayBuffer`, `DataView`, `Uint8Array` and the other
-[typed arrays](/docs/std/typed_array/), and [`ReadableStream`](/docs/std/streams/).
-`velt doc --std` generates HTML API documentation from the sources.
+The [prelude](/docs/std/prelude/) (strings, arrays, `Map`, `Math`, `JSON`, `Error`, promises, …) is
+in scope everywhere without an import, and so are Node's web globals: [`fetch`](/docs/std/net/http/),
+`Request`, `Response`, `Headers`, `Blob`, `File`, `FormData`, `AbortController`, `AbortSignal`,
+`URL`, `URLSearchParams`, `Set`, `RegExp`, [`Symbol`](/docs/std/prelude/symbol/), `TextEncoder`,
+`TextDecoder`, `btoa`, `atob`, `DOMException`, `structuredClone`, `ArrayBuffer`, `DataView`,
+`Uint8Array` and the other [typed arrays](/docs/std/prelude/typed_array/), and
+[`ReadableStream`](/docs/std/io/streams/). `velt doc --std` generates HTML API documentation from
+the sources; the [API pages](/docs/api/) here are generated the same way.
+
+## Importing a module
+
+- **An area or a module is a folder**, and its import path is that folder: `velt/fs`,
+  `velt/net`, `velt/net/http`, `velt/encoding/json`. Each has one public API, the names its
+  `index.vlt` exports. The other files of a module are its internals, and importing one is an
+  error that names the module to import instead:
+
+  ```ts error
+  import { Deque } from "velt/collections/deque";
+  ```
+
+  ```text
+  error: `velt/collections/deque` is internal to `velt/collections`
+    = note: import what you need from "velt/collections", the module's public API
+  ```
+
+- **The prelude is never imported.** Its names are in scope in every module;
+  `import … from "velt/prelude"` is an error. The same goes for `velt/lang/…`, which implements
+  the language: what a program uses of it is global (`Symbol`, `Proxy`, `Uint8Array`, …) or
+  syntax (`import.meta`).
 
 ## Conventions
 
@@ -31,9 +58,11 @@ scope everywhere without an import, and so are Node's web globals: [`fetch`](/do
   `try { … } catch (e) { e.message }`; `e` is the union of the error classes the calls can
   throw, narrowed with `instanceof`. Each module has its own error class (`UrlError`,
   `CsvError`, …). Messages start with a capital letter (`Invalid URL: …`); `IoError` messages
-  are lowercase, as in Node (`ENOENT: no such file or directory, open 'x'`, `handle is closed`). An error that escapes `main` prints `Uncaught <Class>: <message> at <file>:<line>:<col>`, naming the error's actual class and, for an error thrown inside the
+  are lowercase, as in Node (`ENOENT: no such file or directory, open 'x'`, `handle is
+  closed`). An error that escapes the program prints `Uncaught <Class>: <message> at
+  <file>:<line>:<col>`, naming the error's actual class and, for an error thrown inside the
   standard library, the line of your code that called it.
-- **I/O errors** are `IoError { code, message }` from [`velt:io`](/docs/std/io/). `code` is a
+- **I/O errors** are `IoError { code, message }` from [`velt/io`](/docs/std/io/). `code` is a
   Node-style name: `"ENOENT"`, `"EACCES"`, `"ECONNREFUSED"`, `"EOF"`, … A failed file-system
   call has Node's message: `ENOENT: no such file or directory, open 'data.txt'`.
 - **Strings** are sequences of UTF-16 code units, as in JS: lengths and positions (`slice`,
@@ -42,31 +71,61 @@ scope everywhere without an import, and so are Node's web globals: [`fetch`](/do
 - **Async functions return promises that start at once**, like JS (a direct `await` costs
   nothing). A promise that is neither awaited nor spawned is a compile error. `*Sync` variants
   block the calling thread.
-- **Handles**: some modules return handle structs (`TcpStream`, `FileReader`, `ChildProcess`,
-  `Database`, …) that you can pass around and capture freely and release with `close()`
-  (closing again does nothing). **Planned**
-  ([semantics stage 2 §7](https://github.com/velt-lang/velt/blob/main/docs/internals/design/semantics-stage2.md#7-identity-and-the-struct-keyword)):
-  they become disposable classes with `using` support when the `struct` keyword is removed.
+- **Handles**: some modules return handle structs (`TcpStream`, `FileReader`, `ChildProcess`, …)
+  that you can pass around and capture freely and release with `close()` (closing again does
+  nothing). **Planned**: they become disposable classes with `using` support.
 
 ## Modules
 
-| Area | Modules |
-|---|---|
-| Files and I/O | [fs](/docs/std/fs/) · [fs_stream](/docs/std/fs_stream/) · [io](/docs/std/io/) · [stdin](/docs/std/stdin/) · [path](/docs/std/path/) |
-| Network | [fetch](/docs/std/fetch/) (global) · [http](/docs/std/http/) · [http/server](/docs/std/http_server/) · [websocket](/docs/std/websocket/) · [net](/docs/std/net/) · [udp](/docs/std/udp/) · [dns](/docs/std/dns/) |
-| Data formats | [json](/docs/std/json/) · [csv](/docs/std/csv/) · [db](/docs/std/db/) (typed rows from any source) · [encoding](/docs/std/encoding/) · [typed arrays](/docs/std/typed_array/) · [streams](/docs/std/streams/) · [url](/docs/std/url/) · [html](/docs/std/html/) · [jsx](/docs/std/jsx/) (TSX rendering) |
-| Collections | [collections/set](/docs/std/collections/set/) · [collections/deque](/docs/std/collections/deque/) · [collections/priority_queue](/docs/std/collections/priority_queue/) · [collections/sorted_map](/docs/std/collections/sorted_map/) · [arena](/docs/std/arena/) |
-| Numbers and time | [math](/docs/std/math/) · [bigint](/docs/std/bigint/) · [random](/docs/std/random/) · [datetime](/docs/std/datetime/) · [timers](/docs/std/timers/) |
-| Concurrency | [channel](/docs/std/channel/) · [task](/docs/std/task/) (cancellation, timeouts, task scopes) |
-| Security and hashing | [crypto](/docs/std/crypto/) · [uuid](/docs/std/uuid/) · [hash](/docs/std/hash/) (stable, non-cryptographic) |
-| Text | [regex](/docs/std/regex/) |
-| Language | [symbol](/docs/std/symbol/) (global `Symbol`) · [simd](/docs/std/simd/) (`velt:simd`: the vector types and their methods) |
-| Programs and the system | [process](/docs/std/process/) · [cli](/docs/std/cli/) · [child_process](/docs/std/child_process/) · [os](/docs/std/os/) |
-| Packages | [package](/docs/std/package/) (the type of `package.vlt`) |
-| Databases (moving to packages) | [sqlite](/docs/std/sqlite/) · [postgres](/docs/std/postgres/) · [redis](/docs/std/redis/) |
+Each module has a page at the same path as its import (`velt/net/http` is
+[/docs/std/net/http/](/docs/std/net/http/)); a module with several parts has a page for each
+below its own. The [catalog](/docs/std/modules/) groups them by what they are for.
 
-The database drivers are part of the standard library today. They are moving to separately
-versioned packages; their APIs will stay the same.
+| Module | Pages |
+|---|---|
+| [cli](/docs/std/cli/) | command-line programs: arguments, subcommands, `--help`, exit codes |
+| [collections](/docs/std/collections/) | [BTreeMap](/docs/std/collections/btree_map/) · [ConcurrentMap](/docs/std/collections/concurrent_map/) · [Deque](/docs/std/collections/deque/) · [PriorityQueue](/docs/std/collections/priority_queue/) · [Set](/docs/std/collections/set/) · [SortedMap](/docs/std/collections/sorted_map/) |
+| [compress](/docs/std/compress/) | gzip, zlib, DEFLATE, Brotli |
+| [crypto](/docs/std/crypto/) | hashing, HMAC, secure random values |
+| [db](/docs/std/db/) | typed rows from any source |
+| [dev](/docs/std/dev/) | the graceful stop under `velt dev` |
+| [encoding](/docs/std/encoding/) | base64, hex, UTF-8 · [csv](/docs/std/encoding/csv/) · [json](/docs/std/encoding/json/) |
+| [fs](/docs/std/fs/) | files and directories · [file streams](/docs/std/fs/stream/) |
+| [generate](/docs/std/generate/) | what source generators are written with |
+| [hash](/docs/std/hash/) | stable, non-cryptographic hashing |
+| [io](/docs/std/io/) | `IoError`, readers and writers · [streams](/docs/std/io/streams/) (`ReadableStream`, global) |
+| [jsx](/docs/std/jsx/) | TSX rendering · [attrs](/docs/std/jsx/attrs/) · [jsx-runtime](/docs/std/jsx/jsx-runtime/) · [generic/jsx-runtime](/docs/std/jsx/jsx-runtime/#the-generic-provider) |
+| [math](/docs/std/math/) | integer helpers · [BigInt](/docs/std/math/bigint/) |
+| [mem](/docs/std/mem/) | `needsDrop`, for containers · [arenas](/docs/std/mem/arena/) |
+| [native](/docs/std/native/) | the Velt side of packages with native code |
+| [net](/docs/std/net/) | TCP and TLS · [dns](/docs/std/net/dns/) · [http](/docs/std/net/http/) (`fetch`, global) · [http/h2](/docs/std/net/http/h2/) · [udp](/docs/std/net/udp/) · [url](/docs/std/net/url/) · [websocket](/docs/std/net/websocket/) (the client) |
+| [os](/docs/std/os/) | platform facts |
+| [package](/docs/std/package/) | the type of `package.vlt` |
+| [path](/docs/std/path/) | paths |
+| [process](/docs/std/process/) | arguments, environment, exit · [standard input](/docs/std/process/stdin/) · [child](/docs/std/process/child/) (child processes) |
+| [random](/docs/std/random/) | a fast per-thread generator · [uuid](/docs/std/random/uuid/) |
+| [reflect](/docs/std/reflect/) | what an `any` holds at run time |
+| [simd](/docs/std/simd/) | the vector types and their methods |
+| [sync](/docs/std/sync/) | `Atomic<T>` (in the prelude), `Backoff`, `VersionLatch` · [channels](/docs/std/sync/channel/) · [epoch](/docs/std/sync/epoch/) (reclamation) |
+| [task](/docs/std/task/) | cancellation, timeouts, task scopes |
+| [test](/docs/std/test/) | the runner `velt test` builds into test programs · [http](/docs/std/test/http/) (matchers for a `Response`) |
+| [text](/docs/std/text/) | [regular expressions](/docs/std/text/regex/) · [StringBuilder](/docs/std/text/string_builder/) · [HTML escaping](/docs/std/text/html/) |
+| [time](/docs/std/time/) | [DateTime and Duration](/docs/std/time/datetime/) · [timers](/docs/std/time/timers/) |
+
+The prelude's globals have pages of their own too: [Symbol](/docs/std/prelude/symbol/) and
+[typed arrays, `ArrayBuffer` and `DataView`](/docs/std/prelude/typed_array/).
+
+## Packages, not std
+
+The standard library is the core every program can count on. Servers and database drivers are
+libraries, so they are [packages](/docs/packages/), written on public std APIs only:
+[http-server](/docs/packages/http-server/) (`serve`, with web-standard `Request` and `Response`
+handlers), [sqlite](/docs/packages/sqlite/), [postgres](/docs/packages/postgres/) and
+[redis](/docs/packages/redis/). A program imports a package by its name
+(`import { serve } from "http-server"`) once `package.vlt` lists it in `dependencies`. std keeps
+what any of them builds on: `fetch` and the web types, [`velt/net/http/h2`](/docs/std/net/http/h2/),
+[`velt/db`](/docs/std/db/), [`velt/dev`](/docs/std/dev/), [`velt/native`](/docs/std/native/) and
+the [WebSocket client](/docs/std/net/websocket/).
 
 ## Runtime-backed and pure modules
 
@@ -75,32 +134,28 @@ what Velt can't do on its own:
 
 | Module | Runtime use |
 |---|---|
-| `velt:fs`, `velt:fs_stream`, `velt:net`, `velt:http`, `velt:fetch` | file system, TCP and TLS streams, and an HTTP server and client on hyper; TLS, HTTPS and HTTP/2 through rustls |
-| `velt:websocket` | none of its own: the protocol is written in Velt on `velt:net` streams and `velt:http` upgrades (the runtime only masks bytes, checks UTF-8 and draws masking keys) |
-| `velt:process`, `velt:stdin`, `velt:os` | arguments, environment, working directory, standard input, platform facts |
-| `velt:regex` | Rust's `regex` engine |
-| `velt:channel`, `velt:task` | channel queues, abort signals and task groups |
-| `velt:child_process` | process spawning and pipes |
-| `velt:udp`, `velt:dns` | sockets and the system resolver |
-| `velt:bigint` | arbitrary-precision integers (dashu-int) |
-| `velt:crypto`, `velt:uuid` | only the operating system's secure random generator; hashing, HMAC and formatting are pure Velt (on the CPU's SHA instructions through `velt:simd` where it has them) |
-| `velt:random` | a per-thread wyrand generator |
-| `velt:datetime` | only the local UTC offset; calendar math, parsing and formatting are pure Velt |
-| `velt:html` | `escapeHtml` is one runtime pass |
-| `velt:hash` | FNV-1a over a string's or array's bytes, without a copy |
-| `velt:sqlite` | embedded SQLite (rusqlite); transactions and row decoding are Velt |
-| `velt:postgres` | tokio-postgres connections, pool, statement cache, TLS and `COPY`; transactions and row decoding are Velt |
-| `velt:redis` | a RESP2 client over tokio and rustls: multiplexed connections, pipelines, pub/sub |
+| `velt/fs`, `velt/net` | the file system, TCP and TLS streams (TLS through rustls) |
+| `velt/net/http` | TCP and TLS connections, which the runtime pools between requests; HTTP/1.1, HTTP/2 (`velt/net/http/h2`) and body decoding (`velt/compress`) are Velt |
+| `velt/net/websocket` | none of its own: the protocol is Velt on `velt/net` streams (the runtime only masks bytes, checks UTF-8 and draws masking keys) |
+| `velt/process`, `velt/os` | arguments, environment, working directory, standard input, platform facts |
+| `velt/process/child` | process spawning and pipes |
+| `velt/net/udp`, `velt/net/dns` | sockets and the system resolver |
+| `velt/sync`, `velt/task` | channel queues, abort signals and task groups |
+| `velt/text` | Rust's `regex` engine; `escapeHtml` and `StringBuilder` are runtime passes over bytes |
+| `velt/math` | arbitrary-precision integers (dashu-int) |
+| `velt/crypto`, `velt/random/uuid` | only the operating system's secure random generator; hashing, HMAC and formatting are Velt (on the CPU's SHA instructions through `velt/simd` where it has them) |
+| `velt/random` | a per-thread wyrand generator |
+| `velt/time` | only the local UTC offset; calendar math, parsing and formatting are Velt |
+| `velt/hash` | FNV-1a over a string's or array's bytes, without a copy |
 
-Pure Velt: `velt:path`, `velt:math`, `velt:collections/*`, `velt:arena`, `velt:csv`, `velt:cli`,
-`velt:timers` (built on `sleep`, `spawn` and `velt:task` signals) and `velt:json`; `velt:jsx`
-too (escaping through `velt:html`). `velt:encoding`, `velt:url` and `velt:io` use only the
-runtime's UTF-8 conversions and error-code names. The runtime ABI is documented in
-[the internals](https://github.com/velt-lang/velt/blob/main/docs/internals/contracts/rt_abi_async.md).
+Pure Velt: `velt/path`, `velt/mem`, `velt/collections`, `velt/encoding` (with
+`velt/encoding/csv` and `velt/encoding/json`), `velt/cli`, `velt/jsx`, `velt/generate`,
+`velt/net/http/h2`, `velt/net/url` and the timers of `velt/time` (built on `sleep`, `spawn` and
+`velt/task` signals); some use only the runtime's UTF-8 conversions and error-code names.
 
 ## WebAssembly
 
 On the WebAssembly targets the language and the pure modules work as on native targets, and
-`velt:fs` uses the WASI file system. TCP, the HTTP server, child processes and the database
-drivers are not available; `fetch` links but rejects with `IoError` `ENOTSUP` (no network)
+`velt/fs` uses the WASI file system. TCP, child processes and the native code of the database
+packages are not available; `fetch` links but rejects with `IoError` `ENOTSUP` (no network)
 ([WebAssembly](/docs/tooling/webassembly/)).

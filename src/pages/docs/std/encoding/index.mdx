@@ -1,0 +1,116 @@
+---
+title: "velt/encoding"
+description: "Converts between bytes and text: Base64 (standard and URL-safe), hex and UTF-8, a string's bytes without a copy, and the TextEncoder, TextDecoder, btoa and atob globals."
+layout: "docs"
+category: "Standard library"
+order: 150
+---
+
+# velt/encoding
+
+`import { base64Encode, hexEncode, utf8Encode } from "velt/encoding"`. Converts between bytes and
+text: Base64 (RFC 4648, standard and URL-safe alphabets), lowercase hex, and UTF-8. The functions
+work on `u8[]`, Velt's byte array; `Uint8Array.fromBytes(b)` and `xs.toBytes()` convert to and
+from [typed arrays](/docs/std/prelude/typed_array/). Data formats have modules of their own:
+[velt/encoding/json](/docs/std/encoding/json/) and [velt/encoding/csv](/docs/std/encoding/csv/).
+
+```ts
+import { base64Encode, base64DecodeString, hexEncode, hexDecode, utf8Encode, utf8Decode } from "velt/encoding";
+
+const bytes = utf8Encode("héllo?");
+console.log(base64Encode(bytes), hexEncode(bytes)); // aMOpbGxvPw== 68c3a96c6c6f3f
+console.log(base64DecodeString("aMOpbGxvPw=="), utf8Decode(hexDecode("c3a9"))); // héllo? é
+try {
+  hexDecode("abc");
+} catch (e) {
+  console.log(e.message); // Invalid hex: odd length
+}
+```
+
+## Base64 and hex
+
+- `base64Encode(data: u8[])` (padded) and `base64Decode(s): u8[]` (padding optional).
+- `base64UrlEncode(data)` (unpadded) and `base64UrlDecode(s)`: the URL-safe alphabet, for tokens
+  and URLs.
+- `base64EncodeString(s)` and `base64DecodeString(s)`: Base64 of the UTF-8 bytes of a string.
+- `hexEncode(data)` and `hexDecode(s)`; `hexDecode` accepts either case.
+
+The decoders throw `EncodingError` for input that is not in their alphabet.
+
+## UTF-8
+
+- `utf8Encode(s): u8[]`. A lone surrogate becomes U+FFFD. The length is `Buffer.byteLength(s)`,
+  not `s.length`, which counts UTF-16 code units.
+- `utf8Decode(data)` is strict: it throws `EncodingError` for invalid UTF-8.
+  `utf8DecodeLossy(data)` writes U+FFFD for invalid sequences instead.
+- `utf8Valid(data): bool`, and `firstInvalid(data): i64`, the offset of the first byte that
+  starts an invalid sequence, or -1.
+
+## A string's bytes without a copy
+
+Strings keep their text as UTF-8, and parsers that scan bytes can read it in place:
+
+- `utf8Length(s): usize`: the bytes the string keeps its text in, O(1). That is
+  `Buffer.byteLength(s)` for well-formed text, a lone surrogate counting its three-byte form.
+- `utf8ByteAt(s, i): u8`: one byte (a `RangeError` past the end).
+- `isAscii(s): bool`, O(1).
+- `utf8Substring(s, start, end)`: the text between two byte positions. It copies nothing when
+  `slice` would share the text, and throws a `RangeError` unless both positions are inside `s` at
+  the start of a character.
+
+With `u8x16.loadString` from [velt/simd](/docs/std/simd/), a parser reads 16 bytes at a time.
+
+```ts
+import { utf8ByteAt, utf8Length, utf8Substring } from "velt/encoding";
+
+const line = "naïve=café";
+let eq: usize = 0;
+while (utf8ByteAt(line, eq) != 61) {
+  eq++;
+}
+console.log(utf8Substring(line, 0, eq), utf8Substring(line, eq + 1, utf8Length(line))); // naïve café
+```
+
+## `TextEncoder` and `TextDecoder`
+
+The WHATWG classes are globals, as in Node: no import.
+
+```ts
+const bytes = new TextEncoder().encode("héllo");
+console.log(bytes.length, new TextDecoder().decode(bytes)); // 6 héllo
+```
+
+- `new TextEncoder().encode(s)` gives the UTF-8 bytes in a `Uint8Array`, and
+  `encodeInto(s, dest)` writes as many whole characters as fit into a `Uint8Array`, returning
+  `{ read, written }` (code units read, bytes written).
+- `new TextDecoder(label = "utf-8", { fatal, ignoreBOM })` takes UTF-8 only: another label throws
+  `EncodingError` (`The "latin1" encoding is not supported`), where Node also decodes legacy
+  encodings.
+- `decode(bytes)` takes a typed array, an `ArrayBuffer`, a `DataView` or a `u8[]`, drops a
+  leading byte order mark unless `ignoreBOM`, and writes U+FFFD for invalid input, or throws
+  `EncodingError` with `fatal`. There is no `stream` option.
+
+## `btoa` and `atob`
+
+Node's Base64 of "binary strings" (one code unit per byte) are globals too, and `velt/encoding`
+exports them as well. For bytes and UTF-8 text, use `base64Encode` and `base64EncodeString`.
+
+```ts
+console.log(btoa("hello"), atob(" aGVs bG8 "), atob("/w==").charCodeAt(0)); // aGVsbG8= hello 255
+try {
+  atob("a");
+} catch (e) {
+  console.log(e.name, e.message); // InvalidCharacterError The string to be decoded is not correctly encoded.
+}
+```
+
+- `btoa(s)` encodes a string whose code units are all at most 0xFF (Latin-1) as padded standard
+  Base64.
+- `atob(s)` decodes as WHATWG's forgiving-base64 does: ASCII whitespace anywhere is ignored and
+  padding is optional, but at most two `=`, only at the end and only where they complete a group
+  of four. The result has one code unit (0 to 255) per byte.
+- Bad input throws a `DOMException` named `InvalidCharacterError` with Node's message:
+  `Invalid character` (a code unit above 0xFF for `btoa`; a character outside the alphabet or a
+  misplaced `=` for `atob`), or `The string to be decoded is not correctly encoded.` (a length
+  that cannot come from whole bytes).
+- Unlike JavaScript, the argument must be a string: `btoa(String(123))`.

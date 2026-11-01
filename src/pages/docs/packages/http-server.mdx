@@ -1,0 +1,566 @@
+---
+title: "http-server"
+description: "An HTTP/1.1 and HTTP/2 server written in Velt: web-standard Request/Response handlers, HTTPS, streaming, WebSockets and graceful stops."
+layout: "docs"
+category: "Packages"
+order: 10
+---
+
+import { Callout } from '@/components/mdx';
+
+# http-server
+
+An HTTP server written in Velt on [velt/net](/docs/std/net/)'s TCP and TLS streams: HTTP/1.1
+keep-alive and pipelining, HTTP/2 (h2c with prior knowledge, or ALPN over TLS), HTTPS, response
+streaming with backpressure, graceful stops (also under `velt dev`) and WebSockets. Handlers take
+the global [`Request`](/docs/std/net/http/) and return the global
+[`Response`](/docs/std/net/http/), the classes `fetch` uses, as in Deno and Bun. They run
+concurrently on every core.
+
+```ts
+import { serve, ServeInfo, HttpServer } from "http-server";
+import { upgradeWebSocket } from "http-server/websocket";
+```
+
+It is a package, not part of the standard library, and it uses only public APIs: what std offers
+any server (`RequestSource`, `responseParts` and `statusText` of
+[velt/net/http](/docs/std/net/http/), the HPACK and frames of
+[velt/net/http/h2](/docs/std/net/http/h2/), [velt/dev](/docs/std/dev/), and `webSocketOver` of
+[velt/net/websocket](/docs/std/net/websocket/)). std keeps the client side: `fetch`, the web types
+and the WebSocket client. For a walkthrough, see
+[Building an HTTP server](/docs/book/http-server/).
+
+## Adding it to a program
+
+There is no public package registry yet. `velt new --template api` (or `--template websocket`)
+starts a project that depends on `http-server` from the Velt repository on GitHub, pinned to the
+release tag of the `velt` that made it. In an existing project, add the same dependency to
+`package.vlt`:
+
+```ts ignore title="package.vlt"
+import type { Package } from "velt/package";
+
+export const pkg: Package = {
+  name: "app",
+  version: "0.1.0",
+  dependencies: {
+    "http-server": {
+      git: "https://github.com/velt-lang/velt",
+      branch: "main", // or tag: "v<release>", as velt new writes it
+      path: "packages/http-server",
+    },
+    // Or a local checkout of the repository:
+    // "http-server": { path: "../velt/packages/http-server" },
+  },
+};
+```
+
+`velt install` (or the first `velt run`) fetches the commit and records it in `velt.lock.json`
+([git dependencies](/docs/tooling/packages/#git-dependencies)). The package is Velt code only,
+so it needs no Rust toolchain. Import it as `"http-server"`, and its WebSocket half as
+`"http-server/websocket"`.
+
+## A first server
+
+```ts title="src/main.vlt"
+import { serve } from "http-server";
+
+const server = await serve({ port: 0 }, async (req: Request): Promise<Response> => {
+  const url = new URL(req.url);
+  if (url.pathname == "/hello") {
+    return Response.json({ greeting: `hello ${url.searchParams.get("name") ?? "you"}` });
+  }
+  if (url.pathname == "/echo" && req.method == "POST") {
+    return new Response(await req.text());
+  }
+  return new Response("not found", { status: 404 });
+});
+
+const res = await fetch(`http://127.0.0.1:${server.port}/hello?name=ada`);
+console.log(res.status, res.headers.get("content-type"), await res.text());
+// 200 application/json {"greeting":"hello ada"}
+const echo = await fetch(`http://127.0.0.1:${server.port}/echo`, { method: "POST", body: "hi" });
+console.log(await echo.text()); // hi
+server.close();
+```
+
+A listening server keeps the process alive after the program's statements have run, as in Node,
+until `server.close()`; dropping the `HttpServer` value does not stop it. A program that fails
+(an uncaught error, or a nonzero exit code) ends at once, servers or not.
+
+## `serve(opts, handler)`
+
+`serve<E, F>(opts: HttpServeOptions, handler: (req: Request, info: ServeInfo) => Response |
+Promise<Response, E> throws F): Promise<HttpServer, IoError>`.
+
+`HttpServeOptions` holds:
+
+| Option | Default | |
+|---|---|---|
+| `port` | (required) | `0` picks a free port; `server.port` is the real one |
+| `host` | `"127.0.0.1"` | `"0.0.0.0"` listens on every interface |
+| `tls` | none | `{ cert, key }` in PEM, optional `alpn`: [HTTPS](#https-and-http2) |
+| `http2` | `true` | serve [HTTP/2](#https-and-http2) as well |
+| `maxConcurrentStreams` | 128 | HTTP/2 requests of one connection whose handlers run at once |
+| `maxHeadSize` | 16 KiB | a larger request head gets 431 |
+| `maxHeaders` | 100 | more headers get 431 |
+| `maxBodySize` | 8 MiB | a larger body gets 413 |
+| `idleTimeout` | 5000 ms | how long a connection waits for its next request (Node's `keepAliveTimeout`) |
+| `headersTimeout` | 60000 ms | the most a request head may take from its first byte (408 after) |
+| `requestTimeout` | 300000 ms | the most a body may take from its head (408 after) |
+
+A `serve` that fails (an address in use, a TLS certificate or key that does not parse) throws
+`IoError`.
+
+- A handler returns a `Response` or a promise of one: an arrow or any function value, sync or
+  `async` (`serve({ port: 8080 }, handle)`), and may take only `req`. `E` is what its promise
+  rejects with, `F` what it throws.
+- A handler that throws, or whose promise rejects, gets a 500 response (`Internal Server
+  Error`) and its error is printed to stderr, as in Deno and Bun. So does a response with an
+  invalid header name or value.
+- `info: ServeInfo` holds what the server knows beyond the request (Deno's
+  `ServeHandlerInfo`): `info.remoteAddr` is the client's `NetAddr { transport: "tcp", hostname,
+  port: number }`.
+
+### State shared by requests
+
+Handlers run on several threads at once. A top-level `let` or a new object (`new Map()`, `[]`)
+of a script that the handler changes is module state, as in Node: every request sees and updates
+the same one ([module state](/docs/reference/modules/#scripts-top-level-statements)):
+
+```ts
+import { serve } from "http-server";
+
+let hits = 0;
+const server = await serve({ port: 8080 }, (req: Request) => {
+  hits++;
+  return new Response(`hello #${hits}\n`);
+});
+console.log(`listening on ${server.port}`);
+```
+
+A variable local to a function is different: each request gets its own copy of what the handler
+captured, so a handler (and the callbacks it reaches) must not change such a variable.
+`(req) => { count++; … }` inside a function is a compile error at the `serve` call, with the
+`shared(...)` fix, as for any library function that runs a callback on other threads
+([Async](/docs/reference/async/#tasks)). Changing an object's fields through a captured variable
+changes that request's copy, not the caller's object. A captured resource (`[Symbol.dispose]`)
+needs a `clone()`, or capture it as `shared(new Mutex(…))`.
+
+That includes a variable assigned by a sync callback the handler calls: a function value stored
+in something it captured, in an array, a `Map` or a field, called by a method, passed to
+`setTimeout`, or returned by a function. It is an error that names the call and the variable, and
+shows the variable rewritten to hold one value every request shares:
+
+```text
+error: this code runs on another thread and calls `i.onChange`, which changes `last`
+  = note: fix: const last = shared(new Mutex<{ value: string }>({ value: "" }))  // one value every thread shares, as in Node
+  = note: then read it with `last.with((v) => v.value)` and change it with `last.with((v) => { v.value = … })`
+```
+
+The check errs on the side of rejecting: a callback of a type the handler calls is an error even
+when the handler never gets to it. Share the variable as the fix shows:
+
+```ts
+import { serve } from "http-server";
+
+class Input {
+  onChange: (v: string) => void = (v) => {};
+}
+
+const last = shared(new Mutex<{ value: string }>({ value: "" }));
+const i = new Input();
+i.onChange = (v: string) => {
+  last.with((s) => {
+    s.value = `${v}${s.value.length}`;
+  });
+};
+const server = await serve({ port: 0 }, async (req) => {
+  i.onChange("x");
+  return new Response("ok");
+});
+await server.shutdown();
+```
+
+## The request
+
+The handler's `req` is a [`Request`](/docs/std/net/http/) that reads the server's request
+lazily: a handler pays only for what it reads.
+
+- `req.url` is absolute, as in Deno and Bun: `http://` (`https://` over TLS), the `host` header
+  (HTTP/2: `:authority`), then the path and query. Route with `new URL(req.url).pathname` and
+  read the query with `url.searchParams`. `req.method` is as received (`GET`, `POST`, …).
+- `req.headers` is immutable, as in Deno; `req.headers.get(name)` and `has(name)` look one
+  header up (case-insensitively) without copying the others.
+- The body is received while the handler reads it, not before the handler starts:
+  `await req.text()` (invalid UTF-8 becomes U+FFFD), `await req.json<T>()`, `await req.bytes()`,
+  or chunk by chunk with `for await (const chunk of req.body)` (a `BodyStream`, `null` for a
+  request without a body), so an upload need not be held in memory. A body is read once; a read
+  that fails (the client went away) throws `IoError`.
+- A `Request` is valid until its handler settles: what the handler read stays readable, but
+  reading something new afterwards (in a streamed body or a spawned task) stops the program with
+  a clear error. Read what outlives the handler first (`const url = req.url`).
+
+## The response
+
+The handler returns any [`Response`](/docs/std/net/http/): `new Response(body, { status,
+statusText, headers })`, `Response.json(value, init)`, `Response.redirect(url, status)`, or a
+response `fetch` returned (a proxy: its body is passed on as it arrives).
+
+- A string body is sent without a copy, with `content-type: text/plain;charset=UTF-8` unless the
+  headers set one; `Response.json` sends `application/json`; bytes (a typed array, an
+  `ArrayBuffer` or a `u8[]`) send no `content-type`. Set any other header with
+  `res.headers.set(name, value)` or in `init`.
+- A body made while it is sent (server-side rendering, large exports) is a `BodyStream`:
+  `new Response(BodyStream.from(chunks))`, where `chunks` is an async generator of `u8[]` (JS:
+  `ReadableStream.from`). The status and headers go out when the handler returns; each chunk is
+  sent as the generator yields it (HTTP/1.1 chunked transfer, no `content-length`), and the
+  generator is not asked for the next one before the client took the previous one
+  (backpressure). If the client goes away, the generator is closed (its `finally` blocks run); if
+  it throws, the error is printed to stderr and the response is cut off, so the client sees a
+  failed body rather than a complete one.
+- A 204, 205 or 304 status has no body: `new Response(body, { status: 204 })` with a body stops
+  the program (JS throws `TypeError`). A passed-on fetched response with a 1xx, 204 or 304
+  status sends none.
+- The web `Response` has no trailers, so `serve` cannot send any; [`serveHttp`](#servehttp-the-lower-level-api)
+  can.
+
+```ts
+import { serve } from "http-server";
+import { BodyStream } from "velt/net/http";
+import { utf8Encode } from "velt/encoding";
+
+async function* rows(n: i64): AsyncGenerator<u8[]> {
+  yield utf8Encode("<!doctype html><ul>");
+  for (let i: i64 = 0; i < n; i++) {
+    yield utf8Encode(`<li>${i}</li>`);
+    await sleep(100);
+  }
+  yield utf8Encode("</ul>");
+}
+
+await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
+  return new Response(BodyStream.from(rows(3)), {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
+});
+```
+
+`renderToStream` of [velt/jsx](/docs/std/jsx/) returns a `BodyStream` too:
+`new Response(renderToStream(<Page />), init)` sends a page while its async components load
+([Server-rendered pages](/docs/book/ssr-pages/)).
+
+## HTTPS and HTTP/2
+
+With `tls: { cert, key }` (the certificate chain and the key, PEM text, as
+[`listenTls`](/docs/std/net/) takes them) the server speaks HTTPS:
+
+```ts
+import { serve } from "http-server";
+import { readFileSync } from "velt/fs";
+
+const server = await serve(
+  {
+    port: 8443,
+    host: "0.0.0.0",
+    tls: { cert: readFileSync("cert.pem"), key: readFileSync("key.pem") },
+  },
+  (req: Request) => new Response(`hello over ${new URL(req.url).protocol}\n`),
+);
+console.log(`listening on https://localhost:${server.port}`);
+```
+
+HTTP/2 (RFC 9113) is on by default, with the same handlers:
+
+- **Over TLS** when the client chooses it with ALPN: the listener offers `h2` and `http/1.1`,
+  unless `tls.alpn` names the protocols. Browsers, `curl` and Velt's own `fetch` pick `h2`.
+- **Over plain TCP** when the connection starts with the HTTP/2 preface (h2c with prior
+  knowledge: `curl --http2-prior-knowledge`). A request with `Upgrade: h2c` is answered over
+  HTTP/1.1: RFC 9113 deprecates that upgrade, and browsers use HTTP/2 only over TLS.
+- `http2: false` turns it off; `maxConcurrentStreams` (128) is the number of requests of one
+  connection whose handlers run at once.
+
+What differs from HTTP/1.1 for a handler: requests of one connection run at once (a later one
+does not wait for an earlier response); header names arrive in lowercase, and `host` is the
+request's `:authority` when no `host` header came; `cookie` fields, which HTTP/2 clients may
+send one per cookie, read joined with `; `; bodies have flow control both ways; a client that
+resets its stream makes the next write to it throw `IoError`. Header names a response may not
+have over HTTP/2 (`Connection`, `Keep-Alive`, `Transfer-Encoding`, `Upgrade`) are not sent.
+Server push is not offered.
+
+A malformed HTTP/2 request is reset without reaching the handler, and a connection that resets
+or opens streams it may not, sends empty DATA frames or floods CONTINUATION frames is closed with
+`ENHANCE_YOUR_CALM` (rapid reset, CVE-2023-44487, and its relatives). `close()` sends GOAWAY:
+streams in flight finish, then each connection closes.
+
+## WebSockets
+
+`http-server/websocket` accepts WebSockets (RFC 6455). Each is a
+[velt/net/websocket](/docs/std/net/websocket/) `WebSocket` (sending, receiving, topics) once its
+handshake is answered, over an HTTP/1.1 `Upgrade` or, over HTTP/2, the extended CONNECT of
+RFC 8441 (the socket then runs on that one stream).
+
+- `isWebSocketRequest(req: Request): bool`.
+- `upgradeWebSocket(req: Request): WebSocketUpgrade { socket: WebSocket; response: Response }`:
+  return `response` from the handler and use `socket` from a spawned task. Throws `IoError`
+  `EINVAL` if `req` is not an upgrade request.
+- `acceptWebSocket(req: HttpRequest, res: HttpResponse): WebSocket | null`: the same on a
+  [`serveHttp`](#servehttp-the-lower-level-api) server. It answers the handshake itself and
+  returns the socket. A request that is not a valid handshake is answered there (426 with
+  `Sec-WebSocket-Version: 13` when it is not an upgrade or asks for another version, else 400),
+  and it returns `null`. Throws `IoError` `EINVAL` if a response was started.
+
+On the server side the socket works once the handler has returned the response: a `send` before
+that is queued and goes out right after it, in order, and a `receive` waits for it.
+
+An echo server, and a client from [velt/net/websocket](/docs/std/net/websocket/) talking to it:
+
+```ts
+import { serve } from "http-server";
+import { isWebSocketRequest, upgradeWebSocket } from "http-server/websocket";
+import { WebSocket, connectWebSocket } from "velt/net/websocket";
+
+async function echo(ws: WebSocket): Promise<void> {
+  for await (const m of ws) {
+    await ws.send(m.text);
+  }
+  await ws.close();
+}
+
+const server = await serve({ port: 0 }, async (req: Request): Promise<Response> => {
+  if (isWebSocketRequest(req)) {
+    const up = upgradeWebSocket(req);
+    spawn(echo(up.socket));
+    return up.response;
+  }
+  return new Response("websocket only", { status: 400 });
+});
+const ws = await connectWebSocket(`ws://127.0.0.1:${server.port}/`);
+await ws.send("hi");
+console.log((await ws.receive())?.text ?? ""); // hi
+await ws.close();
+server.close();
+```
+
+A chat room, where every message a client sends goes to everyone else in the room (topics:
+`ws.subscribe(topic)`, and `ws.publish(topic, text)` sends to every subscriber but `ws`):
+
+```ts
+import { serve } from "http-server";
+import { isWebSocketRequest, upgradeWebSocket } from "http-server/websocket";
+import { WebSocket } from "velt/net/websocket";
+
+async function member(ws: WebSocket): Promise<void> {
+  await ws.subscribe("room");
+  for await (const m of ws) {
+    ws.publish("room", m.text);
+  }
+  await ws.close();
+}
+
+const server = await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
+  if (!isWebSocketRequest(req)) {
+    return new Response("chat room", { status: 400 });
+  }
+  const up = upgradeWebSocket(req);
+  spawn(member(up.socket));
+  return up.response;
+});
+console.log(`listening on ${server.port}`);
+```
+
+`velt new --template websocket` starts a project with a chat server like this one, a client and
+tests.
+
+## `upgradeConnection(req, protocol, headers?)`
+
+A handler can take over its connection for another protocol (an HTTP/1.1 `Upgrade`, RFC 9110
+§7.8). `isUpgradeRequest(req, protocol): bool` says whether the client asked for `protocol`, and
+`upgradeConnection(req: Request, protocol: string, headers?: HeadersInit): ConnectionUpgrade`
+takes the connection. `ConnectionUpgrade` holds `stream: TcpStream`, `head: u8[]` (what the
+client sent after its request, already in the new protocol: Node's `head`) and `response`
+(`101 Switching Protocols`, with `upgrade: protocol`, `connection: Upgrade` and `headers`).
+Return `response` from the handler; from then on the connection is `stream`, a
+[velt/net](/docs/std/net/) byte stream (over TLS if the server is), released with `close()`.
+
+```ts
+import { isUpgradeRequest, serve, upgradeConnection } from "http-server";
+import { TcpStream } from "velt/net";
+
+async function session(conn: TcpStream): Promise<void> {
+  await conn.write("hello\n");
+  const line = await conn.readString();
+  await conn.write(line.toUpperCase());
+  conn.close();
+}
+
+const server = await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
+  if (!isUpgradeRequest(req, "shout")) {
+    return new Response("upgrade to shout", { status: 426 });
+  }
+  const up = upgradeConnection(req, "shout");
+  spawn(session(up.stream));
+  return up.response;
+});
+console.log(`listening on ${server.port}`);
+```
+
+The stream works once the response has been sent: its first read or write waits for that, and
+fails with `IoError` `ECONNABORTED` if the handler returned something else. The client must wait
+for the `101` before it sends anything in the new protocol. `upgradeConnection` throws `IoError`
+`EINVAL` if `req` is not an upgrade request or its connection was taken already. Only HTTP/1.1
+connections can be upgraded (WebSockets over HTTP/2 use the extended CONNECT, which
+`upgradeWebSocket` handles).
+
+## Stopping a server
+
+`HttpServer { port: number }`:
+
+- `close()` stops accepting, lets in-flight requests finish and closes idle connections. Once
+  the last request finished, the handler closure is dropped, so values it captured are released
+  (their `[Symbol.dispose]()` runs). Closing again does nothing.
+- `await server.shutdown()` does the same and resolves only after that (it consumes the
+  `HttpServer`). A program that exits right after `close()` may exit before the handler is
+  dropped.
+
+`serve` (or velt/net's `listen`) on the port of a server just closed works: it waits (up to 5
+seconds) until the closed server has released the port. The listen backlog is the OS maximum, so a
+burst of connections waits to be accepted instead of being refused (macOS caps every listen queue
+at `kern.ipc.somaxconn`, 128 by default).
+
+### Under `velt dev`
+
+[`velt dev`](/docs/book/hot-reload/) swaps changed handler bodies into the running server: new
+requests run the new code, requests in flight finish on the old code, and the server never stops
+listening. When a change needs a restart (a change to the program's top-level code or to a
+type's layout), the server takes part in [velt/dev](/docs/std/dev/)'s graceful stop: it stops
+accepting, finishes the requests in flight, then lets the program exit. The supervisor keeps the
+listening socket open, so new connections wait for the next version instead of being refused.
+Nothing in the program needs to change for this: outside `velt dev` the server behaves as above.
+
+## `serveHttp`: the lower-level API
+
+`serve` runs on `serveHttp`, which hands the handler an `HttpRequest` and an `HttpResponse`
+instead of the web types: each request is parsed in place in its connection's read buffer
+(nothing is copied or allocated for a request unless the handler asks for a string), and every
+response to the requests one read brought is written in one go. It is also the one to use for
+trailers and Server-Sent Events.
+
+```ts
+import { serveHttp, HttpRequest, HttpResponse } from "http-server";
+
+const server = await serveHttp({ port: 0 }, async (req: HttpRequest, res: HttpResponse) => {
+  if (req.pathIs("/hello")) {
+    res.send(`hello ${req.query()}`);
+  } else if (req.pathIs("/echo") && req.isMethod("POST")) {
+    const body = await req.body();
+    res.header("X-Length", `${body.length}`);
+    res.sendBytes(body);
+  } else if (req.pathIs("/clock")) {
+    const events = await res.sse();
+    for (let i = 0; i < 3; i++) {
+      await events.send(`${i}`, "tick");
+    }
+    await events.end();
+  } else {
+    res.status(404);
+    res.send("not found");
+  }
+});
+const r = await fetch(`http://127.0.0.1:${server.port}/hello?name=ada`);
+console.log(r.status, await r.text()); // 200 hello name=ada
+server.close();
+```
+
+`serveHttp<E>(opts: HttpServeOptions, handler: (req: HttpRequest, res: HttpResponse) =>
+Promise<void, E> throws E): Promise<HttpServer>` takes the [same options](#serveopts-handler).
+One task serves each connection; requests on one HTTP/1.1 connection are answered in order.
+
+- Requests are framed strictly as RFC 9112 says, so that a proxy in front of the server cannot
+  find other request boundaries than it does (request smuggling): two `Content-Length` headers,
+  `Transfer-Encoding` with `Content-Length`, or codings that do not end in `chunked` get 400;
+  another coding before `chunked` (`gzip, chunked`) gets 501. A head over `maxHeadSize` or
+  `maxHeaders` gets 431; the connection then closes, after reading what the client still sends
+  for up to 2 s, so it gets the response.
+- The handler runs once a request's head has arrived; a body it does not read is skipped before
+  the connection's next request.
+- A handler that throws gets a 500 (the error is printed to stderr); one that returns without
+  sending gets an empty 200.
+- An HTTP/1.1 client that sent `Expect: 100-continue` gets `100 Continue` when the handler first
+  reads the body. If the handler answers without reading, the response goes out with
+  `Connection: close` and the body is not waited for.
+
+### `HttpRequest`
+
+Valid while the handler runs: the server reads the next request into the same buffer.
+
+- `isMethod(m): bool`, `pathIs(p): bool`: compare without making a string.
+- `method()`, `path()` (the target up to `?`), `query()` (after `?`, without it), `target()`.
+- `header(name): string | null` (any case; the first if repeated), `headerValues(name)` (all of
+  them joined with `", "`), `hasHeader(name)`, `headers(): [string, string][]`.
+- `remoteAddr(): string`: `"ip:port"` (IPv6 in brackets: `"[::1]:5000"`).
+- `read(): Promise<u8[] | null>`: the next piece of the body as it arrives, `null` at its end.
+  Nothing is kept: for uploads of any size, and proxies.
+- `body(): Promise<u8[]>`, `bodyText(): Promise<string>`: the whole body, up to `maxBodySize`
+  (`BodyTooLarge` beyond it, 413 if the handler lets it through). `bodyRead(): bool` says the
+  body was read to its end, or there is none.
+- `keepAlive: bool`: the connection stays open after the response.
+- `isUpgrade(protocol): bool`, and `takeUnread(): u8[]` after `res.upgrade`: what the client
+  sent past the request.
+
+### `HttpResponse`
+
+- `status(code)` (200 by default; outside 100–999 it throws `RangeError`, as Node),
+  `header(name, value)`. As in Node, `header` throws `TypeError` for a name that is not a token
+  or a value with a control character other than TAB, so a value taken from a request cannot add
+  a header. `Content-Length` and `Transfer-Encoding` are the server's.
+- `send(text)` (`text/plain; charset=utf-8`), `sendBytes(bytes)` (`application/octet-stream`),
+  `json(text)` (`application/json`), `html(text)` (`text/html; charset=utf-8`): write the
+  response, one per request.
+- `stream(type = "text/plain; charset=utf-8"): Promise<HttpStream>`: the head, then the body
+  piece by piece with `await s.write(data)` (a `string`, `u8[]` or `Uint8Array`) and
+  `await s.end()`. `write` resolves at once unless more than 64 KiB are still to be sent, so a
+  fast producer waits for a slow client. A write to a client that went away throws `IoError`.
+- `sendStream(body: BodyStream, type = "text/html; charset=utf-8")`: streams a `BodyStream`,
+  such as `renderToStream` of [velt/jsx](/docs/std/jsx/) returns.
+- `sse(): Promise<EventStream>`: Server-Sent Events. `send(data, event?, id?)` writes an event,
+  `comment(text?)` a keep-alive line, `end()` ends the stream.
+- `signal(): AbortSignal`: aborted when the client can no longer be written to or the server
+  closes; pass it to the work done for the request (`fetch(url, { signal })`).
+- `addTrailers(trailers: [string, string][])`: fields sent after the body (gRPC's
+  `grpc-status`). Over HTTP/2 they are always sent; over HTTP/1.1 they end a chunked body (a
+  streamed one, or any when the request said `TE: trailers`).
+- `sent(): bool`, `upgraded(): bool`, and `upgrade(protocol, headers = []): TcpStream`, which
+  answers `101 Switching Protocols` and hands the connection over (over HTTP/2: an extended
+  CONNECT, answered 200, on one stream).
+
+A `HEAD` request gets the head a `GET` would and no body. A proxy streams a body through without
+collecting it:
+
+```ts
+import { serveHttp, HttpRequest, HttpResponse } from "http-server";
+
+const server = await serveHttp({ port: 8080 }, async (req: HttpRequest, res: HttpResponse) => {
+  const upstream = await fetch(`https://example.com${req.target()}`, { signal: res.signal() });
+  const out = await res.stream(upstream.headers.get("content-type") ?? "application/octet-stream");
+  for await (const chunk of upstream.body!) {
+    await out.write(chunk);
+  }
+  await out.end();
+});
+console.log(`proxying on ${server.port}`);
+```
+
+## Writing fast handlers
+
+Keep module state off the request path. Module state (a module-level `let`, and a module
+constant whose value is not a literal) is guarded by one process-wide lock, and a task that
+touched it once takes that lock at the start of every later poll. One task serves a connection
+for its whole life, so a handler that touches module state makes its connection take the lock for
+every request after that, and the connections then run one at a time. Compare paths with string
+literals (`req.pathIs("/json")`), build data per request, and keep shared mutable state in a
+`shared(new Mutex(...))` the handler captures.
+
+<Callout kind="info" title="Not available on WebAssembly">
+The server needs TCP sockets, so it does not run in a WebAssembly build.
+</Callout>

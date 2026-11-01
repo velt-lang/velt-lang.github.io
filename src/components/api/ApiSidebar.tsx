@@ -8,7 +8,7 @@ import { GridIcon } from '../Icons';
 import { ModuleSwitcher } from '../../islands/ModuleSwitcher';
 import { tint } from '../../lib/docs-areas';
 import { CATEGORIES } from '../../data/std-catalog';
-import { anchorOf, apiModules, apiPath, groupExports, guideSlug, kindInfo, visibleExports, type ApiModule } from '../../lib/std-api';
+import { anchorOf, apiModules, apiPath, groupExports, guideSlug, kindInfo, specifierOf, visibleExports, type ApiModule } from '../../lib/std-api';
 
 export const ApiSidebar = component<{ module: ApiModule; catalog: string }>(({ props }) => () => {
     const m = props.module;
@@ -18,9 +18,9 @@ export const ApiSidebar = component<{ module: ApiModule; catalog: string }>(({ p
         <div class="flex flex-col gap-3.5 text-sm leading-[1.45]">
             <ModuleSwitcher
                 client:idle
-                current={m.specifier}
+                current={specifierOf(m)}
                 meta={CATEGORIES.find((c) => c.modules.some(([page]) => page === guideSlug(m.module)))?.title ?? count(visibleExports(m).length)}
-                modules={all.map((x) => ({ name: x.specifier, href: apiPath(x.module) }))}
+                modules={all.map((x) => ({ name: specifierOf(x), href: apiPath(x.module) }))}
             />
             <a
                 href={props.catalog}

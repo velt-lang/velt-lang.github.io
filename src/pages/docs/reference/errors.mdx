@@ -24,6 +24,8 @@ compiler knows exactly what each function and each `try` block can throw.
 - A written clause bounds the body
   (``` `load` throws `Timeout`, which its `throws` clause does not allow ```; a subclass is
   allowed by its base class) and is the function's error type even when the body throws less.
+  `throws unknown` (or `any`, and `Promise<T, unknown>` for a promise) allows any thrown value,
+  as JavaScript does: `null`, a string, any class; a `catch` gets it as an `unknown` to narrow.
 - Field initializers may throw: `new C(…)` (and a struct literal that leaves the field out)
   evaluates them, so it throws what they throw, including inherited ones, besides what the
   constructor throws. They run as part of the constructors
@@ -51,6 +53,12 @@ A union of error classes (`AppError | TypeError`, a `catch` variable) and a null
 `e.name` and `e.toString()` too, and are written the same way in templates, by `String(e)` and
 by string concatenation (`null` for `null`, `undefined` for `undefined`); so is an error held by
 an `any` or an `unknown` (`` `${e}` `` is `Error: boom`, or a subclass's own `toString()`).
+
+`e.stack` is a string that starts as Node's does, with `"<name>: <message>"`; Velt keeps no call
+frames, so the `    at …` lines Node adds after it are not there (assigning `stack` is not
+supported yet). Node fixes the text the first time `stack` is read; Velt writes it on every read,
+so after `e.name = "Renamed"` a later read gives `Renamed: …` in Velt and `Error: …` in Node.
+
 Arrays of errors are written as JavaScript writes them (`` `${errors}` ``, `errors.join(", ")`:
 each element's `toString()`). `console.log(e)` and `JSON.stringify(e)` leave the name out.
 
@@ -113,7 +121,9 @@ what a function stored there may throw.
 
 - A closure gets the error type of the function type expected where it is written (and must
   not throw more than a written `throws` allows); otherwise, what its body throws. A named
-  function used as a value may throw less than its function type allows.
+  function used as a value may throw less than its function type allows. A closure used as a
+  value of another function type (one taking more parameters, the other arm of a `? :`) still
+  throws only what it throws, and so does a call through a `const` holding a closure.
 - Interface methods and overridden methods share one error type per method: the interface's (or
   base method's) `throws` clause bounds every implementation
   (``` `Db.get` throws `Forbidden`, but `Store.get` does not allow it ```); without one it is the
@@ -127,6 +137,12 @@ what a function stored there may throw.
   do this, so
   `xs.map((x) => parse(x))` throws what `parse` throws, and nothing when the callback cannot
   throw. Sort comparators and `Mutex.with` callbacks cannot throw.
+- A function or method that may throw can be called through an `any` (`const f: any = parse;
+  f("x")`, `o.m()` on an `any`, a getter or a setter), and returns its value when it doesn't
+  throw. An error it throws there can't be caught yet: like an error nothing catches, it
+  ends the process with `Uncaught <header>` and exit code 1, also inside a `try`, and the
+  `finally` blocks around the call (in this function or a caller) don't run first, where Node
+  runs them.
 
 ### Function types without `throws`
 
@@ -167,11 +183,11 @@ The errors also come through other such types (a closure calling through one) an
 recursion, and a `let` without a type initialized with a closure (`let f = () => {}`) is such a
 type too.
 
-Only `Error` classes are inferred: a closure stored there that throws another value
-(`throw "x"`, `throw null`) is reported, since the inferred errors can reach other function types
-of the same shape (a callback stored as a `Map` value gives its errors to every such type). Throw
-an `Error` instead (`throw new Error("x")`), or write the error type
-(`() => void throws string`).
+As in JavaScript, any thrown value is inferred: a closure that throws a string or an
+`Error | null` gives the type those errors, and a `catch` around a call through it sees their
+union (`unknown` in TypeScript terms; narrow it with `instanceof`, `typeof` or `=== null`). An
+object type made for one check (`throw { code: 1 }`) still needs the error type written
+(`() => void throws { code: number }`).
 
 Function types of the standard library are not inferred this way: the timers (`setTimeout`,
 `setInterval`, `setImmediate`) and `queueMicrotask` take a callback that may throw (what it
@@ -187,9 +203,10 @@ nothing; `null` means success).
 
 ### Uncaught errors
 
-An error escaping `main` prints `Uncaught <header> at file:line:col` to stderr and exits with
-code 1. This holds for `async function main()` too, and for an error a spawned task threw that
-`main` awaited. Only the first uncaught error is reported, also when tasks running in parallel
+An error that escapes the program (the root file's top-level statements, or `main`) prints
+`Uncaught <header> at file:line:col` to stderr and exits with code 1. This holds after a
+top-level `await` and in `async function main()` too, and for an error a spawned task threw
+that the program awaited. Only the first uncaught error is reported, also when tasks running in parallel
 fail at once ([Async](/docs/reference/async/)).
 
 `<header>` is the first line of Node's report: `<name>: <message>` as `Error`'s `toString()`
@@ -211,24 +228,43 @@ The location is where the error was thrown, also when a `finally` it leaves thro
 catches another error; for an error thrown inside the standard library, it is the line of your
 code that called into it. Node's report shows where an `Error` was **created** (the top of its
 stack); Velt's location is where it was last thrown. They differ for a rethrow
-(`catch (e) { throw e; }`) and for an error made earlier than it is thrown (#356).
+(`catch (e) { throw e; }`) and for an error made earlier than it is thrown.
 
 ### Panics
 
-Panics are bugs, not errors: an index out of bounds, integer division by zero, `panic(msg)`, a
-failed `assert`. They print `panic: … at file:line:col` and exit with code 101. They cannot be
-caught.
+Panics are bugs, not errors: an index out of bounds, integer division by zero, `panic(msg)`.
+They print `panic: … at file:line:col` and exit with code 101. They cannot be caught.
+
+A failed `assert`, `assertEq` or `assertThrows` throws an `AssertionError` (an `Error`, as
+Node's `assert` throws), which can be caught. Like any error, it is part of the inferred error
+type of the function that calls them: a function with `throws ParseError` that calls `assert`
+must allow `AssertionError` too (`throws ParseError | AssertionError`), and a `catch` that
+handles only `ParseError` does not cover everything the block throws. Where nothing may throw
+(a sort comparator or a promise executor, whose function types don't allow throwing, and
+`toString`), `assert` is a compile error; an invariant check there is `if (!cond) panic(msg)`:
+
+```ts
+const xs = [3, 1, 2];
+xs.sort((a, b) => {
+  if (Number.isNaN(a - b)) panic("not comparable");
+  return a - b;
+});
+console.log(xs.join(",")); // 1,2,3
+```
 
 There is no `Result` type, no `Ok`/`Err` and no postfix `?`: errors propagate by themselves, and
 values use unions.
 
 ## Inference limits
 
-A closure created inside a recursive function that it calls throws what the function's body
-throws before the closure (`if (d > max) throw new RangeError(…)` at the top, then
-`xs.map((x) => walk(x, d + 1))`); when the function throws more after it, such a closure, and a
-`catch` or promise whose error type depends on a function still being checked through recursion,
-may need a `throws` clause (``` the error type of this function is not known yet ```).
+A closure created inside a recursive function that it calls throws what the function throws,
+also what it throws after the closure (`xs.map((x) => walk(x, d + 1))`, then
+`throw new TypeError(…)`), and so does the generator a recursive generator function returns
+(`yield* walk(child)` before a `throw`), and a `catch` or promise whose error type depends on a
+function still being checked through recursion: the program is checked again with the error
+types the recursion found, as in Node, and needs no `throws` clause. Only an error type the next
+check cannot carry over (an object type, `throw { code: 1 }`) still needs one
+(``` the error type of this function is not known yet ```).
 
 A call through an interface value whose method's error type is found only after the call is
 checked (the recursion goes through the interface, or an object literal is converted to the

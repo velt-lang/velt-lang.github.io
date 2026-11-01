@@ -10,7 +10,9 @@ order: 30
 
 Velt reads like TypeScript and runs like Rust: it compiles to native code, has no garbage
 collector, and runs your async code on every core of the machine. This tour shows the language in one
-sitting. Every example compiles; the full rules are in [the Reference](/docs/reference/).
+sitting. A program is a file of statements that run from the top, as a Node script does: no
+`main`, no boilerplate. Every example compiles; the full rules are in
+[the Reference](/docs/reference/).
 
 ## Values and types
 
@@ -52,16 +54,14 @@ function sum(xs: string[]): i64 {
   return total;                             // throws ParseError | Overflow (inferred)
 }
 
-function main() {
-  try {
-    console.log(fib(10), sum(["1", "1"]), sum(["1", "x"]));
-  } catch (e) {                             // e: ParseError | Overflow
-    if (e instanceof ParseError) console.log("parse:", e.message);
-    else console.log("overflow");
-  }
-  const r = attempt(() => digit("7"));      // i64 | ParseError: the error as a value
-  console.log(r instanceof ParseError ? "no digit" : `digit ${r}`);
+try {
+  console.log(fib(10), sum(["1", "1"]), sum(["1", "x"]));
+} catch (e) {                               // e: ParseError | Overflow
+  if (e instanceof ParseError) console.log("parse:", e.message);   // parse: bad digit: x
+  else console.log("overflow");
 }
+const r = attempt(() => digit("1"));        // i64 | ParseError: the error as a value
+console.log(r instanceof ParseError ? "no digit" : `digit ${r}`);  // digit 1
 ```
 
 Errors are typed: `catch (e)` gets the exact union of what the `try` block can throw, calls
@@ -82,7 +82,7 @@ interface Named {
   greet(): string { return `hi ${this.name()}`; }   // a default method
 }
 
-class Animal implements Named {     // a heap object with one owner
+class Animal implements Named {     // a heap object, shared by reference
   readonly species: string;
   private id: i64 = 0;
   constructor(species: string) { this.species = species; }
@@ -98,17 +98,30 @@ function greetAll<T extends Named>(xs: T[]): string[] {   // monomorphized: stat
   return xs.map((x) => x.greet());
 }
 
-function main() {
-  const pets: Named[] = [new Dog("rex"), new Animal("cat")];  // interface values: dynamic dispatch
-  for (const p of pets) console.log(p.greet());
-  console.log(greetAll([new Dog("fido")]), Point { x: 3.0, y: 4.0 }.len());
-}
+const pets: Named[] = [new Dog("rex"), new Animal("cat")];  // interface values: dynamic dispatch
+for (const p of pets) console.log(p.greet());                 // hi rex, hi cat
+console.log(greetAll([new Dog("fido")]), Point { x: 3.0, y: 4.0 }.len());   // [ 'hi fido' ] 5
 ```
 
 Classes support `private`, `readonly`, getters and setters, `static` members, constructor
-parameter properties, single `extends` and any number of `implements`. Generics are
-monomorphized. `extend` adds methods to existing types, builtins included
-([Classes](/docs/reference/classes/)).
+parameter properties, abstract classes, single `extends` and any number of `implements`.
+Generics are monomorphized ([Classes](/docs/reference/classes/)).
+
+`extend` adds methods to existing types: builtins, your own, and function types too:
+
+```ts
+extend string {
+  shout(): string { return this.toUpperCase() + "!"; }
+}
+
+extend<R> (() => R) {                       // every function without parameters
+  twice(): R[] { return [this(), this()]; }
+}
+
+let n = 0;
+const next = () => ++n;
+console.log("hi".shout(), next.twice());   // HI! [ 1, 2 ]
+```
 
 ## Discriminated unions and `switch`
 
@@ -128,11 +141,11 @@ function area(s: Shape): f64 {
 }
 
 const shapes: Shape[] = [{ kind: "circle", r: 1.0 }, { kind: "rect", w: 2.0, h: 3.0 }];
-console.log(shapes.map((s) => area(s)));
+console.log(shapes.map((s) => area(s)));   // [ 3.141592653589793, 6 ]
 ```
 
-The union has a Rust enum's layout: `kind` is the tag, not a stored string. A `switch` without
-`default` must handle every kind. `switch` also works on numbers, strings, enums, `typeof x`
+The union has a Rust enum's layout: `kind` is the tag, not a stored string. In a function that returns a
+value, a `switch` without `default` must handle every kind. `switch` also works on numbers, strings, enums, `typeof x`
 and unions of literals, with JavaScript's fallthrough and `break`
 ([Control flow](/docs/reference/control-flow/#switch)).
 
@@ -151,7 +164,7 @@ for (const [word, n] of counts) console.log(word, n);
 const [first, second] = [10, 20];
 const point = { x: 1.0, y: 2.0 };
 const merged = { ...point, z: 3.0 };
-console.log(total, squares, first + second, merged);
+console.log(total, squares, first + second, merged);   // 10 [ 9, 16 ] 30 { x: 1, y: 2, z: 3 }
 ```
 
 ## Memory in one minute
@@ -181,69 +194,99 @@ when each object can be freed. Assigning an object to a second variable refers t
 ## Async and I/O
 
 ```ts
-import { readFile, writeFile } from "velt:fs";
+import { readFile, writeFile } from "velt/fs";
 
 async function fetchUser(id: i64): Promise<string> {
   await sleep(10);
   return `user ${id}`;
 }
 
-async function main() {
-  await writeFile("hello.txt", "hi");
-  console.log(await readFile("hello.txt"));
+await writeFile("hello.txt", "hi");              // top-level await, as in a Node module
+console.log(await readFile("hello.txt"));        // hi
 
-  const a = fetchUser(1);                            // starts now, like JS
-  const b = fetchUser(2);                            // runs concurrently with a
-  console.log(await a, await b);                     // ~10 ms in total
+const a = fetchUser(1);                          // starts now, like JS
+const b = fetchUser(2);                          // runs concurrently with a
+console.log(await a, await b);                   // user 1 user 2, after ~10 ms in total
 
-  const counter = shared(0);
-  const tasks: Promise<void>[] = [];
-  for (let i = 0; i < 100; i++) {
-    tasks.push(spawn(async () => { counter.add(1); })); // on any core
-  }
-  await Promise.all(tasks);
-  console.log(counter.get());                        // 100
+const counter = shared(0);
+const tasks: Promise<void>[] = [];
+for (let i = 0; i < 100; i++) {
+  tasks.push(spawn(async () => { counter.add(1); })); // on any core
 }
+await Promise.all(tasks);
+console.log(counter.get());                      // 100
 ```
 
 Promises start when they are created, like in JS, and a directly awaited call costs nothing.
-Forgetting an `await` is a compile error ("floating promise"). Spawned tasks run on every core;
-they can't modify captured variables, so they share state through `shared(...)` or
-`shared(new Mutex(...))` ([Async and concurrency](/docs/book/async/)).
+Inside a function, forgetting an `await` is a compile error ("floating promise"); among the
+top-level statements, `render();` starts the promise as Node does and the program waits for it.
+Spawned tasks run on every core. A module-level `let` is one per process, as in Node, and any
+task may update it; a function's local variables they can't modify, so tasks share those
+through `shared(...)` or `shared(new Mutex(...))` ([Async and concurrency](/docs/book/async/)).
+
+## JSON
+
+```ts
+class User {
+  name: string = "";
+  age: i64 = 0;
+  tags: string[] = [];
+}
+
+const u = JSON.parse<User>(`{"name":"ada","age":36,"tags":["admin"]}`);
+console.log(u.name, u.age + 1);             // ada 37
+console.log(JSON.stringify(u));             // {"name":"ada","age":36,"tags":["admin"]}
+try {
+  JSON.parse<User>(`{"name":"ada","age":"old"}`);
+} catch (e) {
+  console.log(e.message);                   // expected i64 at $.age
+}
+```
+
+`JSON.parse<T>` checks the text against `T` and builds a `T`; `JSON.stringify` writes any
+value. There is no reflection at run time: a *source generator* writes the code for each type
+at compile time, so it runs as fast as hand-written code. Libraries can declare generated
+functions of their own ([Source generators](/docs/reference/source-generators/)). For other
+JSON work, see [`velt/encoding/json`](/docs/std/encoding/json/).
 
 ## An HTTP server
 
-```ts
-import { serve } from "velt:http";
+The HTTP server is the [`http-server`](/docs/packages/http-server/) package, written in Velt.
+`velt new todo --template api` makes a package that depends on it:
 
-async function main() {
-  const hits = shared(0);
-  await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
-    hits.add(1);
-    return Response.json({ path: new URL(req.url).pathname, hits: hits.get() });
-  });
-}   // like Node, a listening server keeps the program running (until `server.close()`)
+```ts ignore title="src/main.vlt"
+import { serve } from "http-server";
+
+let hits = 0;
+const server = await serve({ port: 8080 }, (req: Request): Response => {
+  hits++;                                   // module state, as in Node
+  return Response.json({ path: new URL(req.url).pathname, hits });
+});
+console.log(`listening on http://localhost:${server.port}`);
+// like Node, a listening server keeps the program running (until `server.close()`)
 ```
 
-`JSON.stringify` and `JSON.parse<T>` are generated at compile time for your types
-([Building an HTTP server](/docs/book/http-server/)).
+Handlers take the web-standard `Request` and return a `Response`, the same classes `fetch`
+uses, and run concurrently on every core ([Building an HTTP server](/docs/book/http-server/)).
 
 ## Modules
 
 Modules work like TypeScript's ES modules, with named exports only:
 
 ```ts
-import * as path from "velt:path";            // namespace import: path.join, path.basename, …
-import { gcd as greatestDivisor } from "velt:math";
+import * as path from "velt/path";            // namespace import: path.join, path.basename, …
+import { gcd as greatestDivisor } from "velt/math";
 
 export function describe(file: string): string {
   return `${path.basename(file)} (${greatestDivisor(12, 18)})`;
 }
 
-console.log(describe("/tmp/a.txt"));
+console.log(describe("/tmp/a.txt"));        // a.txt (6)
 ```
 
-A folder is a module through its `index.vlt`, `import type` imports types only, and `paths`
+The standard library is imported as `velt/<area>` or `velt/<area>/<module>` (`velt/fs`,
+`velt/net/http`, `velt/encoding/json`); the global functions and types, such as `console`,
+`fetch`, `Map` and `JSON`, need no import ([Standard library](/docs/std/)). A folder is a module through its `index.vlt`, `import type` imports types only, and `paths`
 in `package.vlt` replaces long `../../` chains ([Modules and packages](/docs/book/packages/)).
 
 ## Where next

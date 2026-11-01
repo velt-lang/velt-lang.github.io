@@ -1,13 +1,13 @@
 /**
- * One API page per std module, the Guide | API tab's target:
- * /docs/api/http/ for velt:http, /docs/api/collections/deque/ for
- * velt:collections/deque. Generated from src/data/std-api.json.
+ * One API page per importable std module, the Guide | API tab's target:
+ * /docs/api/fs/ for velt/fs, /docs/api/net/http/ for velt/net/http.
+ * Generated from src/data/std-api.json.
  */
 import { component } from 'sigx';
 import { ApiIndex } from '../../../components/api/ApiIndex';
 import { ApiPage } from '../../../components/api/ApiPage';
 import { highlighterReady } from '../../../components/api/CodeBlock';
-import { apiModule, apiModules, moduleSlug } from '../../../lib/std-api';
+import { apiModule, apiModules, guideSlug } from '../../../lib/std-api';
 
 await highlighterReady;
 
@@ -18,7 +18,7 @@ export const meta = {
 };
 
 export function getStaticPaths() {
-    return [...apiModules().keys()].map((m) => ({ params: { module: moduleSlug(m) } }));
+    return [...apiModules().keys()].map((m) => ({ params: { module: guideSlug(m) } }));
 }
 
 export default component<{ params: { module?: string } }>(({ props }) => () => {

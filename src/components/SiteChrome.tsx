@@ -72,6 +72,7 @@ const FOOTER = [
         links: [
             { label: 'Language', href: '/docs/reference/' },
             { label: 'Standard library', href: '/docs/std/' },
+            { label: 'Packages', href: '/docs/packages/' },
             { label: 'Tooling', href: '/docs/tooling/' },
         ],
     },

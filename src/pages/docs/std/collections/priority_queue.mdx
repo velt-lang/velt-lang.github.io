@@ -1,40 +1,43 @@
 ---
-title: "velt:collections/priority_queue"
-description: "import { PriorityQueue } from \"velt:collections/priority_queue\". A binary heap ordered by a comparator. cmp(a, b) < 0 means a comes out first, so (a, b) => a - b gives a min-heap."
+title: "velt/collections: PriorityQueue"
+description: "PriorityQueue<T> from velt/collections: a binary heap ordered by a comparator, with O(log n) push and pop."
 layout: "docs"
 category: "Standard library"
 order: 80
+navTitle: "PriorityQueue"
 ---
 
-# velt:collections/priority_queue
+# PriorityQueue
 
-`import { PriorityQueue } from "velt:collections/priority_queue"`. A binary heap ordered by a
-comparator. `cmp(a, b) < 0` means `a` comes out first, so `(a, b) => a - b` gives a min-heap.
-
-- `new PriorityQueue<T>(cmp)`, `size` / `length`, `isEmpty()`, `clear()`.
-- `push(v)`, `pop(): T | undefined`: both O(log n). `peek(): T | undefined` returns a clone (`undefined` when empty).
-- `toSortedArray()`: clones, stable for equal elements. `toArray()`: clones in heap order.
+`import { PriorityQueue } from "velt/collections"`. A binary heap ordered by a comparator.
+`cmp(a, b) < 0` means `a` comes out first, so `(a, b) => a - b` gives a min-heap and
+`(a, b) => b - a` a max-heap.
 
 ```ts
-import { PriorityQueue } from "velt:collections/priority_queue";
+import { PriorityQueue } from "velt/collections";
 
 struct Job {
   name: string;
   priority: i64;
 }
 
-function main() {
-  const jobs = new PriorityQueue<Job>((a, b) => b.priority - a.priority);
-  jobs.push({ name: "backup", priority: 1 });
-  jobs.push({ name: "deploy", priority: 5 });
-  jobs.push({ name: "email", priority: 3 });
-  while (!jobs.isEmpty()) {
-    const j = jobs.pop();
-    if (j != null) {
-      console.log(j.priority, j.name); // 5 deploy, 3 email, 1 backup
-    }
+const jobs = new PriorityQueue<Job>((a, b) => b.priority - a.priority);
+jobs.push({ name: "backup", priority: 1 });
+jobs.push({ name: "deploy", priority: 5 });
+jobs.push({ name: "email", priority: 3 });
+while (!jobs.isEmpty()) {
+  const j = jobs.pop();
+  if (j != null) {
+    console.log(j.priority, j.name); // 5 deploy, 3 email, 1 backup
   }
 }
 ```
 
-Notes: `pop` order among equal elements is unspecified.
+- `new PriorityQueue<T>(cmp)`, `size` / `length`, `isEmpty()`, `clear()`.
+- `push(v)` and `pop(): T | undefined` are both O(log n). `peek(): T | undefined` returns a
+  copy of the first element without removing it (`undefined` when empty).
+- `toSortedArray()`: copies in `pop` order, stable for equal elements. `toArray()`: copies in
+  heap order.
+
+The order in which `pop` returns equal elements is unspecified. When it matters (first in, first
+out among equal priorities), add a sequence number to the element and compare it last.

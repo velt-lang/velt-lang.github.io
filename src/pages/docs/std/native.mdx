@@ -1,0 +1,61 @@
+---
+title: "velt/native"
+description: "What the Velt side of a package with native code binds its Rust functions with: IoResult, IoStatus, and the functions that turn a failed result into an IoError."
+layout: "docs"
+category: "Standard library"
+order: 235
+---
+
+# velt/native
+
+`import { IoResult, IoStatus, unwrapIo, checkIo } from "velt/native"`. What the Velt side of a
+[package with native code](/docs/book/native-packages/) binds its Rust functions with. Programs
+that don't wrap a native library never import it.
+
+- `IoResult<T>`: the C layout a native function that produces a `T` returns (in Rust,
+  `Result<T, Error>`), a struct of `code` (0 on success), `message` and `value`. `IoStatus` is the
+  one for a function that produces nothing (`Result<(), Error>`), with `code` and `message`.
+- `unwrapIo(r)`: the value of a successful `IoResult`; throws an [`IoError`](/docs/std/io/)
+  `{ code, message }` otherwise. `checkIo(s)` throws for a failed `IoStatus`.
+- `ioError(code, message)`: the `IoError` for a failed result.
+- `errorCodeName(code)`: the Node-style name of a failure code (`"ENOENT"`, `"ECONNREFUSED"`,
+  `"ETIMEDOUT"`), for a package that throws an error class of its own.
+
+The package declares each Rust function with the signature its library exports, and wraps it in
+a Velt API. `velt` checks every `declare` against the library, so a mismatch is a compile error at
+the `declare`, not a crash at run time:
+
+```ts ignore title="src/lib.vlt"
+import { IoResult, unwrapIo } from "velt/native";
+
+declare function velt_greet__parse(text: string): IoResult<i64>;
+
+export function parse(text: string): i64 {
+  return unwrapIo(velt_greet__parse(text));
+}
+```
+
+A package with an error class of its own builds it from the code's name:
+
+```ts title="src/errors.vlt"
+import { errorCodeName, IoStatus } from "velt/native";
+
+export class GreetError extends Error {
+  code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export function check(s: IoStatus) {
+  if (s.code != 0) {
+    throw new GreetError(errorCodeName(s.code), s.message);
+  }
+}
+```
+
+The first example is an excerpt: a `declare function` compiles only in a package whose native
+library exports it. A database driver hands its rows and parameters across with
+[velt/db](/docs/std/db/#native-drivers) instead.

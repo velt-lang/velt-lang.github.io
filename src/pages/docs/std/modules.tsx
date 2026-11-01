@@ -6,13 +6,13 @@
  */
 import { component } from 'sigx';
 import { CatalogChips } from '../../../islands/CatalogChips';
-import { CATEGORIES } from '../../../data/std-catalog';
+import { CATEGORIES, PACKAGES } from '../../../data/std-catalog';
 import { docGroups } from '../../../lib/docs-nav';
-import { apiModuleForGuide, coverage, percent } from '../../../lib/std-api';
+import { apiModule, coverage, percent } from '../../../lib/std-api';
 
 export const meta = {
     title: 'Standard library modules',
-    description: 'Every velt: module by category: web and network, data and storage, files and processes, concurrency, encoding, text, collections and the built-ins.',
+    description: 'Every velt/ module by category: web and network, data, files and processes, concurrency, security, text, collections, tooling and the built-ins.',
     layout: 'catalog',
 };
 
@@ -23,7 +23,7 @@ function sections() {
         ...c,
         cards: c.modules.flatMap(([page, line, badge]) => {
             const item = byHref.get(`/docs/std/${page}/`);
-            const api = apiModuleForGuide(page);
+            const api = apiModule(page);
             return item ? [{ href: item.href, title: item.title, line, badge, cov: api ? coverage(api) : undefined }] : [];
         }),
     })).filter((c) => c.cards.length > 0);
@@ -40,13 +40,13 @@ export default component(() => () => {
                     <span class="font-mono text-[13px] uppercase tracking-[0.08em] text-orange">Standard library · {total} modules</span>
                     <h1 class="m-0 font-display text-[clamp(38px,4.4vw,56px)] font-bold leading-[1.05] tracking-[-0.03em]">Batteries included, written in Velt.</h1>
                     <p class="m-0 text-lg text-fg-3">
-                        Import any module as <code class="font-mono text-fg">velt:&lt;name&gt;</code>. It is Velt code, specialized and inlined into your program like
-                        your own, so you only pay for what you use. The <a href="/docs/std/" class="text-cyan hover:text-cyan-hover">overview</a> has the conventions they share.
+                        Import a module by its path, <code class="font-mono text-fg">velt/&lt;area&gt;/&lt;module&gt;</code>. It is Velt code, specialized and inlined into your
+                        program like your own, so you only pay for what you use. The <a href="/docs/std/" class="text-cyan hover:text-cyan-hover">overview</a> has the conventions they share.
                     </p>
                 </div>
                 <pre class="max-w-full overflow-x-auto rounded-xl border border-line-2 bg-surface px-5 py-4 font-mono text-[13.5px] leading-[1.7] text-fg">
-                    <span class="tk-k">import</span> {'{ serve }'} <span class="tk-k">from</span> <span class="tk-s">"velt:http"</span>;{'\n'}
-                    <span class="tk-k">import</span> {'{ connect }'} <span class="tk-k">from</span> <span class="tk-s">"velt:redis"</span>;
+                    <span class="tk-k">import</span> {'{ readFile }'} <span class="tk-k">from</span> <span class="tk-s">"velt/fs"</span>;{'\n'}
+                    <span class="tk-k">import</span> {'{ Deque }'} <span class="tk-k">from</span> <span class="tk-s">"velt/collections"</span>;
                 </pre>
             </div>
 
@@ -65,9 +65,9 @@ export default component(() => () => {
                             <a key={m.href} href={m.href} class="flex min-h-24 flex-col gap-1.5 rounded-[14px] border border-card-line bg-card px-[18px] py-4 text-fg hover:border-line-3 hover:text-fg">
                                 <span class="flex items-center justify-between gap-2">
                                     <span class="font-mono text-sm font-medium">
-                                        {m.title.startsWith('velt:') ? (
+                                        {m.title.startsWith('velt/') ? (
                                             <>
-                                                <span class="text-muted">velt:</span>
+                                                <span class="text-muted">velt/</span>
                                                 {m.title.slice(5)}
                                             </>
                                         ) : (
@@ -88,6 +88,21 @@ export default component(() => () => {
                     </div>
                 </section>
             ))}
+
+            <section aria-labelledby="cat-packages" class="flex flex-col gap-4">
+                <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <h2 id="cat-packages" class="m-0 font-display text-2xl font-semibold tracking-[-0.02em]">Packages</h2>
+                    <span class="text-sm text-muted">Servers and database drivers are libraries, not std</span>
+                </div>
+                <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
+                    {PACKAGES.map(([pkg, line, href]) => (
+                        <a key={href} href={href} class="flex min-h-24 flex-col gap-1.5 rounded-[14px] border border-card-line bg-card px-[18px] py-4 text-fg hover:border-line-3 hover:text-fg">
+                            <span class="font-mono text-sm font-medium">{pkg}</span>
+                            <span class="text-sm leading-normal text-fg-3">{line}</span>
+                        </a>
+                    ))}
+                </div>
+            </section>
 
             <div class="flex flex-wrap items-center justify-between gap-5 rounded-[18px] border border-line-3 bg-surface px-8 py-7">
                 <div class="flex max-w-[640px] flex-col gap-1">

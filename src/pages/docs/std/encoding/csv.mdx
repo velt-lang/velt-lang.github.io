@@ -1,0 +1,61 @@
+---
+title: "velt/encoding/csv"
+description: "RFC 4180 CSV: parse rows or header-keyed records, and write rows that quote only where needed."
+layout: "docs"
+category: "Standard library"
+order: 120
+---
+
+# velt/encoding/csv
+
+`import { parseCsv, parseCsvRecords, stringifyCsv } from "velt/encoding/csv"`. RFC 4180 CSV.
+Quoted fields may contain delimiters, `""` escapes and line breaks. Records end at LF, CRLF or a
+lone CR. A final line break doesn't add a record, and a byte order mark is skipped.
+
+```ts
+import { parseCsv, parseCsvRecords, stringifyCsv } from "velt/encoding/csv";
+
+const text = "name,city\nAda,London\n\"Hopper, Grace\",\"New\nYork\"\n";
+console.log(JSON.stringify(parseCsv(text)));
+// [["name","city"],["Ada","London"],["Hopper, Grace","New\nYork"]]
+for (const r of parseCsvRecords(text)) {
+  console.log(r.get("name"), "|", r.get("city"));
+}
+console.log(JSON.stringify(stringifyCsv([["id", "note"], ["1", "say \"hi\""]], { crlf: true })));
+// "id,note\r\n1,\"say \"\"hi\"\"\"\r\n"
+```
+
+## Reading
+
+- `parseCsv(text, opts: CsvOptions = {}): string[][]`: every record as an array of fields.
+  `CsvOptions { delimiter?; trim?; skipEmptyLines? }`: `delimiter` is one ASCII character
+  (default `,`; `";"` or `"\t"`), `trim` strips spaces and tabs around every field, quoted or
+  not, and `skipEmptyLines` drops blank lines.
+- `parseCsvRecords(text, opts): Map<string, string>[]`: the first row is the header, and each
+  later row a map from column name to field. Missing fields become `""` and extra fields are
+  ignored.
+
+The parser reads the whole text; for a large file, read it with
+[`readFile`](/docs/std/fs/) first, or split it into lines yourself when the fields hold no line
+breaks.
+
+## Writing
+
+`stringifyCsv(rows, opts: CsvWriteOptions = {})` writes `string[][]` rows, quoting a field only
+when it needs it, and ends every record with a line break. `CsvWriteOptions { delimiter?; crlf? }`:
+`crlf: true` ends records with CRLF, as RFC 4180 and spreadsheets expect.
+
+## Errors
+
+`CsvError { message; line }` is thrown for an unterminated quote, text after a closing quote, or
+a bad delimiter (`line` is 0 for the delimiter case).
+
+```ts
+import { parseCsv } from "velt/encoding/csv";
+
+try {
+  parseCsv("a\n\"open");
+} catch (e) {
+  console.log(e.line, e.message); // 2 Unterminated quoted field starting on line 2
+}
+```

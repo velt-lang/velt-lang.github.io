@@ -55,8 +55,24 @@ mutation, so programs carry no lifetime, borrow or `mut` annotations.
   it. A parameter the body stores or returns takes ownership: a caller that does not use its
   variable again hands it over for free, one that does shares it. Returning a field of a class
   instance (a getter's `return this.ctl.sig`) shares the field and only borrows the instance.
+  Passing a field of an object other variables also refer to (`decode(this.db.data, out)`)
+  borrows it for free when the callee runs no code that could replace it while reading it
+  (it reads, computes, pushes plain values onto arrays it is given, and throws through a
+  `never` function such as `corrupt("bad header")`; a method called on it, `this.db.header(n)`,
+  counts as such a callee too); a callee that may (it calls a callback or a method a subclass
+  overrides) gets the field shared for the call, so it stays alive whatever the callee does.
+  A local that only reads such a field (`const data = this.db.data;`) borrows it the same way
+  in a release build: it takes no count when nothing that runs while it is used could free it.
 - A **promise** is shared like an object: every holder may `await` it and gets the result
   ([Async](/docs/reference/async/#promises)).
+- A **view** shares the bytes of the array it views: `subarray(begin, end)` of a `u8[]` (Node's
+  `buf.subarray`) is a `Uint8Array` over the array's bytes, so writes through either are seen by
+  both, and the view keeps the array alive (in a field, returned, captured, across an `await`)
+  and sees it after it grows. Unlike a Node `Buffer`, a `u8[]` can become shorter (`length = 0`,
+  `pop`, `splice`); the view then has the elements the array still has in its range: `length`
+  counts them, an index past them panics, a write past them does nothing, and growing the array
+  back brings them back ([prelude](/docs/std/prelude/)). Each `subarray` has its own `buffer`
+  object over the same array (in Node `b.subarray(0, 8).buffer === b.subarray(4, 12).buffer`).
 - Dropping a long chain of objects never overflows the stack, however it is linked: a
   linked list through a `next: Node | null` field or a tree through `left` and `right` is
   freed in a loop (when the class is not part of a class hierarchy, with no base class and no
@@ -67,15 +83,13 @@ mutation, so programs carry no lifetime, borrow or `mut` annotations.
 - Reference cycles (`a.next = b; b.next = a`) are never freed, and that includes an object
   holding a closure that captured it (`this.onChange = () => this.render()` in a constructor
   or method: the closure refers to the object, the object to the closure); replace the field
-  (`this.onChange = () => {}`) when the object is done to free both. **Planned**
-  ([semantics — cycles](https://github.com/velt-lang/velt/blob/main/docs/internals/design/semantics.md#reference-cycles--without-a-collector)):
+  (`this.onChange = () => {}`) when the object is done to free both. **Planned**:
   `weak` fields and a compile-time warning for reference cycles.
 - `WeakMap`, `WeakSet` and `WeakRef` ([prelude](/docs/std/prelude/#weakmap-weakset-and-weakref))
   don't keep their keys and targets alive: an object's entries go when its last reference does,
   at once (Node waits for a garbage collection). A weak map whose value refers back to its key,
   such as a cache from an object to a wrapper holding it (`cache.set(raw, new Proxy(raw))`),
-  frees both once nothing else refers to either, like JavaScript
-  ([design](https://github.com/velt-lang/velt/blob/main/docs/internals/design/weak-refs.md#the-ephemeron-rule)). Not freed: a value graph of
+  frees both once nothing else refers to either, like JavaScript. Not freed: a value graph of
   more than 256 objects, a key that is also in an ordinary cycle (`raw.self = raw`), and two
   maps whose entries keep each other's keys (`m1.set(a, b); m2.set(b, a)`), which stay until an
   entry is deleted or a map goes.
@@ -121,15 +135,13 @@ write is dropped with it.
 
 **Known differences:** when `f` frees the old object and then installs a new one at the same
 place (`o.inner = null; o.inner = new P()`), the allocator may give the new object the freed
-address; the write then goes to the new object, where Node writes to the unreachable old one
-([#825](https://github.com/velt-lang/velt/issues/825)); the same holds for an array element
-whose array the right-hand side replaces ([#820](https://github.com/velt-lang/velt/issues/820)).
+address; the write then goes to the new object, where Node writes to the unreachable old one;
+the same holds for an array element whose array the right-hand side replaces.
 
 ### Object literals inside their holder
 
 An object literal nothing else refers to is stored inside its holder (an object literal or a
-class object), so an assignment into it whose right-hand side may replace it is an error
-([#876](https://github.com/velt-lang/velt/issues/876)): in `o.inner.v = f()` with
+class object), so an assignment into it whose right-hand side may replace it is an error: in `o.inner.v = f()` with
 `o = { inner: { v: 1 } }`, where `f` (or a function it calls) assigns a new object to `o.inner`
 or to `o`, and no other name refers to an object of that type, Node writes to the old object,
 which nothing can see any more, and Velt would write to the new one. The fix computes the value
@@ -151,7 +163,7 @@ a call may run counts as follows:
 
 Code that runs without being called counts as called:
 
-- a class's `toString()`, `toJSON()`, `__inspect()` and own `clone()` when the right-hand side
+- a class's `toString()`, `toJSON()`, `[util.inspect.custom]()` and own `clone()` when the right-hand side
   formats, serialises or copies a value that may hold that class (`String(x)`, `[x].join()`,
   `JSON.stringify`, `console.log`, `x.clone()`);
 - its `[Symbol.dispose]()` wherever such a value is dropped;
@@ -208,13 +220,58 @@ call: directly, as an overlapping place (`a` / `a.f`, `xs` / `xs[i]`), through a
 binding, or as a closure capture. `append(xs, xs)`, `append(g.rows[0], g.rows[1])` and
 `xs.forEach((x) => { xs.push(x); })` are errors
 (``cannot use `xs` here: this call may modify it through another argument``). Reading a number
-is fine (`xs.push(xs.length)`), and distinct fields are disjoint (`f(this.a, this.b)`). This rule
-is what lets the compiler assume no aliasing for values with a single owner, like Rust.
+is fine (`xs.push(xs.length)`), and distinct fields are disjoint (`f(this.a, this.b)`). So are
+variables destructured from distinct parts of one value: the elements of a tuple or of an array
+pattern and the fields of an object (`const [a, b] = t; append(a, b)`, or
+`for (const [name, input] of cases) it(name, () => check(input))`), while each still overlaps
+the value it came from (`append(t[0], a)` is an error). This rule is what lets the compiler
+assume no aliasing for values with a single owner, like Rust.
+
+An argument may change the inside of a class instance or an array another argument passes while
+it is evaluated, before the call starts (`this.set(this.src.get(1))` with `get` changing
+`this.src`): JavaScript's callee sees that change too. The change must be to a place inside the
+passed value (`show(b, (b.items[0] = 8))` is allowed), or set the length of an array a field
+holds (`g(h.vs, (h.vs.length = 0))`: `g` sees the shorter array). A system function's buffer is
+not passed so: it is a view of the array's bytes, which a later argument may not change at all
+(`pread(fd, h.b.subarray(0, 8), (h.b.length = 0) as i64)` is an error,
+[System functions](/docs/reference/system-functions/#views)). A change through the passed value
+itself is still an error: an argument that hands `xs` or `b` to a modifying call
+(`xs.push(popIt(xs))`, or `show(b, setFirst(b))` where `setFirst` only sets `b.items[0]`), and
+so is replacing it or a place on its way (`f(x.arr, (x.arr = []))`). Changing an object of an
+object type or a `struct` another argument passes (`f(o.pt, (o.pt.x = 5))` with
+`pt: { x: number; y: number }`) is an error too: Velt holds those inline and passes a copy,
+which would miss the change.
 
 Two variables that refer to the same object (`const ys = xs; append(xs, ys)`) are allowed and
 work as in JS: the type is then reference-counted, and the compiler makes no such assumption for
 it. So is a closure argument that takes over a variable another argument only borrows
 (`derive(parts, () => parts.length)` where `derive` keeps the closure): the closure shares it.
+
+The parameters of a closure (or of a function used as a value) may be one object, since a call
+through a function value can pass the same object twice. Such a closure may pass two of them on
+whole to another closure, which is checked the same way (`mount(vnode, container)` calling
+`mountComponent(vnode, container)` in a renderer whose nested functions use its variables).
+Passing them to a named function that modifies one of them is still an error. So is a part of
+one with another when the check sees the callee modify one
+(`mountComponent(vnode.kids[0], container)`). When it does not (a closure or function value
+whose modified parameters are borrowed: `work(a, b.log)` where `work` replaces `x.log` and fills
+`ys`), the call compiles, and with `a === b` the callee fills the array that replaced the one it
+was given, unlike JS.
+
+A function that modifies a parameter and is also used as a value gets the caller's object for
+it. When a later argument may replace that object first (it calls a function value that
+replaces the field passed first, as in `pushes[0](p.log, swaps[0](p))`), the parameter is the
+object the argument was when it was evaluated, as in JS: the object's type is then
+reference-counted. A later argument that cannot reach the object does not do that: a literal, a
+standard-library call on numbers and strings (`Math.sqrt(4)`, `x.toFixed(2)`); nor does any
+later argument when the object is a variable of the caller's own that no closure assigns and the
+call's arguments do not assign: a function value called there cannot replace it
+(`hooks[0](acc, nums[0]())`).
+
+The key of a `Map`'s or `Set`'s `has`, `get` or `delete` (and a `WeakMap`'s or `WeakSet`'s) is
+compared by identity, so it may be the object the collection is reached through: in
+`for (const link of sub.deps) link.dep.subs.delete(sub)` the call reads only `sub`'s address. A
+key inside the collection itself is still an error.
 
 `m.with(f)` gives `f` the locked value; when `m` is a `shared` handle, that value is not part of
 `m`'s place, so a callback may read what sits next to it
@@ -228,10 +285,8 @@ function append(a: i64[], b: i64[]) {
   }
 }
 
-function main() {
-  const xs = [1, 2];
-  append(xs, xs);               // error: this call may modify `xs` through another argument
-}
+const xs: i64[] = [1, 2];
+append(xs, xs);                 // error: this call may modify `xs` through another argument
 ```
 
 ## Resource cleanup: `using` and `[Symbol.dispose]`

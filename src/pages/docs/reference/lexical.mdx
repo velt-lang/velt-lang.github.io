@@ -1,6 +1,6 @@
 ---
 title: "Lexical structure"
-description: "How Velt reads source files: programs and main, comments and semicolons, identifiers, literals, keywords and operators."
+description: "How Velt reads source files: programs, comments and semicolons, identifiers, literals, keywords and operators."
 layout: "docs"
 category: "Language reference"
 order: 20
@@ -10,9 +10,23 @@ order: 20
 
 ## Programs
 
-A program is a set of `.vlt` files. The program starts at `function main()` or `async function main()` in the root file, or at the root file's top-level statements
-([Scripts](/docs/reference/modules/#scripts-top-level-statements)). `main` returns `void` (exit code 0) or `i32` (the exit code).
-Declarations are hoisted: a function can be called above its definition.
+A program is a set of `.vlt` files. As in Node, it runs its root file's top-level statements in
+order ([Scripts](/docs/reference/modules/#scripts-top-level-statements)); top-level `await`
+works there. Declarations are hoisted: a function can be called above its definition.
+
+```ts
+console.log(greeting("world"));
+
+function greeting(name: string): string {
+  return `hello, ${name}`;
+}
+```
+
+A root file may instead declare `function main()` or `async function main()` and no top-level
+statements: then the program runs `main`, which returns `void` (exit code 0) or `i32` (the exit
+code). This is where Velt differs from Node. In a file that has top-level statements, `main` is
+an ordinary function that runs only when the statements call it, and the compiler warns when
+nothing does (`` `main` is never called ``).
 
 ```ts
 function main(): i32 {
@@ -99,15 +113,15 @@ members and in `#name in o` ([Classes](/docs/reference/classes/#classes)).
 
 - **Numbers**: `123`, `1_000_000`, `0xff`, `0b1010`, `0o17`, `1.5`, `1e21`, `2.5e-3`, with an
   optional type suffix: `10u8`, `5i32`, `1.0f32`. There are no `BigInt` literals (`10n`); use
-  [`velt:bigint`](/docs/std/bigint/).
+  `BigInt` from [`velt/math`](/docs/std/math/bigint/).
 - **Strings**: `"..."` or `'...'`, with the escapes `\n \r \t \b \v \f \\ \" \' \0 \xHH \uHHHH \u{H…}`, cooked as JavaScript does: a backslash before a line break continues the line, a
   surrogate pair written as two escapes (`\uD83D\uDE00`) is one character, and a backslash
   before any other character is dropped (`"a\d"` is `"ad"`, so `new RegExp("\\d")` needs the
-  doubled backslash, as in JS). Legacy octal escapes (`\1`, `\01`) and `\8` `\9` are errors, as
+  doubled backslash, as in JS). Octal escapes (`\1`, `\01`) and `\8` `\9` are errors, as
   in TypeScript; a lone surrogate (`"\uD800"`) is an error too, since Velt strings are UTF-8.
 - **Template literals**: see [Template literals](#template-literals) below.
 - **Regular expressions**: `/ab+c/gi` is `new RegExp("ab+c", "gi")` from
-  [`velt:regex`](/docs/std/regex/) (a global, like `RegExp` itself). A `/` after an operand is
+  [`velt/text`](/docs/std/text/regex/) (a global, like `RegExp` itself). A `/` after an operand is
   division.
 - `true`, `false`, `null`.
 
@@ -138,10 +152,10 @@ interface let new null of readonly return shared static struct switch this throw
 type typeof void while yield
 ```
 
-Contextual keywords: `extend`, `get`, `set`, `override`, `private`, `public`, `throws`, `using`.
+Contextual keywords: `abstract`, `extend`, `get`, `set`, `override`, `private`, `public`, `throws`, `using`.
 
 Not part of the language: `var` outside the top level of a function body or a module
-([Variables](/docs/reference/variables/)), `any`, `unknown`, `abstract`, `protected` (as a
+([Variables](/docs/reference/variables/)), `protected` (as a
 member modifier; accepted on constructors and constructor parameter properties), `delete` (except
 `delete r[k]` on a [`Record`](/docs/reference/types/#objects-arrays-tuples-and-maps)),
 `export default`, `mut`, `match`. Writing most of
