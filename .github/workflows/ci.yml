@@ -45,7 +45,10 @@ jobs:
         run: pnpm build
 
   # Every ts/vlt/tsx example in the docs checks with the velt release the docs
-  # describe (DOCS_VERSION in src/lib/site.ts). scripts/check-examples.mjs.
+  # describe (DOCS_VERSION in src/lib/site.ts), and examples that import one of
+  # velt's packages (http-server, sqlite, postgres, redis) check against the
+  # packages of that release. Until the release is published, velt is built
+  # from velt-lang/velt's main. scripts/check-examples.mjs.
   examples:
     runs-on: ubuntu-latest
     steps:
@@ -55,13 +58,46 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install velt at DOCS_VERSION
+      - name: Find the velt release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -e "console.log(require('fs').readFileSync('src/lib/site.ts','utf8').match(/DOCS_VERSION = '([^']+)'/)[1])")
-          curl -fsSL https://github.com/velt-lang/velt/releases/latest/download/get-velt.sh | sh -s -- --version "$version" --no-modify-path
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" -R velt-lang/velt >/dev/null 2>&1; then
+            echo "ref=v$version" >> "$GITHUB_OUTPUT"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "velt v$version is not released yet: building velt from main"
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out velt (its packages, and the compiler when unreleased)
+        uses: actions/checkout@v7
+        with:
+          repository: velt-lang/velt
+          ref: ${{ steps.release.outputs.ref }}
+          path: velt-src
+
+      - name: Install velt at DOCS_VERSION
+        if: steps.release.outputs.released == 'true'
+        run: |
+          curl -fsSL https://github.com/velt-lang/velt/releases/latest/download/get-velt.sh | sh -s -- --version "${{ steps.release.outputs.version }}" --no-modify-path
           echo "$HOME/.velt/bin" >> "$GITHUB_PATH"
 
+      - name: Build velt from main
+        if: steps.release.outputs.released != 'true'
+        working-directory: velt-src
+        run: |
+          cargo build -p veltc --bin velt -p velt_rt
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+          echo "VELT_RT_LIB=$PWD/target/debug/libvelt_rt.a" >> "$GITHUB_ENV"
+
       - name: Check the docs examples
+        env:
+          VELT_PACKAGES: ${{ github.workspace }}/velt-src/packages
         run: |
           velt --version
           node scripts/check-examples.mjs
