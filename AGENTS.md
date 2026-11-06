@@ -192,7 +192,11 @@ pnpm typecheck    # tsgo --noEmit
   name in the bar; `error` adds a "does not compile" badge. Highlighting is the
   Velt palette from `src/lib/rehype-code.ts`.
 - Diagrams: a ` ```mermaid ` fence renders as a diagram (`@sigx/mermaid`; the
-  runtime loads only on pages that have one).
+  runtime loads only on pages that have one). `title="…"` adds a caption and
+  the diagram's accessible name, so give every diagram one. The site palette
+  comes from `src/lib/mermaid-theme.ts`: don't style diagrams one by one. A
+  diagram scales down to the column, so keep it narrow (top to bottom, at most
+  three or four nodes across) and check that it reads at 390 px.
 - Components (`src/components/mdx.tsx`): `<Callout>` (`kind="info|tip|warn"`,
   optional `title`), and `<Cards>` with `<Card eyebrow color title href>`.
   Import them at the top of the page:

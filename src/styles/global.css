@@ -555,6 +555,10 @@
     --sigx-mermaid-padding: 20px;
     --sigx-mermaid-muted: var(--color-muted);
     margin: 4px 0;
+    /* The fence's figure lands inside a <pre>: without this a long caption
+       can't wrap, and the page scrolls sideways on phones. */
+    white-space: normal;
+    font-family: var(--font-sans);
 }
 .prose .callout-text > p + p {
     margin-top: 8px;
