@@ -793,6 +793,15 @@
     color: var(--color-muted);
     border-bottom: 1px solid var(--color-line);
 }
+/* Prose tables keep their last (description) column wide; an API table's last column is a number. */
+.api-table :is(td, th):last-child:not(:first-child) {
+    min-width: 0;
+}
+/* Code in a table cell wraps, so long paths don't make the table scroll sideways. */
+.api-table td code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
 .api-table td {
     padding: 10px 16px;
     vertical-align: top;

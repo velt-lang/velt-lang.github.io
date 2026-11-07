@@ -17,6 +17,7 @@ import { PageActions } from '../islands/PageActions';
 import { docGroups, docSequence, type DocGroup, type DocLink } from '../lib/docs-nav';
 import { API_PATH, CATALOG_PATH, DIAGNOSTICS_PATH, areaOf, hasApiTabs, stdModuleOf, type Area } from '../lib/docs-areas';
 import { ApiSidebar } from '../components/api/ApiSidebar';
+import { ApiModulesNav } from '../components/api/ApiModulesNav';
 import { ApiAsideCard, ApiGlance, insertAfterLead } from '../components/api/ApiGlance';
 import { anchorOf, apiModule, apiModuleForGuide, apiPath, countedExports, guidePath, sourceUrl, specifierOf, visibleExports, type ApiModule } from '../lib/std-api';
 import { DOCS_VERSION, EDIT_BASE, RELEASES_URL, REPO_URL } from '../lib/site';
@@ -167,7 +168,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                         <ChevronDown size={16} cls="menu-chev ml-auto transition-transform" />
                     </summary>
                     <nav aria-label="Documentation" class="pb-6 pt-2">
-                        {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : <Sidebar area={area} current={path} />}
+                        {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : path === API_PATH ? <ApiModulesNav current={path} /> : <Sidebar area={area} current={path} />}
                         <p class="m-0 mt-6 flex gap-4 px-3 text-[13px] text-muted">
                             <a href={`${RELEASES_URL}/tag/v${DOCS_VERSION}`} class="text-muted hover:text-cyan">
                                 <span class="font-mono">v{DOCS_VERSION}</span> · Changelog
@@ -177,7 +178,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                     </nav>
                 </details>
                 <nav aria-label={api ? `${specifierOf(api)} API` : 'Documentation'} class="sticky-col hidden max-w-[290px] flex-[1_1_240px] py-8 min-[900px]:block">
-                    {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : <Sidebar area={area} current={path} />}
+                    {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : path === API_PATH ? <ApiModulesNav current={path} /> : <Sidebar area={area} current={path} />}
                 </nav>
 
                 <main id="main" class="flex min-w-0 flex-[999_1_560px] flex-wrap items-start gap-12 pb-24 pt-10">

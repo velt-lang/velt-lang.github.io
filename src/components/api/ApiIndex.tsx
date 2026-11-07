@@ -19,8 +19,7 @@ export const ApiIndex = component(() => () => {
                         <tr>
                             <th scope="col">Module</th>
                             <th scope="col" class="min-w-64">What it is</th>
-                            <th scope="col" class="text-right">Exports</th>
-                            <th scope="col" class="text-right">Documented</th>
+                            <th scope="col" class="w-px whitespace-nowrap text-right">Exports</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -30,8 +29,10 @@ export const ApiIndex = component(() => () => {
                                 <tr key={m.module}>
                                     <td class="whitespace-nowrap"><a href={apiPath(m.module)} class="font-mono text-[13.5px]">{specifierOf(m)}</a></td>
                                     <td class="text-fg-3">{summary ? <DocInline md={sentences(summary)} /> : null}</td>
-                                    <td class="text-right font-mono text-[13.5px]">{c.exports}</td>
-                                    <td class={`text-right font-mono text-[13.5px] ${percent(c) < 50 ? 'text-orange' : 'text-fg-3'}`}>{percent(c)}%</td>
+                                    <td class="whitespace-nowrap text-right">
+                                        <span class="block font-mono text-[13.5px]">{c.exports}</span>
+                                        <span class={`block text-xs ${percent(c) < 50 ? 'text-orange' : 'text-muted'}`}>{percent(c)}% documented</span>
+                                    </td>
                                 </tr>
                             );
                         })}
