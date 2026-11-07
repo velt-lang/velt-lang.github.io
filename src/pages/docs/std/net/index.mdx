@@ -1,10 +1,12 @@
 ---
 title: "velt/net"
-description: "import { listen, connect } from \"velt/net\". TCP, and TLS over TCP. TcpListener and TcpStream are structs around a handle; release each with close()."
+description: "import { listen, connect } from \"velt/net\". TCP, and TLS over TCP, including startTls over an open stream. TcpListener and TcpStream are structs around a handle."
 layout: "docs"
 category: "Standard library"
 order: 240
 ---
+
+import { Callout } from '@/components/mdx';
 
 # velt/net
 
@@ -57,7 +59,8 @@ Its submodules: [`velt/net/http`](/docs/std/net/http/) (`fetch` and the web type
     producer that queues faster than the peer reads bounded. Throws `IoError` when sending
     failed.
   - `shutdown()`: half-close, after every byte written or queued before it (a TLS stream then
-    sends its close_notify).
+    sends its close_notify). `halfClose(): Promise<void>` is the same as a promise, as
+    [`ByteStream`](#tls-over-an-open-stream) has it.
   - `abort()`: fails the operations in flight (a `write` to a peer that stopped reading would
     otherwise never finish) and every later one. The handle stays open until `close()`.
   - `readableWithin(ms, signal?: AbortSignal): Promise<bool>`: `readable()` with a limit: true
@@ -148,6 +151,65 @@ A connection an HTTP server hands over for another protocol (`upgradeConnection`
 connection a server built on `listen` or `listenTls` accepts: [`velt/net/http`](/docs/std/net/http/#for-servers)
 has what such a server needs to speak HTTP with the web types.
 
-Notes: an unclosed handle leaks until the process exits. After `close()` through any copy
+## TLS over an open stream
+
+`startTls(stream: ByteStream, opts?: TlsStartOptions): Promise<TlsStream>` runs a TLS 1.3 client
+handshake over a stream that is already open, and resolves to the encrypted stream; `stream`
+belongs to it from then on. That covers TLS after a protocol's own upgrade request (PostgreSQL's
+SSLRequest, SMTP's STARTTLS) as well as TLS over a fresh `connect`. It is written in Velt, on
+[velt/crypto](/docs/std/crypto/).
+
+<Callout kind="warn" title="No certificate check yet">
+`startTls` does not verify the server's certificate or signature yet, and needs `verify: false`
+to say you know (without it, it throws `IoError` `EINVAL`). That protects against passive
+observers only: anyone who can intercept the connection can impersonate the server, and read
+and change everything sent. `serverName` is only sent, not checked. Where the server must be
+authenticated, use `connectTls`, which verifies certificates.
+</Callout>
+
+- `TlsStartOptions { serverName?: string; verify?: bool; alpn?: string[] }`: the name sent with
+  SNI, `verify: false` (required for now), and the protocols to offer with ALPN, most preferred
+  first.
+- Cipher suites TLS_CHACHA20_POLY1305_SHA256 and TLS_AES_128_GCM_SHA256. Key exchange with
+  X25519, or with secp256r1 (P-256) when the server asks for it with a HelloRetryRequest. TLS 1.2
+  servers are refused.
+- A failed handshake, and any later failure, is an `IoError` with code `EPROTO` and a message
+  starting `TLS: `, naming the alert.
+
+A `TlsStream` has `read(max = 0)`, `readInto(buf)`, `write(text)`,
+`writeBytes(data, start = 0, end?)` and `alpnProtocol()`, as a `TcpStream` has them, and:
+
+- `shutdown()` sends TLS's close_notify and half-closes: reading stays open, so the server's
+  answer still arrives. `close()` closes at once.
+- Reads go one at a time, in the order of the calls, and so do writes.
+- A connection that ends without the server's close_notify makes `read` and `readInto` throw
+  `IoError` `EPROTO` (`TLS: the connection closed without close_notify`), because it may have
+  been cut short by an attacker. An empty read, or `null` from `readInto`, means the server
+  really closed it. A program that accepts a cut can catch the error and keep what it has.
+- It holds keys and sequence numbers, so it is never copied: passing it to another task while it
+  is still used here is a compile error, and a panic where the compiler cannot see that (through
+  an interface).
+
+`ByteStream` is the interface `startTls` runs over: `readInto(buf)`, `writeBytes(data, start,
+end?)`, `halfClose()` and `close()`. `TcpStream` and `TlsStream` both implement it, so a
+database driver can hold either, upgraded or not, and a program's own transport can carry TLS.
+
+```ts ignore
+import { connect, startTls } from "velt/net";
+
+// PostgreSQL's SSLRequest: its length (8), then the code 80877103.
+const SSL_REQUEST: u8[] = [0, 0, 0, 8, 4, 210, 22, 47];
+
+const tcp = await connect("db.example.com:5432");
+await tcp.writeBytes(SSL_REQUEST);
+if ((await tcp.read(1))[0] == 0x53) { // 'S': the server agrees
+  const tls = await startTls(tcp, { serverName: "db.example.com", verify: false });
+  await tls.writeBytes(startupMessage);
+}
+```
+
+## Handles
+
+An unclosed handle leaks until the process exits. After `close()` through any copy
 (also one handed to another task), every copy's operations throw `IoError` `EBADF` and closing
 again does nothing; operations already in flight finish first. **Planned**: these structs become disposable classes with `using` support.

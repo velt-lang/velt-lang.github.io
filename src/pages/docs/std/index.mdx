@@ -62,6 +62,13 @@ the sources; the [API pages](/docs/api/) here are generated the same way.
   closed`). An error that escapes the program prints `Uncaught <Class>: <message> at
   <file>:<line>:<col>`, naming the error's actual class and, for an error thrown inside the
   standard library, the line of your code that called it.
+- **Out-of-range arguments**: a mistake in the program (an index past an array's end, a digit
+  count `toFixed` does not take, `repeat` with a negative count) panics, as an index out of
+  bounds does. Positions that usually come from outside the program, such as offsets into a
+  byte buffer read from a file or the network, throw a catchable `RangeError` where Node throws
+  one, with Node's message, so a server can answer the request that sent them: `u8[]`'s
+  `write`, `set` and `copy`, a typed array's `set` and `DataView`'s accessors. Such a method's
+  error type includes `RangeError`.
 - **I/O errors** are `IoError { code, message }` from [`velt/io`](/docs/std/io/). `code` is a
   Node-style name: `"ENOENT"`, `"EACCES"`, `"ECONNREFUSED"`, `"EOF"`, … A failed file-system
   call has Node's message: `ENOENT: no such file or directory, open 'data.txt'`.
@@ -85,29 +92,32 @@ below its own. The [catalog](/docs/std/modules/) groups them by what they are fo
 |---|---|
 | [cli](/docs/std/cli/) | command-line programs: arguments, subcommands, `--help`, exit codes |
 | [collections](/docs/std/collections/) | [BTreeMap](/docs/std/collections/btree_map/) · [ConcurrentMap](/docs/std/collections/concurrent_map/) · [Deque](/docs/std/collections/deque/) · [PriorityQueue](/docs/std/collections/priority_queue/) · [Set](/docs/std/collections/set/) · [SortedMap](/docs/std/collections/sorted_map/) |
-| [compress](/docs/std/compress/) | gzip, zlib, DEFLATE, Brotli |
-| [crypto](/docs/std/crypto/) | hashing, HMAC, secure random values |
+| [compress](/docs/std/compress/) | gzip, zlib, DEFLATE, Brotli: compression and decompression |
+| [crypto](/docs/std/crypto/) | hashing, HMAC, HKDF, key exchange, signature checks, authenticated encryption, secure random values |
 | [db](/docs/std/db/) | typed rows from any source |
 | [dev](/docs/std/dev/) | the graceful stop under `velt dev` |
 | [encoding](/docs/std/encoding/) | base64, hex, UTF-8 · [csv](/docs/std/encoding/csv/) · [json](/docs/std/encoding/json/) |
+| [ffi](/docs/std/ffi/) | pointers, C strings and buffers for `declare c` code |
 | [fs](/docs/std/fs/) | files and directories · [file streams](/docs/std/fs/stream/) |
 | [generate](/docs/std/generate/) | what source generators are written with |
+| [half](/docs/std/half/) | `f16[]` and `bf16[]` in bulk: from bytes, to and from `f32[]`, dot products |
 | [hash](/docs/std/hash/) | stable, non-cryptographic hashing |
+| [host](/docs/std/host/) | `HostRef`: JS values for host functions on JavaScript hosts |
 | [io](/docs/std/io/) | `IoError`, readers and writers · [streams](/docs/std/io/streams/) (`ReadableStream`, global) |
 | [jsx](/docs/std/jsx/) | TSX rendering · [attrs](/docs/std/jsx/attrs/) · [jsx-runtime](/docs/std/jsx/jsx-runtime/) · [generic/jsx-runtime](/docs/std/jsx/jsx-runtime/#the-generic-provider) |
 | [math](/docs/std/math/) | integer helpers · [BigInt](/docs/std/math/bigint/) |
 | [mem](/docs/std/mem/) | `needsDrop`, for containers · [arenas](/docs/std/mem/arena/) |
 | [native](/docs/std/native/) | the Velt side of packages with native code |
-| [net](/docs/std/net/) | TCP and TLS · [dns](/docs/std/net/dns/) · [http](/docs/std/net/http/) (`fetch`, global) · [http/h2](/docs/std/net/http/h2/) · [udp](/docs/std/net/udp/) · [url](/docs/std/net/url/) · [websocket](/docs/std/net/websocket/) (the client) |
+| [net](/docs/std/net/) | TCP and TLS, `startTls` · [dns](/docs/std/net/dns/) · [http](/docs/std/net/http/) (`fetch`, global) · [http/h2](/docs/std/net/http/h2/) · [udp](/docs/std/net/udp/) · [url](/docs/std/net/url/) · [websocket](/docs/std/net/websocket/) (the client) |
 | [os](/docs/std/os/) | platform facts |
 | [package](/docs/std/package/) | the type of `package.velt` |
 | [path](/docs/std/path/) | paths |
 | [process](/docs/std/process/) | arguments, environment, exit · [standard input](/docs/std/process/stdin/) · [child](/docs/std/process/child/) (child processes) |
 | [random](/docs/std/random/) | a fast per-thread generator · [uuid](/docs/std/random/uuid/) |
 | [reflect](/docs/std/reflect/) | what an `any` holds at run time |
-| [simd](/docs/std/simd/) | the vector types and their methods |
+| [simd](/docs/std/simd/) | the vector types and their methods, `f16x8` and `bf16x8`, dot products |
 | [sync](/docs/std/sync/) | `Atomic<T>` (in the prelude), `Backoff`, `VersionLatch` · [channels](/docs/std/sync/channel/) · [epoch](/docs/std/sync/epoch/) (reclamation) |
-| [task](/docs/std/task/) | cancellation, timeouts, task scopes |
+| [task](/docs/std/task/) | cancellation, timeouts, task scopes, caught panics |
 | [test](/docs/std/test/) | the runner `velt test` builds into test programs · [http](/docs/std/test/http/) (matchers for a `Response`) |
 | [text](/docs/std/text/) | [regular expressions](/docs/std/text/regex/) · [StringBuilder](/docs/std/text/string_builder/) · [HTML escaping](/docs/std/text/html/) |
 | [time](/docs/std/time/) | [DateTime and Duration](/docs/std/time/datetime/) · [timers](/docs/std/time/timers/) |
@@ -134,7 +144,7 @@ what Velt can't do on its own:
 
 | Module | Runtime use |
 |---|---|
-| `velt/fs`, `velt/net` | the file system, TCP and TLS streams (TLS through rustls) |
+| `velt/fs`, `velt/net` | the file system, TCP and TLS streams (`connectTls` and `listenTls` through rustls; `startTls` is Velt) |
 | `velt/net/http` | TCP and TLS connections, which the runtime pools between requests; HTTP/1.1, HTTP/2 (`velt/net/http/h2`) and body decoding (`velt/compress`) are Velt |
 | `velt/net/websocket` | none of its own: the protocol is Velt on `velt/net` streams (the runtime only masks bytes, checks UTF-8 and draws masking keys) |
 | `velt/process`, `velt/os` | arguments, environment, working directory, standard input, platform facts |
@@ -143,13 +153,13 @@ what Velt can't do on its own:
 | `velt/sync`, `velt/task` | channel queues, abort signals and task groups |
 | `velt/text` | Rust's `regex` engine; `escapeHtml` and `StringBuilder` are runtime passes over bytes |
 | `velt/math` | arbitrary-precision integers (dashu-int) |
-| `velt/crypto`, `velt/random/uuid` | only the operating system's secure random generator; hashing, HMAC and formatting are Velt (on the CPU's SHA instructions through `velt/simd` where it has them) |
+| `velt/crypto`, `velt/random/uuid` | only the operating system's secure random generator; hashing, HMAC, key exchange, ciphers and formatting are Velt (on the CPU's SHA and AES instructions through `velt/simd` where it has them) |
 | `velt/random` | a per-thread wyrand generator |
 | `velt/time` | only the local UTC offset; calendar math, parsing and formatting are Velt |
 | `velt/hash` | FNV-1a over a string's or array's bytes, without a copy |
 
-Pure Velt: `velt/path`, `velt/mem`, `velt/collections`, `velt/encoding` (with
-`velt/encoding/csv` and `velt/encoding/json`), `velt/cli`, `velt/jsx`, `velt/generate`,
+Pure Velt: `velt/path`, `velt/mem`, `velt/collections`, `velt/compress`, `velt/half`,
+`velt/encoding` (with `velt/encoding/csv` and `velt/encoding/json`), `velt/cli`, `velt/jsx`, `velt/generate`,
 `velt/net/http/h2`, `velt/net/url` and the timers of `velt/time` (built on `sleep`, `spawn` and
 `velt/task` signals); some use only the runtime's UTF-8 conversions and error-code names.
 
@@ -157,5 +167,8 @@ Pure Velt: `velt/path`, `velt/mem`, `velt/collections`, `velt/encoding` (with
 
 On the WebAssembly targets the language and the pure modules work as on native targets, and
 `velt/fs` uses the WASI file system. TCP, child processes and the native code of the database
-packages are not available; `fetch` links but rejects with `IoError` `ENOTSUP` (no network)
+packages are not available. On a JavaScript host (`wasm32-unknown-unknown`), `fetch` goes
+through the host's own `fetch` ([On JavaScript hosts](/docs/std/net/http/#on-javascript-hosts)),
+and [`velt/host`](/docs/std/host/) passes JS values to and from the host functions a program
+declares; on `wasm32-wasip1`, `fetch` rejects with `IoError` `ENOTSUP` (no network)
 ([WebAssembly](/docs/tooling/webassembly/)).

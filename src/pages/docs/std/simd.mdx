@@ -1,10 +1,12 @@
 ---
 title: "velt/simd"
-description: "import { u8x16, f32x4 } from \"velt/simd\". The 128-bit SIMD vector types, their masks, and the CPU's SHA and carry-less multiplication instructions."
+description: "import { u8x16, f32x4 } from \"velt/simd\". The 128-bit SIMD vector types, their masks, dot products, and the CPU's SHA, carry-less multiplication and AES instructions."
 layout: "docs"
 category: "Standard library"
 order: 450
 ---
+
+import { Callout } from '@/components/mdx';
 
 # velt/simd
 
@@ -20,7 +22,8 @@ their number and `M` its mask type (`mask8x16`, `mask16x8`, `mask32x4`, `mask64x
 wide as the vector's). Each method is one instruction, or a few, on x86-64 (SSE2) and arm64
 (NEON) and WebAssembly (`simd128`), in debug builds too. WebAssembly SIMD is part of Velt's
 WebAssembly baseline: a program that uses vectors needs an engine that has it (every current
-browser, Node.js, wasmtime and wasmer do).
+browser, Node.js, wasmtime and wasmer do). [`f16x8` and `bf16x8`](#16-bit-floats), eight
+16-bit float lanes, have a smaller API of their own.
 
 | Member | Meaning |
 |---|---|
@@ -36,6 +39,8 @@ browser, Node.js, wasmtime and wasmer do).
 | `v.lane(i)`, `v.withLane(i, x)` | lane `i`; the vector with lane `i` set to `x` (a RangeError panic unless `i < n`) |
 | `add` `sub` `mul` | lane by lane; integers wrap (`mul`: not 8-bit lanes) |
 | `div` `sqrt` | floats |
+| `a.mulAdd(b, c)` | floats: `a * b + c` with one rounding (fused multiply-add), the same bits on every CPU ([below](#fused-multiply-add)) |
+| `a.mulAddFast(b, c)` | floats: `a * b + c`, fused where the CPU does that fastest, a multiply and an add elsewhere; the last bit may differ between CPUs |
 | `neg` `abs` | signed integers and floats (`abs`: not 64-bit integers) |
 | `min` `max` | not 64-bit integers; floats as `Math.min` and `Math.max` (NaN if either is, `-0` below `0`) |
 | `addSat` `subSat` | 8- and 16-bit lanes: clamped to the lane type's range instead of wrapping |
@@ -43,7 +48,9 @@ browser, Node.js, wasmtime and wasmer do).
 | `shl(count)` `shr(count)` | integers, every lane by `count` bits (taken modulo the lane width); `shr` keeps the sign of signed lanes |
 | `eq` `ne` `lt` `le` `gt` `ge` | the mask `M` of the lanes where the comparison holds (with a NaN lane only `ne` holds) |
 | `T.select(m, a, b)` | lane by lane, `a` where `m` is set, `b` elsewhere |
-| `v.sum()` | the sum of the lanes: 32- and 64-bit lanes |
+| `v.sum()` | the sum of the lanes, in the lane type; integers wrap on overflow, as adding the lanes one by one with `+` does |
+| `v.sumWide()` | 8-, 16- and 32-bit integers: the sum of the lanes at twice the width, which never overflows (`i8x16` and `i16x8` give an `i32`, `i32x4` an `i64`; unsigned lanes the unsigned type) |
+| `acc.dotAdd(a, b)` | `i32x4`: each lane plus the sum of four products of signed bytes from two `i8x16`s ([below](#integer-dot-products)) |
 | `v.zipLow(o)` `v.zipHigh(o)` | the lanes of the low (high) halves of `v` and `o` in turn: `v0, o0, v1, o1, …` |
 | `v.widenLow()` `v.widenHigh()` | the low (high) half's lanes at twice the width, `u8x16` to `u16x8`: 8-, 16- and 32-bit integers |
 | `v.narrow(o)` | the lanes of `v`, then of `o`, at half the width, clamped to its range, two `u16x8` to a `u8x16`: 16- and 32-bit integers |
@@ -73,6 +80,143 @@ panic with their RangeError. A negative literal written there (`v.lane(-1)`) is 
 error instead, since the parameter is a `usize`. A lane value or shift count given as a `number` is converted as
 the standard library converts every `number` it takes as an integer: truncated, clamped to the
 type's range, NaN as 0 (`u8x16.splat(300)` is 255 in every lane).
+
+## Operators
+
+The lane-wise methods are [operators](/docs/reference/types/#simd-vectors) too: `a + b` is
+`a.add(b)`, and so are `-`, `*` and, on floats, `/`; unary `-`; on integers and masks `&`, `|`,
+`^` and `~`; and on integers `<<`, `>>` (keeping the sign of signed lanes) and `>>>` (filling
+with zeros), by a `u32` count. A number beside a vector is splatted: `v * 2` is
+`v.mul(T.splat(2))` (a variable must have the lane type). `v[i]` reads lane `i`, a RangeError
+panic past the last. The comparisons stay methods (`a.lt(b)`), because they give a mask.
+
+```ts
+import { f32x4 } from "velt/simd";
+
+const a = f32x4.splat(1.5);
+const b = f32x4.splat(2);
+const r = a * b + 1;
+console.log(r[0], (-r).lane(3)); // 4 -4
+```
+
+## Fused multiply-add
+
+`a.mulAdd(b, c)` on `f32x4` and `f64x2` is `a * b + c` with one rounding: the exact product is
+added, and the result is the same bits on every CPU and in every build. It is one instruction on
+arm64, and on x86-64 with `--cpu x86-64-v3` or later
+([Platforms](/docs/tooling/platforms/)). On the default x86-64 CPU and on WebAssembly it is a
+library call per lane, which is slow: there, `a.mulAddFast(b, c)` is fused only where the CPU
+does that fastest, and is a multiply and an add elsewhere. Use `mulAddFast` where the last bit
+may differ between machines, and `mulAdd` where it must not.
+
+```ts
+import { f64x2 } from "velt/simd";
+
+const a = f64x2.splat(1 + 2 ** -27);
+const b = f64x2.splat(1 - 2 ** -27);
+const c = f64x2.splat(-1);
+console.log(a.mulAdd(b, c).lane(0)); // -5.551115123125783e-17, the exact -2^-54
+console.log(a.mul(b).add(c).lane(0)); // 0: the product was rounded first
+```
+
+## Integer dot products
+
+`acc.dotAdd(a, b)` on an `i32x4` accumulator adds the int8 dot product of two `i8x16`s by
+quarters: lane `k` gains `a[4k] * b[4k] + a[4k + 1] * b[4k + 1] + a[4k + 2] * b[4k + 2] + a[4k
++ 3] * b[4k + 3]`, the products of signed bytes, exactly (no saturation). It is the building
+block of int8 (quantized) matrix products: Arm's `sdot` where the CPU has it, a widening
+multiply-add elsewhere. One call adds at most 65,536 to a lane, so an `i32` accumulator holds
+32,768 calls of the extremes.
+
+The fast pattern adds whole vectors in the loop and reduces the accumulator once, after it, with
+`sumWide()`; reducing in every step is a full reduction each time:
+
+```ts
+import { dotI8, i8x16, i32x4 } from "velt/simd";
+
+function dot(w: i8[], x: i8[]): i64 {
+  let acc = i32x4.splat(0);
+  let i: usize = 0;
+  while (i8x16.fits(w, i) && i8x16.fits(x, i)) {
+    acc = acc.dotAdd(i8x16.load(w, i), i8x16.load(x, i));
+    i += 16;
+  }
+  let s = acc.sumWide();
+  while (i < w.length && i < x.length) {
+    s += (w[i] as i64) * (x[i] as i64);
+    i++;
+  }
+  return s;
+}
+
+const w: i8[] = [];
+const x: i8[] = [];
+for (let k = 0; k < 40; k++) {
+  w.push((k % 5 - 2) as i8);
+  x.push((k % 3) as i8);
+}
+console.log(dot(w, x), dotI8(w, x)); // -1 -1
+```
+
+`dotI8(a: i8[], b: i8[]): i32` is the whole dot product of two `i8[]`, summed in `i32` and
+wrapping on overflow as `+` on `i32` does (131,072 pairs of -128 already wrap). It panics with a
+RangeError when the lengths differ. Its 16-bit float counterparts, `dotF16` and `dotBf16`, are in
+[velt/half](/docs/std/half/#dot-products).
+
+## 16-bit floats
+
+`f16x8` and `bf16x8` hold eight [`f16` or `bf16`](/docs/reference/types/#f16-and-bf16) lanes in
+128 bits: storage types like `f16`, for moving 16-bit weights into and out of `f32x4` arithmetic.
+They have no arithmetic of their own.
+
+- `T.splat(x)`, `T.load(xs, at)`, `T.fits(xs, at)`, `T.loadPartial(xs, at)`, `v.store(xs, at)`,
+  `v.storePartial(xs, at)`, `v.lane(i)`, `v.withLane(i, x)` and `T.shuffle(a, b, …)`, on `f16[]`
+  and `bf16[]`, as on the other vectors.
+- `v.asU16x8()` and `T.fromU16x8(bits)`: the same bits, nothing converted.
+- `v.widenLow()` and `v.widenHigh()`: lanes 0 to 3, and 4 to 7, as an `f32x4`, exactly. A NaN
+  keeps its payload, with its quiet bit set.
+- `T.narrow(lo: f32x4, hi: f32x4)`: the lanes of `lo`, then of `hi`, each rounded once to the
+  nearest (ties to even; past `f16`'s largest value, ±Infinity). A NaN keeps the top bits of its
+  payload, quieted, so a signalling NaN comes back quiet from a widen and narrow round trip.
+- `a.dotAdd(b, acc)`: `acc` plus the products of `a` and `b` (both `f16x8` or both `bf16x8`) in
+  `f32`, read as `a.mulAdd(b, c)` is `a * b + c`. Lane `k` is
+  `fma(a[k + 4], b[k + 4], fma(a[k], b[k], acc[k]))`: each product is exact in `f32`, and
+  each lane rounds twice.
+
+<Callout kind="warn" title="Lanes k and k + 4">
+`f16x8.dotAdd` and `bf16x8.dotAdd` add lanes `k` and `k + 4` into lane `k`, not adjacent lanes,
+as `i32x4.dotAdd` and other languages' `bfdot` do. The receiver differs too: `acc.dotAdd(a, b)`
+for int8, `a.dotAdd(b, acc)` for `f16` and `bf16`. The sum of the lanes is the dot product
+either way.
+</Callout>
+
+```ts
+import { f16x8, f32x4 } from "velt/simd";
+
+const ws: f16[] = [1, 2, 3, 4, 5, 6, 7, 8];
+const xs: f16[] = [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5];
+const acc = f16x8.load(ws).dotAdd(f16x8.load(xs), f32x4.splat(0));
+console.log(acc.lane(0), acc.lane(1), acc.lane(2), acc.lane(3), acc.sum()); // 3.5 5 6.5 8 23
+```
+
+`dotAdd` gives every lane the same bits on every CPU, except for NaNs. One NaN among a lane's
+operands gives that NaN, and a signalling one may or may not come out quiet (an optimizer can
+drop a step that adds nothing, as in `mulAdd`). Several NaNs, or `Infinity * 0`, give a NaN
+whose bits depend on the CPU and the build. `f16x8.dotAdd` is Arm's `fmlal` and `fmlal2` on
+every Apple arm64 CPU, and with a `--cpu` whose CPU has FEAT_FHM; elsewhere, and for `bf16x8`
+everywhere, it is the widened lanes and two fused additions (a library call per lane on a CPU
+without FMA, as `mulAdd` is).
+
+`bf16x8.dotAddFast(b, acc)` uses the CPU's own bf16 dot product where `--cpu` has one: Arm's
+`bfdot` (FEAT_BF16: `--cpu apple-m2` and later, or `native` on such a Mac; not an M1) or x86's
+`vdpbf16ps` (AVX512-BF16 with AVX512VL). Elsewhere it is `dotAdd`. Only the sum of its lanes is
+meaningful: those instructions add lanes `2k` and `2k + 1` into lane `k`, round the two products
+together, and may flush subnormal operands and results to zero. Use `dotAdd` where the bits
+must be the same everywhere.
+
+A program built with a `--cpu` that has FEAT_FHM, FEAT_BF16 or AVX512-BF16 checks none of them
+at start-up: on a CPU without them it stops with an illegal instruction (SIGILL) instead of the
+usual message. `--cpu native` on an M2, running `dotAddFast`, stops that way on an M1.
 
 ## SHA instructions
 
@@ -142,6 +286,86 @@ import { u64x2 } from "velt/simd";
 const p = u64x2.splat(3).clmulLow(u64x2.splat(3));
 console.log(p.lane(0), p.lane(1)); // 5 0
 ```
+
+## AES instructions
+
+`u8x16` has the CPU's AES round instructions as methods, named after the instruction, on the
+state as FIPS-197 lays it out (byte 0 first, column by column): x86's AES-NI as in Intel's
+intrinsics (`_mm_aesenc_si128(a, rk)` is `a.aesenc(rk)`) and the ARMv8 ones as in ARM's ACLE
+(`vaeseq_u8(a, key)` is `a.aese(key)`). AES-GCM in [velt/crypto](/docs/std/crypto/#authenticated-encryption)
+is built on them.
+
+| Method | Instruction |
+|---|---|
+| `a.aesenc(rk)` | x86 AESENC: ShiftRows, SubBytes, MixColumns, then XOR the round key `rk` |
+| `a.aesenclast(rk)` | x86 AESENCLAST: the same without MixColumns |
+| `a.aesdec(rk)`, `a.aesdeclast(rk)` | x86 AESDEC, AESDECLAST: the rounds of the equivalent inverse cipher (their round keys go through `aesimc`) |
+| `a.aesimc()` | AESIMC (x86 and ARM): InvMixColumns |
+| `a.aeskeygenassist(rcon)` | x86 AESKEYGENASSIST; `rcon` is 0 to 255, a RangeError past it |
+| `a.aese(key)` | ARM AESE: XOR `key`, then ShiftRows and SubBytes |
+| `a.aesd(key)` | ARM AESD: XOR `key`, then InvShiftRows and InvSubBytes |
+| `a.aesmc()` | ARM AESMC: MixColumns |
+| `u8x16.hasAesX86()`, `u8x16.hasAesArm()`, `u8x16.hasAes()` | whether the CPU has them (x86: AES-NI with the PCLMULQDQ, SSSE3 and SSE4.1 every such CPU has; ARM: FEAT_AES with FEAT_PMULL; `hasAes`: either) |
+
+Every method works on every CPU. It is the instruction where the CPU has it, and the other
+architecture's instructions where those are what the CPU has (`aesenc` on arm64 is `aese` and
+`aesmc`). Elsewhere an exact emulation runs: a boolean circuit with no tables, whose work does
+not depend on the data (no table index, branch or loop on it), but which is much slower than the
+instructions, so code where speed matters checks `u8x16.hasAes()` first.
+
+The checks are false on WebAssembly, in debug builds and with `VELT_SIMD_DISABLE=aes`.
+`VELT_SIMD_DISABLE=clmul` makes them false too, except on x86-64 in a build whose `--cpu`
+includes PCLMULQDQ (`--cpu native` on such a CPU), where the carry-less check they include is
+constant. Unlike the SHA checks, `--cpu` does not make them constant: they are read from the CPU
+once, at run time, and kept.
+
+```ts
+import { u8x16, u32x4 } from "velt/simd";
+
+function bytes(text: string): u8x16 {
+  const out: u8[] = [];
+  for (let i: i64 = 0; i < 32; i += 2) {
+    out.push(Number.parseInt(text.substring(i, i + 2), 16) as u8);
+  }
+  return u8x16.load(out, 0);
+}
+
+function hex(v: u8x16): string {
+  let s = "";
+  for (let i: usize = 0; i < 16; i++) {
+    s += v.lane(i).toString(16).padStart(2, "0");
+  }
+  return s;
+}
+
+// One step of the AES-128 key schedule, with AESKEYGENASSIST.
+function nextKey(k: u8x16, rcon: u32): u8x16 {
+  const z = u8x16.splat(0);
+  let x = k;
+  for (let i = 0; i < 3; i++) {
+    x = x.xor(u8x16.shuffle(z, x, 0, 0, 0, 0, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27));
+  }
+  const w = k.aeskeygenassist(rcon).asU32x4();
+  return x.xor(u32x4.shuffle(w, w, 3, 3, 3, 3).asU8x16());
+}
+
+function encrypt(key: u8x16, block: u8x16): u8x16 {
+  const rcons: u32[] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
+  let k = key;
+  let s = block.xor(k);
+  for (let r: usize = 0; r < 10; r++) {
+    k = nextKey(k, rcons[r]);
+    s = r < 9 ? s.aesenc(k) : s.aesenclast(k);
+  }
+  return s;
+}
+
+// FIPS-197, appendix C.1.
+const out = encrypt(bytes("000102030405060708090a0b0c0d0e0f"), bytes("00112233445566778899aabbccddeeff"));
+console.log(hex(out)); // 69c4e0d86a7b0430d8cdb78070b4c55a
+```
+
+## Using vectors
 
 Generic code given a vector (`xs.includes(v)`, a `Map` key, `xs.join()`) compares and hashes
 all 128 bits (so NaN equals NaN and `0` differs from `-0` there) and prints the type's name,

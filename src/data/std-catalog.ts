@@ -36,7 +36,7 @@ export const CATEGORIES: Category[] = [
             ['encoding/json', 'JSON values. JSON.parse<T> is built in.'],
             ['encoding/csv', 'RFC 4180 parse and stringify.'],
             ['encoding', 'Base64, hex and UTF-8.'],
-            ['compress', 'gzip, zlib, DEFLATE and Brotli decompression.'],
+            ['compress', 'gzip, zlib, DEFLATE and Brotli, compressed and decompressed.'],
         ],
     },
     {
@@ -63,7 +63,7 @@ export const CATEGORIES: Category[] = [
     },
     {
         id: 'enc', title: 'Security & randomness', blurb: 'Hashes, keys, ids', modules: [
-            ['crypto', 'SHA-256, SHA-1, HMAC, randomBytes, timingSafeEqual.'],
+            ['crypto', 'SHA-256, HMAC, HKDF, X25519, P-256, AES-GCM, ChaCha20-Poly1305.'],
             ['hash', 'fnv1a64: a stable, non-cryptographic hash.'],
             ['random', 'Fast random numbers, not for secrets.'],
             ['random/uuid', 'uuidv4, uuidv7, parse and validate.'],
@@ -96,6 +96,7 @@ export const CATEGORIES: Category[] = [
             ['math', 'gcd, lcm, clamp and other integer helpers.'],
             ['math/bigint', 'Arbitrary-precision integers.'],
             ['simd', 'Vector types and lane-wise methods.'],
+            ['half', 'f16[] and bf16[] in bulk: from bytes, widened, narrowed.'],
         ],
     },
     {
@@ -106,6 +107,8 @@ export const CATEGORIES: Category[] = [
             ['dev', 'The graceful stop under velt dev.'],
             ['generate', 'What source generators are written with.'],
             ['native', 'The Velt side of packages with native code.'],
+            ['ffi', 'Pointers, C strings and buffers for declare c code.'],
+            ['host', 'HostRef: JS values for host functions on JavaScript hosts.'],
             ['reflect', 'What an any holds at run time.'],
         ],
     },

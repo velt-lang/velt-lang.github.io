@@ -1,6 +1,6 @@
 ---
 title: "velt/compress"
-description: "Decompression written in Velt: gzip, zlib, raw DEFLATE and Brotli, for whole buffers or for streams that arrive in pieces."
+description: "Compression and decompression written in Velt: gzip, zlib, raw DEFLATE and Brotli, for whole buffers or for streams that arrive or leave in pieces."
 layout: "docs"
 category: "Standard library"
 order: 105
@@ -8,12 +8,76 @@ order: 105
 
 # velt/compress
 
-`import { gunzip, brotliDecompress, InflateDecoder } from "velt/compress"`. Decompression, written
-in Velt: gzip (RFC 1952), zlib (RFC 1950), raw DEFLATE (RFC 1951) and Brotli (RFC 7932). They are
-what [`fetch`](/docs/std/net/http/) decodes compressed response bodies with. The module
-decompresses only; it has no compressor.
+`import { gzip, gunzip, brotliCompress, brotliDecompress } from "velt/compress"`. Compression
+and decompression, written in Velt: gzip (RFC 1952), zlib (RFC 1950), raw DEFLATE (RFC 1951) and
+Brotli (RFC 7932). The decoders are what [`fetch`](/docs/std/net/http/) decodes compressed
+response bodies with; the encoders compress responses and files ahead of time.
 
-## Whole buffers
+```ts
+import { brotliCompress, brotliDecompress, gunzip, gzip } from "velt/compress";
+import { utf8Encode } from "velt/encoding";
+
+const text = utf8Encode("hello, hello, hello, hello\n".repeat(100));
+const gz = gzip(text);
+const br = brotliCompress(text, "smallest");
+console.log(text.length, gunzip(gz).length, brotliDecompress(br).length); // 2700 2700 2700
+```
+
+## Compressing
+
+`gzip(input, level?)`, `deflate(input, level?)` (zlib, what `inflate` reads),
+`deflateRaw(input, level?)` (what `inflateRaw` reads) and `brotliCompress(input, level?)` (what
+`brotliDecompress` reads) take a `u8[]` and return the whole compressed stream. Node's zlib,
+`gzip -d` and Node's `zlib.brotliDecompressSync` read what they write.
+
+The `level` is `"fastest"`, `"optimal"` (the default, for responses compressed as they are sent)
+or `"smallest"` (for files compressed ahead of time), or a number in the coding's own range;
+anything else throws `RangeError`:
+
+| Coding | `"fastest"` | `"optimal"` | `"smallest"` | Numbers |
+|---|---|---|---|---|
+| gzip, zlib, raw DEFLATE | 1 | 6 | 9 | 1 to 9, as zlib's levels |
+| Brotli | 1 | 4 | 11 | 0 to 11, as Node's `BROTLI_PARAM_QUALITY` |
+
+The DEFLATE output is close to zlib's size at the same level, and Brotli's within about 5% of
+Node's at qualities 0 to 9; qualities 10 and 11 compress as 9 does for now. A Brotli stream's
+window is the smallest that holds the input, up to 4 MiB.
+
+### Streaming
+
+An `Encoding` is a compression coding that makes streaming encoders, so code that picks a coding
+(an HTTP server choosing by `accept-encoding`) works with any of them:
+
+- `new DeflateEncoding(format, level?)`, with `format` `"gzip"`, `"deflate"` (zlib) or
+  `"deflate-raw"`, and `new BrotliEncoding(level?)`. Their `name` is the format, or `"br"`.
+- `encoding.encoder(): Encoder` starts a stream.
+- `encoder.write(bytes, start, end)` compresses `bytes[start..end]` and returns the output ready
+  so far, often `[]`: an encoder holds back what it hasn't decided how to code yet.
+- `encoder.flush()` returns the output that makes everything written so far decodable, and the
+  stream goes on (a sync flush: what a server sends before it waits for more of a response).
+- `encoder.finish()` returns the rest of the stream with its trailer; `[]` when called again. A
+  `write` after `finish` throws `CompressError`.
+
+```ts
+import { DeflateEncoding, gunzip } from "velt/compress";
+import { utf8Encode } from "velt/encoding";
+
+const e = new DeflateEncoding("gzip", "fastest").encoder();
+let out: u8[] = [];
+for (const line of ["one\n", "two\n", "three\n"]) {
+  const bytes = utf8Encode(line);
+  out = out.concat(e.write(bytes, 0, bytes.length as i64));
+  out = out.concat(e.flush()); // a reader can decode every line so far
+}
+out = out.concat(e.finish());
+console.log(JSON.stringify(gunzip(out).utf8Slice())); // "one\ntwo\nthree\n"
+```
+
+A coding of your own (zstd in a package, say) implements `Encoding` and `Encoder` the same way.
+
+## Decompressing
+
+### Whole buffers
 
 `gunzip(bytes)`, `inflate(bytes)` (zlib), `inflateRaw(bytes)`, `inflateHttp(bytes)` and
 `brotliDecompress(bytes)` take the whole compressed stream as a `u8[]` and return the bytes it
@@ -34,7 +98,7 @@ console.log(gunzip(gz).utf8Slice()); // hi
 - The gzip and zlib checksums (CRC-32, Adler-32) are verified.
 - Empty input decodes to nothing for `gunzip`, `inflateHttp` and `brotliDecompress`.
 
-## Streams that arrive in pieces
+### Streams that arrive in pieces
 
 `new InflateDecoder(format)` (`"gzip"`, `"zlib"`, `"raw"`, or `"deflate"`, which is
 `inflateHttp`'s choice) and `new BrotliDecoder()` decode a stream that arrives in pieces:
@@ -66,7 +130,8 @@ console.log(JSON.stringify(text)); // "hi\n"
 ## Errors
 
 Input that is not a valid stream, a checksum that does not match, or a stream that ends before it
-should throws `CompressError`.
+should throws `CompressError`. The encoders throw `RangeError` for a level they don't take or a
+range outside the array.
 
 ```ts
 import { gunzip, CompressError } from "velt/compress";

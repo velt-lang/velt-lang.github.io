@@ -1,0 +1,74 @@
+---
+title: "velt/host"
+description: "import { HostRef } from \"velt/host\". JS values the host keeps for a program on a JavaScript host, passed to and from host functions."
+layout: "docs"
+category: "Standard library"
+order: 185
+---
+
+# velt/host
+
+`import { HostRef } from "velt/host"`. What [host functions](/docs/reference/host-functions/)
+pass besides numbers, strings and bytes: JS values. A host function is one the JavaScript host
+provides to a program built as a WebAssembly module for it (`--target wasm32-unknown-unknown`:
+a browser, Node, Deno, Cloudflare Workers), declared with `declare host("<module>") function`.
+
+- `HostRef` is a JS value the host keeps for the program: an object, a function, a promise, any
+  value. The JS glue holds it in a table and the program holds its slot. Only host functions
+  make one: a host function declared to return `HostRef` (or `HostRef | null`) gives one, and a
+  `HostRef` argument passes the value itself back to the host.
+- `clone(): HostRef` is a second reference to the same value, with a slot of its own.
+- Dropping a `HostRef`, or calling `[Symbol.dispose]()`, frees its slot, so the host can forget
+  the value. Passing a disposed `HostRef` to a host function makes the glue throw.
+
+```ts ignore
+import { HostRef } from "velt/host";
+
+declare host("dom") function query(selector: string): HostRef | null;
+declare host("dom") function setText(node: HostRef, text: string): void;
+
+export function greet(selector: string, name: string): bool {
+  const node = query(selector);
+  if (node == null) {
+    return false;
+  }
+  setText(node, `hello, ${name}`);
+  return true; // `node` is dropped here: the host forgets it
+}
+```
+
+The embedder passes the functions to the glue by import module:
+
+```js
+import { runVelt } from "./velt_web.mjs";
+
+const code = await runVelt(fetch("app.wasm"), {
+  imports: {
+    dom: {
+      query: (selector) => document.querySelector(selector),
+      setText: (node, text) => {
+        node.textContent = text;
+      },
+    },
+  },
+});
+```
+
+An `async` host function returns a `Promise` the program awaits without blocking the host's
+thread, and its rejection is an [`IoError`](/docs/std/io/) whose `code` is the `name` of what
+the JS promise rejected with. [Host functions](/docs/reference/host-functions/) has what crosses
+and how.
+
+## Targets
+
+A module may declare host functions and still build for any target, and a type may hold a
+`HostRef | null` there (always `null`). Only a JS host provides host functions: a call of one
+that a build for another target reaches (native, `wasm32-wasip1`) is a compile error, naming the
+target and the caller. [WebAssembly](/docs/tooling/webassembly/) has how to build and embed such
+a module.
+
+The standard library uses host functions itself: on a JS host, [`fetch`](/docs/std/net/http/#on-javascript-hosts)
+goes through the host's own `fetch`, and `velt/host/worker` is the request queue that a server
+built with `velt build --host <package>` (the [http-server](/docs/packages/http-server/)
+package's `serve` on Cloudflare Workers, for example) takes its requests from. Programs don't
+use `velt/host/worker` directly.

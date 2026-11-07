@@ -41,7 +41,8 @@ console.log(existsSync(dir)); // false
 - `exists(path): Promise<bool>` never throws.
 
 For files too large to hold in memory, or written a piece at a time, use
-[file streams](/docs/std/fs/stream/) (`openRead`, `openWrite`).
+[file streams](/docs/std/fs/stream/) (`openRead`, `openWrite`); `openRead` also reads a range
+of bytes.
 
 ## Directories
 
@@ -84,15 +85,32 @@ console.log(files.length > 0); // true
   `isSymbolicLink()` (only ever `true` from `lstat`).
 - `readlink(path): Promise<string>`: a symlink's target as stored in it (`EINVAL` if `path` is
   not a symlink).
+- `realpath(path): Promise<string>`: the absolute path with every symlink, `.` and `..`
+  resolved, where the file really is (`ENOENT` if it doesn't exist, a dangling symlink
+  included). On Windows the result has no `\\?\` prefix (`C:\dir\file`), as in Node.
 - `symlink(target, path)` creates a symlink at `path`; a relative `target` is relative to the
   link's directory. On Windows the link is a directory link when `target` is a directory, and a
   relative `target`'s `/` separators are stored as `\`, both as in Node; creating links there
   needs Developer Mode or administrator rights (`EACCES` otherwise).
 
+`realpath` tells whether a path a client asked for stays under a directory, whatever symlinks
+and `..` it goes through:
+
+```ts
+import { realpath } from "velt/fs";
+
+async function isUnder(root: string, path: string): Promise<bool> {
+  // Windows paths come back with `\`: compare them with `/`.
+  const base = (await realpath(root)).replaceAll("\\", "/");
+  const real = (await realpath(path)).replaceAll("\\", "/"); // ENOENT if it doesn't exist
+  return real == base || real.startsWith(`${base}/`);
+}
+```
+
 ## Sync variants
 
 `readFileSync readFileBytesSync writeFileSync appendFileSync readDirSync readDirEntriesSync
-statSync lstatSync readlinkSync symlinkSync mkdirSync removeSync renameSync copyFileSync
+statSync lstatSync readlinkSync realpathSync symlinkSync mkdirSync removeSync renameSync copyFileSync
 existsSync` take the same arguments and return the value instead of a promise. Use them in
 scripts and at startup; in a server, the async forms keep other requests running.
 
