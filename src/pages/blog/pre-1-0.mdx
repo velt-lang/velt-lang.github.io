@@ -1,0 +1,67 @@
+---
+title: "Velt is pre-1.0: what works today, and what doesn't yet"
+description: "Read this before you point Velt at your TypeScript project: what works well, what's different on purpose, and what isn't there yet."
+layout: "post"
+topic: "news"
+pinned: true
+author: "Andreas Ekdahl"
+# Remove `draft` (and set `date`) to publish: the post then appears on the
+# blog, pinned, and the home page links to it from the hero.
+draft: true
+date: ""
+---
+
+import { Callout } from '@/components/mdx';
+
+# Velt is pre-1.0: what works today, and what doesn't yet
+
+[LEAD: one or two sentences. Velt feels familiar if you write TypeScript, but it isn't a drop-in
+for every project yet. This post is the honest picture, and it's updated with every release.]
+
+## What works well today
+
+[YOUR TEXT: what you'd happily build with Velt now, and what you've seen work.]
+
+<Callout kind="note" title="Facts you could use (remove before publishing)">
+Classes, interfaces, generics, unions and narrowing, closures, `async`/`await`, destructuring,
+optional chaining and `using` all compile. `.ts` files and Velt files import each other, so a
+project can move over one file at a time ([Velt for TypeScript developers](/docs/book/ts-developers/)).
+The standard library and the sqlite, postgres, redis and http-server
+[packages](/docs/packages/).
+</Callout>
+
+## Where Velt is different from TypeScript
+
+[YOUR TEXT: what's different on purpose, and why. This is where "familiar, not identical" lives.]
+
+<Callout kind="note" title="Facts you could use (remove before publishing)">
+The [Not supported](/docs/book/ts-developers/#not-supported) list: `eval`, prototypes, `with`,
+`delete` (except on a `Record`), `var` in nested blocks, symbols made at run time as keys,
+`BigInt` values, Unicode identifiers. `x!` is checked at run time. Check this list against the
+release you publish with: it shrinks with every release.
+</Callout>
+
+## What isn't there yet
+
+[YOUR TEXT: the gaps you know about, and how you decide what comes first.]
+
+<Callout kind="note" title="Facts you could use (remove before publishing)">
+The [roadmap](/roadmap/) lists what's planned and the known gaps, each linked to the docs.
+</Callout>
+
+## Expect breaking changes until 1.0
+
+[YOUR TEXT: how often things change, and how you'll help people keep up.]
+
+<Callout kind="warn">
+Old syntax is removed, not deprecated. When something you wrote stops compiling, the compiler
+tells you what to write instead. Each release's changes are on [What's new](/whats-new/).
+</Callout>
+
+## Who should try it now
+
+[YOUR TEXT: who will have a good time today, and who should wait a release or two.]
+
+## Tell us what breaks
+
+[YOUR TEXT: how you want reports, and what makes a good one.]
