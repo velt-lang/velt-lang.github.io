@@ -18,10 +18,11 @@ Everything ships in one `velt` binary.
 | [`package.velt`](/docs/tooling/manifest/) | the package manifest, dependencies, `paths` aliases, the lockfile |
 | [Packages and registries](/docs/tooling/packages/) | `add`, `install`, `update`, `publish`, git dependencies, workspaces, npm packages, the official packages, registry servers |
 | [Formatter](/docs/tooling/fmt/) | `velt fmt` |
+| [Lint and fixes](/docs/tooling/lint/) | `velt check --perf`, `--fix`, `lint` levels, `velt-allow` comments |
 | [Editors](/docs/tooling/editors/) | the language server and the VS Code extension |
 | [Debugging](/docs/tooling/debugging/) | debug info, LLDB, GDB, Visual Studio, VS Code |
-| [WebAssembly](/docs/tooling/webassembly/) | WASI and browser targets, the playground |
+| [WebAssembly](/docs/tooling/webassembly/) | WASI and JavaScript hosts, `velt build --host` (Cloudflare Workers), the playground |
 | [Platforms and installation](/docs/tooling/platforms/) | supported platforms, prerequisites, distributions |
 
 Testing is covered in the Book: [Testing](/docs/book/testing/). The SQLite, PostgreSQL and Redis
-drivers and the HTTP server are [packages](/docs/packages/).
+drivers, the HTTP server and the Cloudflare Workers support are [packages](/docs/packages/).

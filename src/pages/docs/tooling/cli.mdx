@@ -18,13 +18,15 @@ prints every command's options and examples.
 | `velt init` | turn the current directory into a package; `--editor vscode` only adds the VS Code files |
 | `velt build` | compile a file or the current package |
 | `velt run` | build and run a file or the current package |
-| `velt check [--json]` | type-check a file or the current package without building it ([`velt check`](#velt-check)); `--ts-compat` lints code shared with TypeScript ([below](#code-shared-with-typescript---ts-compat)) |
+| `velt check [--json]` | type-check a file or the current package without building it ([`velt check`](#velt-check)); `--perf` reports what costs speed and `--fix` applies fixes ([Lint](/docs/tooling/lint/)); `--ts-compat` lints code shared with TypeScript ([below](#code-shared-with-typescript---ts-compat)) |
 | `velt dev` | run, then hot-swap or restart on every change ([`velt dev`](/docs/tooling/dev/)) |
 | `velt test` | run the tests, skipping files whose kept result can't have changed ([`velt test`](#velt-test), [Testing](/docs/book/testing/)) |
 | `velt fmt` | format `.velt` (and `.ts`, `.tsx`) files ([Formatter](/docs/tooling/fmt/)) |
 | `velt clean [--cache]` | remove the package's `target/` directory; `--cache`: the machine's [build cache](#build-cache) |
 | `velt cache warm` | compile the standard library into the [build cache](#build-cache) ahead of a first build |
-| `velt add`, `install`, `update`, `publish`, `native build` | packages ([Packages](/docs/tooling/packages/)) |
+| `velt add`, `install`, `update`, `publish` | packages ([Packages](/docs/tooling/packages/)) |
+| `velt native build [--target <triple>]` | build the package's native library: its C `sources` with the pinned zig, for any target from any machine, or its Rust crate ([`velt native`](#velt-native)) |
+| `velt native headers` | check the package's `declare c` functions against their C headers on every target and write `c-headers.json` ([`velt native`](#velt-native)) |
 | `velt manifest [--json]` | check the package's manifest, or print it as JSON for other tools ([`package.velt`](/docs/tooling/manifest/#other-tools)) |
 | `velt search`, `yank`, `owner` | find and manage published packages ([Registries](/docs/tooling/packages/#registries)) |
 | `velt login`, `logout` | store or forget your token for a registry server ([Users, owners and yanking](/docs/tooling/packages/#users-owners-and-yanking)) |
@@ -66,18 +68,22 @@ argument doesn't go with a selection.
 ## `velt build` and `velt run`
 
 ```
-velt build [<file.velt>] [-o <out>] [--release] [-g] [--target <triple>] [--cpu <name>]
-           [--backend cranelift|llvm] [--emit vir|llvm|obj|exe] [--locked] [--json] [-v]
-           [--timings] [--report numbers]
+velt build [<file.velt>] [-o <out>] [--release] [-g] [--target <triple> | --host <package>]
+           [--cpu <name>] [--backend cranelift|llvm] [--emit vir|llvm|obj|exe] [--locked]
+           [--no-generators] [--json] [-v] [--timings] [--report numbers]
 velt run   [<file.velt>] [--release] [-g] [--target <triple>] [--cpu <name>]
-           [--backend cranelift|llvm] [--locked] [-v] [--timings] [--report numbers]
-           [-- <program args>...]
+           [--backend cranelift|llvm] [--locked] [--no-generators] [-v] [--timings]
+           [--report numbers] [-- <program args>...]
 ```
 
 - **Debug builds** (the default) use Cranelift: fast to compile, with line tables for debuggers
-  on Linux and macOS (function symbols on Windows).
+  on Linux and macOS (function symbols on Windows). They translate and compile functions, and
+  run the optimizer's per-function passes, on every core; `VELT_JOBS` sets the number of
+  threads (default: the machine's available parallelism). The output is the same bytes for any
+  number of threads, and `VELT_JOBS` doesn't make a build out of date.
 - **`--release`** runs Velt's optimizer, then LLVM `-O3` when clang 16 or newer is found
-  (`VELT_CLANG`, `PATH`, the standard install directories); otherwise Cranelift, with a
+  (`VELT_CLANG`, else the newest on macOS and the first on `PATH` elsewhere:
+  [Which clang](/docs/tooling/platforms/#which-clang)); otherwise Cranelift, with a
   one-line note. `-g` keeps debug info in a release build ([Debugging](/docs/tooling/debugging/)).
   An LLVM build (`--release`, or `--backend llvm`) of a large program (above about 32 000 VIR
   statements) is split into codegen units that clang compiles in parallel, one object file
@@ -93,6 +99,13 @@ velt run   [<file.velt>] [--release] [-g] [--target <triple>] [--cpu <name>]
 - `--target wasm32-wasip1` and `--target wasm32-unknown-unknown` build WebAssembly
   ([WebAssembly](/docs/tooling/webassembly/)); `--target x86_64-apple-darwin` cross-builds on Apple
   silicon.
+- `--host <package>` builds for the JavaScript platform of a host package among the
+  dependencies (`velt build --release --host host-cloudflare` for Cloudflare Workers): its
+  target, and its condition for conditional imports. The output is a directory,
+  `target/velt/<name>-<condition>/` (or `-o <dir>`), with the module, the runtime's glue, the
+  packages' host modules, the host package's entry and its configuration files (written only
+  when absent). A `--target` naming another triple is an error, a build without `--release`
+  warns, and `velt run --host` is an error ([JavaScript platforms](/docs/tooling/webassembly/#javascript-platforms-velt-build---host)).
 - `--cpu <name>` chooses the CPU the program is built for: `baseline`, `x86-64-v2` (the default
   on x86_64: every x86_64 CPU since about 2009), `x86-64-v3`, `x86-64-v4`, `native` (this
   machine's CPU) or a CPU name clang knows for the target, such as `znver4` or `neoverse-n1`
@@ -103,7 +116,25 @@ velt run   [<file.velt>] [--release] [-g] [--target <triple>] [--cpu <name>]
   target and the check: [Platforms, CPU](/docs/tooling/platforms/#cpu).
 - `--emit vir` / `--emit llvm` print the intermediate representation and stop; `--emit obj`
   writes only the object file.
-- `-v` prints per-stage timings; `--timings` adds each optimizer pass and code generation step.
+- `--no-generators` runs no [source generator](/docs/reference/source-generators/), for audits:
+  each call that needs generated code is an error naming the generator that would write it
+  (`` `hello<User>` needs code from the generator `./gen`, and `--no-generators` runs none ``), also
+  when an earlier build generated it. Std's `JSON.stringify`, `JSON.parse`, `deepEqual` and
+  `toEqual` are generated too. A run of the generators that takes longer than 30 seconds
+  (`VELT_GENERATOR_TIMEOUT`) is stopped and reported as
+  ``the generator `./gen` did not finish within 30 s``, naming the instance it was generating;
+  nothing of it is cached.
+- `-v` prints per-stage timings, the number of standard-library lines loaded
+  (`velt: <n> std lines loaded`) and of type-checking rounds (`velt: <n> sema rounds`);
+  `--timings` adds each optimizer pass and code generation step, with the Cranelift `codegen`
+  stage split into `verify`, `declare`, `functions`, `define` and `object`. With several
+  threads, an optimizer pass's time is its sum over the threads. Each stage line ends with the
+  compiler's memory after that stage, its resident set from the OS and the process's highest
+  resident set so far:
+
+  ```text
+  velt: lower    1234.000 ms  (rss 980 MB, peak 990 MB)
+  ```
 - `build --json` prints one JSON document on stdout instead of diagnostics on stderr, for
   editors (the VS Code extension's F5 runs it): `{"executable", "debugInfo", "lldbScript", "diagnostics", "errors", "warnings"}`. `executable` is the absolute path of the program
   (`null` if the build failed or made none, as with `--emit obj`); `debugInfo` says whether it
@@ -188,9 +219,10 @@ A build never compiles the same thing twice:
 ## `velt check`
 
 ```
-velt check [<file.velt>] [--json] [--locked] [-v]
-velt check --ts-compat [<file|dir>...] [--json] [--locked] [-v]
-velt check --std [--json] [-v]
+velt check [<file.velt>] [--target <triple>] [--perf [--deps]] [--fix[=safe|review]] [--json]
+           [--locked] [--no-generators] [-v]
+velt check --ts-compat [<file|dir>...] [--fix[=safe|review]] [--json] [--locked] [-v]
+velt check --std [--target <triple>] [--json] [-v]
 ```
 
 Parses and type-checks a file with every file it imports, or the whole current package, and prints
@@ -221,11 +253,41 @@ It exits with 0 when there are no errors (warnings are allowed) and with 1 when 
   syntax error is still checked; a name it imports that the broken file mentions but doesn't
   declare (the error may have cut the declaration short) reports nothing, and neither do its
   uses.
+- `--target <triple>` checks for that target (default: this machine): the variants of
+  [conditional imports](/docs/reference/modules/#conditional-imports) it selects, and the system functions it has.
+  In a package, the variants the target doesn't select are not checked as modules of the
+  package; every variant is still compared with the others for the same API. A triple velt
+  doesn't build for (x86_64 and aarch64 on Windows, macOS and Linux; `wasm32-wasip1`,
+  `wasm32-unknown-unknown`) is an error. `velt check --std --target <triple>` checks the
+  standard library for that target.
+- `--perf` also reports what costs speed, `--fix` applies the findings' fixes, and `lint` in
+  `package.velt` and `velt-allow` comments set what is reported ([Lint](/docs/tooling/lint/)).
+- `--no-generators` runs no source generator, as for [`velt build`](#velt-build-and-velt-run).
 - `--json` prints one JSON document on stdout instead, for editors and other tools:
   `{"diagnostics": [...], "errors": n, "warnings": n}`, each diagnostic with its `severity`,
   `message`, `location` (`file`, 1-based `line`/`column`, `endLine`/`endColumn`), further
-  `labels` and `notes`, plus `code` and `fix` (`null` except for `--ts-compat` findings).
-- `-v` prints per-stage timings.
+  `labels` and `notes`, its `code` (`null` for most compiler errors; `perf/<rule>` and
+  `ts-compat/<rule>` for lint findings) and its `fixes`:
+  `[{"title", "applicability": "safe" | "review", "edits": [{"location", "replacement"}]}]`.
+  `fix` is the first fix when it is a single edit, else `null`.
+- `-v` prints per-stage timings and the `std lines loaded` and `sema rounds` lines.
+- When the check passes in a program that allows packages with
+  [native code](/docs/book/native-packages/) (`allowNative`), it ends with what the program
+  allows: each package's C libraries (and the system library each links on this target, or the
+  sources it is built from), whether its C headers were checked, whether it has a Rust crate,
+  and each piece of its unsafe code by file and line. That is what an audit reads. A check with
+  errors, lint errors included, doesn't print it.
+
+  ```text
+  Native code the program allows (allowNative):
+    zlib: C libraries z (z); 2 places of unsafe code
+      src/db.velt:12      unsafe block
+      src/inflate.velt:7  unsafe function `step`
+  ```
+
+  `--json` has the same under `native`:
+  `[{ "package", "cLibraries": [{ "name", "system" }], "rustCrate", "unsafe": [{ "file", "line", "what" }] }]`,
+  left out when there is none and when the check has errors.
 - `--std` checks the whole standard library (`$VELT_STD`, else the toolchain's): every file
   but its tests, every definition, also those no program reaches. A program checks only the std
   code it uses, and may import only std's public modules, so this is what the standard
@@ -306,8 +368,10 @@ src/models/user.ts:3:14: error: `f64` is not a TypeScript type
   one package per run. Two files with the same module path (`dup.velt` and `dup.ts`) are an
   error, as in a package check; a declaration file (`.d.ts`) can't be passed.
 - Every finding says what TypeScript does, why Velt differs and what to write, and ends with a
-  note naming its rule, `ts-compat(<code>)`. With `--json`, each finding also carries its `code`
-  and, when the replacement is mechanical, a `fix`: `{"location", "replacement", "title"}`.
+  note naming its rule, `ts-compat(<code>)`. With `--json`, each finding also carries its `code`,
+  `ts-compat/<rule>`, and its `fixes`; `--fix` applies the mechanical ones
+  ([Lint](/docs/tooling/lint/#fixes)). `velt-allow(ts-compat/<rule>)` comments and `lint.rules`
+  in `package.velt` take the same codes.
 - A relative import must stay among the files passed (or in the `tsCompat` folders): `tsc`
   compiles every file a shared file imports.
 - An import of a std module (`velt/fs`) is an error, as std has no JavaScript runtime, except
@@ -341,7 +405,7 @@ velt init --editor vscode [--dir <dir>]
 | `lib` | a library: exports with `/** */` doc comments for `velt doc`, tests, ready for `velt publish` |
 
 The `api` and `websocket` projects depend on the `http-server` package from the Velt repository
-on GitHub, at the tag of the toolchain's release (`tag: "v0.5.0"`), so a project gets the server
+on GitHub, at the tag of the toolchain's release (`tag: "v0.6.0"`), so a project gets the server
 its toolchain was released with; a toolchain built from any other commit takes it from the
 `main` branch ([`http-server`](/docs/packages/http-server/), [git
 dependencies](/docs/tooling/packages/#git-dependencies)).
@@ -508,6 +572,25 @@ export function oldest(queue: Deque<string>): string | undefined {
 - The package declares types only; the modules run in Velt. It needs a `lib` with
   `esnext.disposable` (`"lib": ["esnext"]`, TypeScript 5.2 or newer) for `Symbol.dispose`.
 
+## `velt native`
+
+```
+velt native build [--target <triple>]
+velt native headers
+```
+
+For a package with [native code](/docs/book/native-packages/):
+
+- `velt native build` builds the package's native library for a target (default: this machine)
+  into the bundle `velt publish` uploads: the C `sources` of its `native.c` libraries, with the
+  pinned zig, for any target from any machine and reproducibly; or its Rust crate, which needs a
+  Rust toolchain. On first use it downloads zig, or takes `VELT_ZIG`. Run it on each machine
+  for a crate, and pass the results to `velt publish --native-artifacts <dir>`.
+- `velt native headers` checks the package's `declare c` functions against their C headers on
+  every target, and writes the record to `c-headers.json`, which a package used as a git
+  dependency commits. `velt publish` runs it first for a package with `native.c`. It writes no
+  file for a package with nothing to record.
+
 ## `velt toolchain`
 
 Several velt versions can be installed side by side, each in `<root>/toolchains/<version>/`
@@ -573,7 +656,9 @@ shown with control characters replaced and cut at 200 characters.
 Checks the runtime library (and, for debug builds, the shared runtime), the standard library, the linker (the bundled lld with the
 target's link kit, or the system linker and why the bundled one is not used), the installed
 target packs (`velt target`), the WebAssembly
-linker (the bundled lld, or the Rust toolchain's `rust-lld` when Rust is installed), clang, the
+linker (the bundled lld, or the Rust toolchain's `rust-lld` when Rust is installed), clang (its
+version and why it was chosen, or a warning when none compiles for this machine:
+[Which clang](/docs/tooling/platforms/#which-clang)), the
 debugger scripts (`share/velt/lldb/velt_lldb.py`, optional), that `VELT_HOME` is writable, and
 which toolchain version runs and why (`velt toolchain`), then compiles and runs a hello world
 (debug, plus release through LLVM when clang is found). On macOS it also measures how long a new
@@ -626,7 +711,12 @@ velt completions powershell >> $PROFILE                # PowerShell
 | `VELT_REGISTRY` | package registry: a directory (default `$VELT_HOME/registry`) or an `http(s)://` URL |
 | `VELT_REGISTRY_TOKEN` | a registry token sent to every registry server, overriding the tokens `velt login` stored (for CI) |
 | `VELT_CA_FILE` | PEM file of extra CA certificates to trust for `https://` registries |
-| `VELT_CLANG` | clang for the LLVM backend |
+| `VELT_CLANG` | clang for the LLVM backend; final: no other is tried (default on macOS: the newest of Homebrew's and those on `PATH`, then `/usr/bin/clang`; elsewhere `PATH`, then the standard LLVM install: [Which clang](/docs/tooling/platforms/#which-clang)) |
+| `VELT_CLANG_PROBE_LIMIT_MS` | how long a clang candidate may take to answer `--version` before it is passed over (default 30000) |
+| `VELT_JOBS` | number of threads a debug build compiles with (default: the machine's available parallelism); the output doesn't depend on it |
+| `VELT_GENERATOR_TIMEOUT` | seconds one run of the source generators may take before it is stopped and reported (default `30`; decimals allowed; `0`: no limit; a value that isn't a number warns and uses the default) |
+| `VELT_EAGER_STD` | set: load up front the standard-library modules otherwise loaded when the check finds them needed; the program built is the same |
+| `VELT_CHECK_ALL_STD` | set: check every standard-library definition the program loads, not only those it reaches |
 | `VELT_LLVM_OPT` | optimization level for release builds (clang, or `opt` for WebAssembly): `3` (default), `2`, `1`, `s` or `z` |
 | `VELT_CPU` | the CPU builds are for when `--cpu` does not say ([CPU](/docs/tooling/platforms/#cpu)); a CPU of another architecture does not apply |
 | `VELT_CPU_DISABLE` | read by programs: features (`popcnt,sse4.2`) the start-up CPU check treats as missing, to test the check ([CPU](/docs/tooling/platforms/#cpu)) |
@@ -638,7 +728,8 @@ velt completions powershell >> $PROFILE                # PowerShell
 | `VELT_STD_OBJECT` | `1`: release builds link std functions compiled once in the build cache (experimental; [build cache](#build-cache)) |
 | `VELT_RT_LIB` | runtime library (default: next to `velt`, or `<prefix>/lib` when installed) |
 | `VELT_RT_LINK` | `static`: debug builds link the static runtime instead of the shared one ([Platforms](/docs/tooling/platforms/)) |
-| `VELT_NATIVE_FROM_SOURCE` | `1`: build a package's native library from source when no prebuilt one exists ([Packages](/docs/tooling/packages/)) |
+| `VELT_NATIVE_FROM_SOURCE` | `1`: build a package's native library from source when no prebuilt one exists, also for a git dependency ([native packages](/docs/book/native-packages/)) |
+| `VELT_ZIG` | the zig that builds C `sources` and checks C headers, instead of the pinned one velt downloads on first use ([`velt native`](#velt-native)) |
 | `VELT_DEV_POLL`, `VELT_DEV_DEBUG_INFO`, `VELT_DEV_STOP_GRACE_MS` | `velt dev`: check files by polling, turn off JIT debug info (`0`), how long a stopped program may finish in-flight work in milliseconds (default 1500) ([`velt dev`](/docs/tooling/dev/)) |
 | `VELT_INSTALL_BASE_URL` | the repository whose releases the launcher, `velt toolchain install`, `velt target add` and the installers download from (default `https://github.com/velt-lang/velt`) |
 | `VELT_TOOLCHAIN` | the toolchain the launcher runs for this command: a version or a linked name, overriding the package's `velt` field ([`velt toolchain`](#velt-toolchain)) |

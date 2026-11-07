@@ -1,6 +1,6 @@
 ---
 title: "Packages"
-description: "The official Velt packages: http-server, sqlite, postgres and redis. What they are, why they are not std, and how a program depends on one."
+description: "The official Velt packages: http-server, web, sqlite, postgres, redis and cloudflare. What they are, why they are not std, and how a program depends on one."
 layout: "docs"
 category: "Packages"
 order: 5
@@ -9,9 +9,9 @@ navTitle: "Overview"
 
 # Official packages
 
-The Velt repository ships four packages next to the standard library: an HTTP server and three
-database drivers. A program imports one by its package name once its `package.velt` lists it in
-`dependencies`.
+The Velt repository ships packages next to the standard library: an HTTP server, a reference
+router on it, three database drivers, and what a program needs on Cloudflare Workers. A program
+imports one by its package name once its `package.velt` lists it in `dependencies`.
 
 | Package | What it is |
 |---|---|
@@ -19,6 +19,8 @@ database drivers. A program imports one by its package name once its `package.ve
 | [sqlite](/docs/packages/sqlite/) | Embedded SQLite with a synchronous API close to better-sqlite3, and a read-only SQLite engine written in Velt. |
 | [postgres](/docs/packages/postgres/) | A PostgreSQL client close to node-postgres: connections, a pool, transactions, batches, `COPY`. |
 | [redis](/docs/packages/redis/) | A Redis client close to ioredis: commands, pipelines, transactions and pub/sub on one multiplexed connection. |
+| [web](/docs/packages/web/) | A reference router and middleware on `http-server`: routes, sub-apps, CORS, logging, rate and body limits, compression, static files. Its API may change. |
+| [cloudflare](/docs/packages/cloudflare/) | Cloudflare's bindings (R2, D1, KV, the cache, Durable Object stubs), with `host-cloudflare`, which builds a program for Workers. |
 
 ## Why they are not std
 
@@ -28,8 +30,9 @@ driver are libraries, and each of these packages is written on public std APIs o
 any package can use: `Request`, `Response` and their server API in
 [`velt/net/http`](/docs/std/net/http/), [`velt/net/http/h2`](/docs/std/net/http/h2/),
 [`velt/dev`](/docs/std/dev/) for the graceful stop under `velt dev`, typed rows from
-[`velt/db`](/docs/std/db/), and [`velt/native`](/docs/std/native/) for the Rust half of a
-driver. So anyone can write another server or driver the same way. They live in the Velt
+[`velt/db`](/docs/std/db/), C functions through `declare c` and Rust through
+[`velt/native`](/docs/std/native/) for a driver's native code, and host functions for a
+platform's services. So anyone can write another server, driver or host package the same way. They live in the Velt
 repository's `packages/`.
 
 ## Depending on a package
@@ -61,9 +64,11 @@ await serve({ port: 8080 }, (req: Request): Response => new Response("hello"));
 `velt new <name> --template api` (and `--template websocket`) writes the `http-server`
 dependency for you, at the release tag of the `velt` that made the project.
 
-`sqlite`, `postgres` and `redis` include a Rust crate, their native code. A path dependency
-builds it with cargo the first time, so it needs a [Rust toolchain](https://rustup.rs); a git
-dependency builds it only when you allow that with `VELT_NATIVE_FROM_SOURCE=1`, since the build
-runs the package's build scripts. A package published to a registry carries prebuilt libraries,
-so its users need no Rust ([packages with native code](/docs/tooling/packages/#packages-with-native-code)).
-Each package's page has its exact entry.
+`sqlite` and `postgres` have native code: `sqlite` calls the SQLite C library, which it builds
+from source with the pinned zig, and `postgres` includes a Rust crate. A program's root
+`package.velt` must list such a dependency in `allowNative` (`allowNative: ["sqlite"]`), or the
+install fails and names the line to add. A path dependency builds the native code the first
+time (`postgres`'s with cargo, so it needs a [Rust toolchain](https://rustup.rs)); a git dependency builds it only when you allow that with `VELT_NATIVE_FROM_SOURCE=1`. A
+package published to a registry carries prebuilt libraries, so its users need neither zig nor
+Rust ([packages with native code](/docs/book/native-packages/)). `http-server`, `web`, `redis`
+and `cloudflare` are Velt code only. Each package's page has its exact entry.

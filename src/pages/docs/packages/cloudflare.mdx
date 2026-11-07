@@ -1,0 +1,229 @@
+---
+title: "cloudflare"
+description: "Run Velt programs on Cloudflare Workers with host-cloudflare, and use Cloudflare's bindings: R2, D1, KV, the cache and Durable Object stubs."
+layout: "docs"
+category: "Packages"
+order: 60
+navTitle: "cloudflare (Workers)"
+---
+
+import { Callout } from '@/components/mdx';
+
+# cloudflare
+
+Two packages put a Velt program on [Cloudflare Workers](https://developers.cloudflare.com/workers/):
+`host-cloudflare` builds and runs it there, and `cloudflare` gives it Cloudflare's bindings,
+shaped like the Workers API: [R2](https://developers.cloudflare.com/r2/),
+[D1](https://developers.cloudflare.com/d1/), [KV](https://developers.cloudflare.com/kv/), the
+[Cache API](https://developers.cloudflare.com/workers/runtime-apis/cache/) and
+[Durable Object](https://developers.cloudflare.com/durable-objects/) stubs. An
+[`http-server`](/docs/packages/http-server/) program serves on Workers with no change to its code.
+
+## A Worker
+
+Depend on the packages (from the Velt repository, like the other
+[official packages](/docs/packages/)):
+
+```ts ignore title="package.velt"
+import type { Package } from "velt/package";
+
+export const pkg: Package = {
+  name: "app",
+  version: "0.1.0",
+  dependencies: {
+    "http-server": { git: "https://github.com/velt-lang/velt", tag: "v0.6.0", path: "packages/http-server" },
+    cloudflare: { git: "https://github.com/velt-lang/velt", tag: "v0.6.0", path: "packages/cloudflare" },
+    "host-cloudflare": { git: "https://github.com/velt-lang/velt", tag: "v0.6.0", path: "packages/host-cloudflare" },
+  },
+};
+```
+
+```ts ignore title="src/main.velt"
+import { serve } from "http-server";
+import { kvNamespace } from "cloudflare";
+
+await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
+  const kv = kvNamespace("KV");
+  const name = new URL(req.url).pathname.slice(1);
+  const greeting = await kv.get(name);
+  return new Response(greeting ?? `no greeting for ${name}`);
+});
+```
+
+Build it for the Worker, then deploy with Cloudflare's `wrangler`:
+
+```sh
+velt build --release --host host-cloudflare
+cd target/velt/app-workers
+npx wrangler deploy        # or `npx wrangler dev` to run it locally
+```
+
+`velt build --host host-cloudflare` builds the program as a `wasm32-unknown-unknown` module and
+writes a directory, `target/velt/<name>-workers/` (or `-o <dir>`): `program.wasm`, the runtime's
+JavaScript glue, the host modules of the packages it uses, `worker.mjs` (the Worker's entry) and
+a `wrangler.toml`. The `wrangler.toml` is written only when there is none, so declare your
+bindings in it (`[[kv_namespaces]]` with `binding = "KV"`, and so on) and later builds keep
+your edits. The directory must be new, empty, or an earlier host build's
+([`velt build --host`](/docs/tooling/webassembly/#javascript-platforms-velt-build---host)).
+
+<Callout kind="info" title="WebAssembly builds need a source checkout">
+Release toolchains don't include the WebAssembly runtime yet, so a Workers build runs in a
+checkout of the Velt repository set up as [WebAssembly, Setup](/docs/tooling/webassembly/#setup)
+describes.
+</Callout>
+
+On Workers:
+
+- The module is instantiated on the first request, once per isolate, and `main` runs once; the
+  instance serves every later request.
+- A panic, a trap, `process.exit` or an uncaught error answers the requests in flight with 500
+  and starts a new instance on the next request.
+- Work after a response (a streamed body, a promise still running) is kept alive with the
+  request's `waitUntil`, which Cloudflare limits to 30 seconds.
+- `fetch` goes through the Worker's own `fetch`
+  ([WebAssembly](/docs/tooling/webassembly/#what-works)).
+
+## Bindings
+
+```ts ignore
+import { caches, d1Database, durableObjectNamespace, kvNamespace, r2Bucket } from "cloudflare";
+
+const bucket = r2Bucket("BUCKET");
+const db = d1Database("DB");
+```
+
+A binding is named as in the Worker's env (`binding = "BUCKET"` in `wrangler.toml`):
+`r2Bucket(name)`, `d1Database(name)`, `kvNamespace(name)`, `durableObjectNamespace(name)`, and
+`caches.default` or `await caches.open(name)` for the cache.
+
+- Making a wrapper looks nothing up: each call finds the binding in the env of the request it
+  runs in.
+- Async methods reject with `IoError`: code `ENOENT` when the env has no binding of that name
+  and kind, else the name of the error Cloudflare threw (D1's errors are `Error`, with D1's
+  message).
+- The bindings work in `--host host-cloudflare` builds only: on a native target, a call of one
+  is a compile error.
+
+### R2
+
+```ts ignore
+const put = await bucket.put("notes/a.txt", "hello", {
+  httpMetadata: { contentType: "text/plain" },
+  customMetadata: { by: "velt" },
+});
+// Create-only: null (nothing written) when the key exists.
+await bucket.put("notes/a.txt", "again", { onlyIf: { etagDoesNotMatch: "*" } });
+// Compare-and-swap: only over the version read.
+await bucket.put("notes/a.txt", "new", { onlyIf: { etagMatches: put?.etag } });
+
+const obj = await bucket.get("notes/a.txt"); // R2ObjectBody | null
+if (obj != null) {
+  const text = await obj.text(); // or bytes(), json<T>(), or the stream `obj.body`
+}
+const meta = await bucket.head("notes/a.txt"); // R2Object | null: key, size, etag, uploaded, …
+const page = await bucket.list({ prefix: "notes/", limit: 100 }); // also cursor, delimiter
+await bucket.delete(["notes/a.txt", "notes/b.txt"]);
+```
+
+`put` takes a `string` (stored as UTF-8) or a `u8[]`, and gives `null` when `onlyIf` fails. Read
+an object's body while handling the request that got the object: Workers tie it to that request.
+
+### D1
+
+```ts ignore
+struct User {
+  id: i64;
+  name: string;
+  avatar: u8[] | null;
+}
+
+await db.exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, avatar BLOB)");
+const { meta } = await db.prepare("INSERT INTO users (name, avatar) VALUES (?, ?)")
+  .bind("Ada", null)
+  .run(); // meta.changes, meta.last_row_id
+const users = await db.prepare("SELECT id, name, avatar FROM users").all<User>(); // .results, .meta
+const ada = await db.prepare("SELECT id, name, avatar FROM users WHERE id = ?").bind(1).first<User>();
+const results = await db.batch([stmt1, stmt2]); // one transaction; results[i].results<T>()
+```
+
+- `bind` takes `string`, `number`, `bool`, `null` and `u8[]` (a BLOB) for the statement's `?`,
+  in order. Bind an `i64` as `x as number`.
+- Rows become typed values as [velt/db](/docs/std/db/) reads them for every Velt database
+  driver: each column fills the field of its name (rename with `AS`), and a row that doesn't fit
+  throws `RowError`.
+- D1 gives numbers as JavaScript numbers, which integer fields take when they are integers
+  exactly (up to 2^53). D1 has no booleans, so read 0/1 into an integer field. A BLOB is a
+  `u8[]`.
+
+### KV
+
+```ts ignore
+const kv = kvNamespace("KV");
+await kv.put("greeting", "hej", { expirationTtl: 3600 }); // or { expiration } (seconds since the epoch)
+const text = await kv.get("greeting"); // string | null; getBytes(key) for u8[] | null
+const page = await kv.list({ prefix: "g", limit: 100 }); // keys, list_complete, cursor
+await kv.delete("greeting");
+```
+
+### The cache
+
+```ts ignore
+const cache = caches.default; // or await caches.open("name")
+const hit = await cache.match(request); // Response | null; a URL counts as a GET of it
+await cache.put(request, response.clone());
+await cache.delete(request);
+```
+
+Requests and responses are std's `Request` and `Response`, and bodies cross whole. The cache
+belongs to the data center that runs the Worker: `put` and `delete` reach that data center's
+cache. Purging a URL everywhere is Cloudflare's purge API, not a binding.
+
+### Durable Objects
+
+```ts ignore
+const rooms = durableObjectNamespace("ROOMS");
+const stub = rooms.get(rooms.idFromName("room-1"));
+const res = await stub.fetch("https://room/messages", { method: "POST", body: "hi" });
+```
+
+- Ids come from `idFromName(name)`, `idFromString(hex)` (an id's `toString()`) and
+  `newUniqueId()`. `idFromString` throws `IoError` for a string that isn't an id of the
+  namespace.
+- A stub's `fetch(input, init)` sends a std `Request` to the object's `fetch` handler and gives
+  a `Response`. Bodies cross whole, and a response with a status below 200 (such as a WebSocket
+  upgrade) is an `IoError` `ENOTSUP`.
+- Durable Objects written in Velt are not supported yet.
+
+### Not yet
+
+R2's ranged `get`, multipart uploads and `get` with `onlyIf`; streamed request bodies for `put`;
+KV's `getWithMetadata` and metadata; D1's `raw()` and sessions; WebSockets to Durable Objects.
+
+## Host modules
+
+`cloudflare` reaches Cloudflare through a host module of its own, JavaScript that the build
+copies into the Worker. Any package can do the same for a service the platform offers: it
+declares the functions with [`declare host("<module>")`](/docs/reference/host-functions/) and
+lists the module's JavaScript under `hostModules` in its
+[`package.velt`](/docs/tooling/manifest/):
+
+```ts ignore title="package.velt"
+hostModules: { kv: "./src/kv.mjs" },
+```
+
+```js title="src/kv.mjs"
+export default (host) => ({ get: (key) => host.env.KV.get(key) });
+```
+
+- Each file is one ES module below `./src/`, named `.mjs` or `.js`. Its default export receives
+  `host`, whose properties are the request context the host package's entry passes
+  (host-cloudflare: `host.env`, the Worker's bindings, and `host.ctx`, the request's
+  `ExecutionContext`), and returns the module's functions. Read `host.env` when a function is
+  called, not when the module is made: after an `await` the context may be another request's.
+- `velt build --host` checks that every host module the program calls is provided by exactly
+  one package, and that this package's own modules declare it. Module names `velt` and
+  `velt:…` belong to the runtime.
+
+A package's conditional imports can also pick a file for Workers alone with host-cloudflare's
+condition, `workers`: `"#store": { workers: "./src/store/workers.velt", default: "./src/store/native.velt" }`
+([conditional imports](/docs/reference/modules/#conditional-imports)).

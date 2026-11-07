@@ -1,6 +1,6 @@
 ---
 title: "WebAssembly"
-description: "Velt programs compile to WebAssembly for two hosts:"
+description: "Velt programs compile to WebAssembly for WASI runtimes and for JavaScript hosts: browsers, Node, Deno and Cloudflare Workers."
 layout: "docs"
 category: "Tooling"
 order: 90
@@ -8,18 +8,23 @@ order: 90
 
 # WebAssembly
 
-Velt programs compile to WebAssembly for two hosts:
+Velt programs compile to WebAssembly for two kinds of host:
 
 | Target | Runs in | Output |
 |---|---|---|
 | `wasm32-wasip1` (alias `wasm32-wasi`) | wasmtime, wasmer, Node's WASI, … | a WASI command module `target/velt/<stem>.wasm` |
-| `wasm32-unknown-unknown` | the browser (and Node) | `target/velt/<stem>.wasm` plus the JavaScript glue `velt_web.mjs` |
+| `wasm32-unknown-unknown` | a JavaScript host: the browser, Node, Deno, Cloudflare Workers | `target/velt/<stem>.wasm` plus the JavaScript glue `velt_web.mjs` |
 
 ```sh
 velt run --target wasm32-wasip1 hello.velt             # builds, then `wasmtime run --dir=. …`
 velt build --target wasm32-unknown-unknown hello.velt  # hello.wasm + velt_web.mjs
 velt run --target wasm32-unknown-unknown hello.velt    # runs it with node and the glue
+velt build --release --host host-cloudflare            # a Cloudflare Worker (below)
 ```
+
+`velt run --target wasm32-unknown-unknown` runs `node velt_web.mjs`, which needs node 20.16 or
+newer. `velt check --target <triple>` checks a program for either target without building it
+([`velt check`](/docs/tooling/cli/#velt-check)).
 
 ## Setup
 
@@ -57,25 +62,37 @@ The language and the standard library as on native targets, single-threaded:
 - `Math.random()` and `velt/random` work (seeded from WASI's random source, or the clocks in the
   browser); local time is UTC (`Date`'s local getters, `velt/time`'s `localParts()`), since
   there is no time zone;
+- on a JavaScript host, `fetch` goes through the host's own `fetch` (the browser's, Node's,
+  Deno's or the Worker's), with the same API and errors as natively
+  ([`fetch`](/docs/std/net/http/)). The host follows redirects, decodes compressed bodies and
+  applies its own rules (a browser's CORS and forbidden headers), and `ca` is not supported. The
+  glue provides it, so the embedder passes nothing for it;
+- on a JavaScript host, a program calls functions the host provides, sync or `async`
+  ([host functions](/docs/reference/host-functions/));
 - panics print `panic: …` and exit with 101, like native programs.
 
 Differences from native targets and Node:
 
-- Tasks that a synchronous program spawns (a `main` that isn't `async`, or top-level statements
-  without `await`) don't run: the executor runs only under an `async` program.
-- A `resolve` called later, or a shared promise settling, resumes the code waiting for it at the
-  executor's next step instead of as a microtask, so the order of output can differ from Node's.
+- `resolve()` of a `new Promise` resumes the code awaiting it as a microtask, as natively; a
+  shared promise settling resumes its waiters at the executor's next step instead, and `.then`
+  callbacks and `queueMicrotask` jobs around a later `resolve` can run in a different order from
+  Node's.
 - A promise passed where a `Promise<unknown>` is expected and kept that way (in a
   `Set<Promise<unknown>>`, say) reports its rejection as its own when nothing awaits it there,
   even if the program handled the rejection through the original
   promise. Await or `catch` the kept promise too.
 
-**Not available**: TCP, the [`http-server`](/docs/packages/http-server/) package, child
-processes and the database packages; the link fails with a note naming the missing runtime
-function. Packages with [native code](/docs/tooling/packages/#packages-with-native-code) can't
-be used (``package `sqlite` has native code, which cannot be used for WebAssembly (wasm32-wasip1)``).
+**Not available**: TCP sockets, child processes and the database packages; the link fails with
+a note naming the missing runtime function. The [`http-server`](/docs/packages/http-server/)
+package's `serve` runs only in a [`--host` build](#javascript-platforms-velt-build---host).
+Packages with [native code](/docs/book/native-packages/) can't be used (``package `sqlite` has
+native code, which cannot be used for WebAssembly (wasm32-wasip1)``). On `wasm32-wasip1`,
 `fetch` links but rejects with `IoError` `ENOTSUP` (there is no network), so code that only
 builds `Response`s runs. Browser modules have no file system.
+
+A package that needs different code on a JavaScript host keeps it in a conditional import:
+the condition `js` selects the file for `wasm32-unknown-unknown` builds, `wasm` for both
+WebAssembly targets ([conditional imports](/docs/reference/modules/#conditional-imports)).
 
 [System functions](/docs/reference/system-functions/) don't exist on WebAssembly: a program may
 declare one (so portable code can choose by platform), but a call of it is a compile error:
@@ -92,12 +109,76 @@ error: system function `lseek` is not available on wasm32-wasip1
 import { runVelt } from "./velt_web.mjs";
 const code = await runVelt(fetch("hello.wasm"), {
   write: (stream, bytes) => console.log(new TextDecoder().decode(bytes)),
+  imports: { app: { greet: (name) => `hello, ${name}` } },
 });
 ```
 
 `runVelt` instantiates the module, runs `main` and resolves to the exit code; output arrives as
-bytes per stream (1 = stdout, 2 = stderr). Run long programs in a Web Worker: `sleep`
-busy-waits, because a browser's main thread cannot block.
+bytes per stream (1 = stdout, 2 = stderr). `imports` holds the functions the program's
+[host functions](/docs/reference/host-functions/) call, by import module; a host function the
+program imports that `imports` lacks stops `runVelt` before `main` runs. `velt run` passes
+none, so a program that calls host functions needs an embedder that does.
+
+The program runs in turns of the host's event loop. While its tasks wait for a timer (`sleep`,
+`setTimeout`) or for the promise of an async host function, control is back with the host,
+which calls the program again when the timer is due or the promise settles; `sleep` and timers
+use the host's `setTimeout`. Each call returns normally, so the module stays usable (only
+`process.exit`, a panic or a trap end it at once). A program that computes for long without
+awaiting still holds the thread: run such programs in a Web Worker.
+
+A wasm program ends as a native one does: an error escaping `main` (or a non-zero exit code)
+ends it at once, whatever is still pending; after `main` returns normally, tasks started with
+`spawn`, started promises and timers keep it running until they are done, and then `runVelt`
+resolves. While the program awaits the promise of an async host function, `runVelt` stays
+pending, so a host promise that never settles keeps it pending.
+
+Embedders that drive the module themselves use `loadVelt(source, host)`: it instantiates the
+module without running it and gives `enter(f)`, which runs a call into the module
+(`exports.velt_start()` starts `main`), and `done`, the promise of the exit code (it rejects
+with what a host function threw).
+
+## JavaScript platforms: `velt build --host`
+
+A **host package** describes a JavaScript platform: its target, a condition for conditional
+imports, its entry module and the configuration files to start from. `velt build --host
+<package>` builds the program for the platform of a host package among its dependencies.
+`host-cloudflare`, for Cloudflare Workers, is the first ([cloudflare](/docs/packages/cloudflare/)):
+
+```sh
+velt build --release --host host-cloudflare
+cd target/velt/app-workers && npx wrangler deploy
+```
+
+- The build is for the host package's target (`wasm32-unknown-unknown`); a `--target` naming
+  another is an error. The program's conditional imports get the host package's condition
+  (`workers` for host-cloudflare) on top of `wasm` and `js`.
+- The output is a directory, `target/velt/<name>-<condition>/` (or `-o <dir>`), holding
+  `program.wasm`, the runtime's glue, the host modules of packages, the host package's entry
+  (host-cloudflare: `worker.mjs`) and its configuration files (host-cloudflare: `wrangler.toml`),
+  which are written only when absent, so your edits are kept. The directory must be new, empty,
+  or an earlier host build's: the build never writes over other files.
+- A build without `--release` warns. `velt run --host` is an error: run the output with the
+  platform's own tools (`npx wrangler dev`).
+- Every host module the program calls must come from exactly one package that lists it under
+  `hostModules` in its manifest ([host modules](/docs/packages/cloudflare/#host-modules)).
+
+[`http-server`](/docs/packages/http-server/#on-a-js-host-velt-build---host)'s `serve` runs
+on every such platform with no change to the program. A host package is an ordinary package
+whose [`package.velt`](/docs/tooling/manifest/) has a `host` field, so a new platform needs no
+change to the compiler:
+
+```ts ignore title="package.velt"
+host: {
+  target: "wasm32-unknown-unknown",
+  condition: "workers",
+  entry: "./src/worker.mjs",
+  scaffold: { "wrangler.toml": "./src/wrangler.toml" },
+},
+```
+
+The entry is the platform's adapter over the glue's
+`createServer(module, { modules }).serve(request, { context, waitUntil, remoteAddr })`, and
+`{{name}}` in a scaffolded file becomes the program's name.
 
 ## The playground
 

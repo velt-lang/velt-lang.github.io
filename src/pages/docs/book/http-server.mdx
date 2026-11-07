@@ -33,11 +33,11 @@ import type { Package } from "velt/package";
 export const pkg: Package = {
   name: "todo",
   version: "0.1.0",
-  velt: "0.5",
+  velt: "0.6",
   dependencies: {
     "http-server": {
       git: "https://github.com/velt-lang/velt",
-      tag: "v0.5.0", // the release of your velt (`velt --version`)
+      tag: "v0.6.0", // the release of your velt (`velt --version`)
       path: "packages/http-server",
     },
   },
@@ -240,8 +240,15 @@ What to notice:
 - The handler's second argument, `info: ServeInfo`, says who connected:
   `info.remoteAddr.hostname` and `info.remoteAddr.port`.
 - A handler that throws gets a `500 Internal Server Error`, and its error is printed to stderr.
+  So does a handler that panics (an index out of bounds, say): the server keeps serving the
+  other requests.
+- `serveFile(req, path)` answers with a file, with `ETag`, 304, `Range` and HEAD handled, and
+  `resolveUnder(root, urlPath)` maps a URL path to a file under a directory without letting it
+  out ([Files](/docs/packages/http-server/#files-servefile-and-resolveunder)).
 
 The [http-server reference](/docs/packages/http-server/) has every option, limit and timeout.
+For routes with parameters, middleware (CORS, logging, rate limits, compression) and static
+files, the [`web`](/docs/packages/web/) reference package builds on the same handlers.
 
 ## Testing it
 
@@ -337,6 +344,22 @@ ones; `await server.shutdown()` also waits for them. Under
 [`velt dev`](/docs/book/hot-reload/), a change to a handler's code is swapped into the running
 server, and a change that needs a restart lets in-flight requests finish first; the listening
 socket stays open, so no request is refused.
+
+## Deploying to Cloudflare Workers
+
+The same program runs on Cloudflare Workers, with no change to its code. Add the
+`host-cloudflare` package to the dependencies and build for it:
+
+```sh
+velt build --release --host host-cloudflare
+cd target/velt/todo-workers && npx wrangler deploy
+```
+
+There `serve` takes its requests from the Worker instead of a port, and the
+[`cloudflare`](/docs/packages/cloudflare/) package gives the program KV, D1, R2 and the cache in
+place of local files. A Worker starts a fresh instance when it needs one, so keep state that
+must last in one of those rather than in module state
+([On a JS host](/docs/packages/http-server/#on-a-js-host-velt-build---host)).
 
 ## Databases
 

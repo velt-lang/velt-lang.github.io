@@ -271,7 +271,9 @@ something allocated fails with `FAILED <file> (N blocks not freed)`, and one who
 reported no counts (a runtime without the debug counters) with `no block counts on its stderr`.
 Close every server and
 connection a test opens: one still running 120 s after the file's tests fails the file as
-`still running … after its tests`.
+`still running … after its tests`. A file in which a panic was caught (by
+[`catchPanic`](/docs/std/task/), or by `http-server` answering a handler's panic with a 500)
+skips the leak check, since a caught panic leaks on purpose.
 
 ## How tests are built
 

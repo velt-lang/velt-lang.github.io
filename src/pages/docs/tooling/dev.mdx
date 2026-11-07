@@ -90,7 +90,9 @@ release `velt`, other builds running on the machine):
 The time includes a 30 ms settle delay after the last write.
 
 `-v` prints how long each build stage took; `--timings` also splits the JIT stage into compiling,
-finalizing, registering unwind information and building the debug-info image.
+finalizing, registering unwind information and building the debug-info image. Builds compile
+on every core; `VELT_JOBS` sets
+the number of threads ([`velt build`](/docs/tooling/cli/#velt-build-and-velt-run)).
 
 ## Limits
 

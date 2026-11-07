@@ -1,0 +1,217 @@
+---
+title: "web"
+description: "A reference router and middleware on http-server: routes with parameters, sub-apps, typed per-request variables, CORS, logging, rate and body limits, compression, static files."
+layout: "docs"
+category: "Packages"
+order: 50
+---
+
+import { Callout } from '@/components/mdx';
+
+# web
+
+A small router and middleware on [`http-server`](/docs/packages/http-server/), over the Fetch
+types: method routes with path parameters and wildcards, sub-apps, onion middleware, typed
+per-request variables, error and not-found handlers, and the middleware `cors`, `logger`,
+`requestId`, `rateLimit`, `bodyLimit`, `compress` and `serveStatic`.
+
+<Callout kind="warn" title="A reference package">
+`web` is held to full quality, but it is a reference: read it as the guide to building a
+framework on `http-server`. Its API may change until it is promoted to a supported framework.
+Its [README](https://github.com/velt-lang/velt/blob/v0.6.0/packages/web/README.md) is the full
+API; this page gives the shape and what to watch for.
+</Callout>
+
+## Adding it to a program
+
+Like the other [official packages](/docs/packages/), `web` lives in the Velt repository's
+`packages/`. Depend on it, and on `http-server`, from there:
+
+```ts ignore title="package.velt"
+import type { Package } from "velt/package";
+
+export const pkg: Package = {
+  name: "app",
+  version: "0.1.0",
+  dependencies: {
+    "http-server": { git: "https://github.com/velt-lang/velt", tag: "v0.6.0", path: "packages/http-server" },
+    web: { git: "https://github.com/velt-lang/velt", tag: "v0.6.0", path: "packages/web" },
+  },
+};
+```
+
+## An app
+
+```ts ignore title="src/main.velt"
+import { serve } from "http-server";
+import { App, cors, logger } from "web";
+
+struct Vars {
+  user: string;
+}
+
+const app = new App<Vars>(() => ({ user: "anonymous" }));
+app.use(logger());
+app.use(cors());
+app.around(async (c, next) => {
+  c.vars.user = c.req.headers.get("x-user") ?? c.vars.user;
+  return await next(c);
+});
+app.get("/users/:id", async (c) => c.json({ id: c.param("id"), by: c.vars.user }));
+app.post("/users", async (c) => c.text("made", 201));
+
+const handler = app.handler();
+await serve({ port: 8080 }, (req: Request) => handler(req));
+```
+
+`App<V>` takes a function that makes each request's variables (`c.vars`), typed by `V`.
+`app.handler()` builds the routes and middleware once and gives a plain
+`(req: Request) => Promise<Response>` for `serve`.
+
+## Routes
+
+`app.get`, `post`, `put`, `patch`, `delete` and `on(method, …)` add a route. A pattern is
+segments between slashes:
+
+| Segment | Matches | Read with |
+|---|---|---|
+| `users` | exactly that segment | |
+| `:id` | one non-empty segment | `c.param("id")`, percent-decoded |
+| a last `*` | the rest of the path, also nothing | `c.param("*")` |
+
+- A literal beats a parameter, which beats a wildcard, and a lookup goes back to the next choice
+  when the first leads nowhere. HEAD takes GET's route when it has none of its own.
+- A path with no route gets the not-found answer (404 by default, `app.notFound(…)`); a path with
+  routes for other methods gets 405 with `Allow`. `/a` and `/a/` are different paths.
+- `app.route("/api", sub)` mounts another `App` with the same variables on a prefix, its
+  middleware inside this app's. A `/` ending the prefix doesn't count, and the sub-app's `/` is
+  the prefix alone: `/api`, not `/api/`.
+- A handler gets a `Context`: `c.req`, `c.path`, `c.vars`, `c.param(name)`, `c.query(name)`, and
+  `c.text`, `c.html`, `c.json` and `c.redirect` for a response.
+
+### The path
+
+Routes, middleware prefixes, `c.path` and `serveStatic` read one canonical path (`pathOf`,
+exported), so an escape, a dot segment or a `\` doesn't get past a check made on another
+spelling: `\` is `/`, `.` and `..` segments are removed, and each character has one spelling
+(`/%61dmin` is `/admin`; `%2F` stays encoded, inside its segment). Decide on `c.path`, not on
+`c.req.url`, which is what the client sent.
+
+- **Case isn't folded.** On a case-insensitive disk (Windows, and macOS by default) a prefix
+  doesn't guard files under `serveStatic`: `/PRIVATE/s.txt` isn't under `/private`, but the disk
+  gives `serveStatic` the file `private/s.txt` for it. Keep files a prefix protects outside
+  `serveStatic`'s root.
+- **A parameter is data the client chose.** Once decoded it can hold `/` and `..`, so don't join
+  one to a file path: use `resolveUnder` ([http-server](/docs/packages/http-server/#files-servefile-and-resolveunder))
+  or `serveStatic`.
+
+## Middleware
+
+A middleware is a plain function from the handler it wraps to a new handler, over the Fetch
+types, so it works on bare `serve` too: `serve(opts, poweredBy("velt")(handler))`.
+
+```ts ignore
+import { Handler, Middleware } from "web";
+
+function poweredBy(name: string): Middleware {
+  return (next: Handler): Handler => async (req: Request): Promise<Response> => {
+    const res = await next(req);
+    res.headers.set("x-powered-by", name);
+    return res;
+  };
+}
+```
+
+- **`app.use(mw, prefix?)`** wraps the whole app, for every request under the prefix, routed or
+  not. The first added is the outermost. It runs before routing and has no context.
+- **`app.around((c, next) => …, prefix?)`** runs after routing and sees the context. It wraps
+  the routes added after it and the not-found answer, calls `await next(c)` for the rest of the
+  onion, and can change the response or answer without calling it.
+- A prefix ends on a segment boundary: `/api` covers `/api` and `/api/x`, not `/apix`.
+- A plain middleware can't be applied inside one route: a route that captures a handler a plain
+  middleware made (`const h = bodyLimit(5)(ok)`, then `(c) => h(c.req)`) panics in
+  `handler()`. Apply it to part of an app with a prefix: `app.use(bodyLimit(5), "/upload")`.
+- What a handler or middleware throws goes to `app.onError((e, c) => …)` (by default logged,
+  then a 500). A panic isn't an error: `serve` answers it with a 500.
+
+| Middleware | Does |
+|---|---|
+| `cors(options?)` | answers preflights (204) and marks responses for the origins allowed; never sends credentials with `*` |
+| `logger(write?)` | a line per request when its head is ready, `GET /a 200 3ms`, with the canonical path and no query (which may hold secrets) |
+| `requestId(options?)` | an identifier on the request and response headers; a client's is kept only if it is safe to log |
+| `rateLimit({ limit, windowMs, key, maxKeys? })` | requests per key per fixed window, shared by all requests; 429 with `Retry-After` and `RateLimit-*` headers |
+| `bodyLimit(maxBytes)` | 413 for a request body over the limit, holding no more than the limit |
+| `compress(options?)` | response bodies in Brotli or gzip, as `Accept-Encoding` prefers, streamed |
+| `serveStatic(root, options?)` | files under `root`, with `serveFile`'s validators, 304 and `Range`; passes on what it has no file for |
+
+A callback a middleware takes (`logger`'s `write`, `rateLimit`'s `key` and `now`) gets its own
+copy of what it captures on each call, like a handler, and a change to that copy is lost:
+`logger((l) => { lines.push(l); })` leaves `lines` empty. Write to something shared, such as
+`shared(new Mutex<string[]>([]))`.
+
+### `rateLimit`
+
+- Apply it to the app or to a prefix, not inside a route: a limiter built inside a route gets a
+  new table on each request and never limits.
+- `key` takes only the `Request`, which doesn't hold the client's address. To count by address,
+  set a header from `info.remoteAddr.hostname` in `serve`'s handler, overwriting what the client
+  sent under that name, and key on it. Don't key on `x-forwarded-for` or `forwarded` unless a
+  proxy you control sets them: a client could send a new value with each request.
+- The table holds at most `maxKeys` keys (default 100,000), and a key over 256 characters is
+  kept as its hash. When the table is full and no window has ended, a new key gets a 429 until
+  one has; the keys held go on being counted, since dropping a live window would hand a client
+  its allowance back. The cost: a client who can vary the key can fill the table in about a
+  second and hold new keys out for the rest of the window, again each window, and a long window
+  makes that worse. Key on what a client can't vary at will: the address, and for IPv6 its /64.
+
+```ts ignore
+import { serve, ServeInfo } from "http-server";
+import { App, rateLimit } from "web";
+
+const app = new App<number>(() => 0);
+app.use(
+  rateLimit({
+    limit: 100,
+    windowMs: 60000,
+    key: (req) => req.headers.get("x-client-address") ?? "unknown",
+  }),
+);
+const handler = app.handler();
+await serve({ port: 8080 }, (req: Request, info: ServeInfo) => {
+  const headers = new Headers(req.headers);
+  headers.set("x-client-address", info.remoteAddr.hostname);
+  return handler(new Request(req, { headers }));
+});
+```
+
+### `bodyLimit`
+
+`bodyLimit(maxBytes)` answers 413 for a body over the limit, by its `Content-Length` or while it
+arrives, and holds no more than the limit. A GET or HEAD with a chunked body within the limit
+reaches its route without the body.
+
+### `compress`
+
+`compress(options?)` compresses response bodies with Brotli or gzip, whichever the request's
+`Accept-Encoding` prefers by q-value (Brotli on a tie; `*` counts; `q=0` refuses). It goes
+outside the middleware whose responses it compresses: `app.use(compress())` first, or
+`serve(opts, compress()(handler))`.
+
+- Options: `encodings` (default Brotli quality 4, then gzip level 6, the levels for dynamic
+  responses; any `Encoding` from [velt/compress](/docs/std/compress/) or a package) and
+  `threshold` (default 1024 bytes).
+- Left alone: HEAD; 204, 206 and 304; bodies already encoded; `Cache-Control: no-transform`;
+  types that don't compress (images, video, archives); and bodies under the threshold, by their
+  `Content-Length`, or by their first chunk without one, so a stream is never held back.
+- A compressed response drops `Content-Length` and `Accept-Ranges`, and a strong `ETag` becomes
+  weak. `Vary: Accept-Encoding` is set on every response of a type that compresses.
+- Bodies stream through the encoder with backpressure. `text/event-stream` is flushed after every
+  chunk, so each event arrives when it is sent.
+
+## Building a framework on `http-server`
+
+The README's last section lists what the package had to get right, in the order you will meet
+it: handlers copy what they capture per request (so route tables go in `shared(...)`), a router
+holds no functions, middleware is composed once, the context is passed rather than captured,
+and state between requests needs an explicit home (`shared(new Mutex(…))`, an `Atomic`, a
+`ConcurrentMap`). Read it before writing a framework of your own.

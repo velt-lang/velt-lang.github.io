@@ -17,7 +17,13 @@ LSP client; the repository ships a Visual Studio Code extension in `editors/vsco
 - **Diagnostics** from the parser, the module loader and the type checker, as you type. Unsaved
   changes of other open files are taken into account. A standard library file opened from the
   toolchain (go to definition into `velt/fs`, say) is checked as that std module, as it is when
-  your program imports it.
+  your program imports it. What [source generators](/docs/reference/source-generators/) report
+  (`JSON.parse` into a type it cannot decode, say) follows a moment later: they run in the
+  background after the file is checked, never delaying hover or completion, and their output is
+  cached, so after their first run an edit costs one more check. Their findings stay until the
+  next run replaces them. Generator modules are read from disk, so an edit to a generator takes
+  effect when it is saved. A variant of a [conditional import](/docs/reference/modules/#conditional-imports) is
+  checked for a target whose build uses it (`js.velt` as `wasm32-unknown-unknown`).
 - **Formatting** with [`velt fmt`](/docs/tooling/fmt/).
 - **Navigation**: document outline, go to definition (also through `ns.x` namespace imports and
   re-exports, landing on the original declaration), find references, rename, document highlight
@@ -76,13 +82,17 @@ LSP client; the repository ships a Visual Studio Code extension in `editors/vsco
   such as `push` are not marked), which you can style.
 - **Quick fixes** for compiler errors: remove `mut`, turn
   `"a" + xs` (a string and a value `+` does not convert, such as an array) into a template
-  literal, replace `export default` with a named export, add `await`
+  literal, add `await`
   or `spawn(...)` to a floating promise, add `async` to a method whose promise must carry
   its errors, and import a name the file uses without importing it ("Import `readFile` from
   `velt/fs`", one fix per module that exports it). A fix that applies in several places is
   also offered as "Fix all in file", and **Fix all** (`source.fixAll`, e.g. on save) applies every preferred
   fix of the file.
 
+- **Performance hints**: the findings of [`velt check --perf`](/docs/tooling/lint/) that need no
+  optimizer run (`perf/dynamic-record`, `perf/class-as-data`, `perf/foreach-capture`) show as
+  hints with quick fixes, at the level `lint` in `package.velt` sets; the fixes that keep the
+  behaviour are preferred and included in **Fix all**. `velt-allow` comments silence them.
 - **Code shared with TypeScript**: in a file inside one of the package's
   [`tsCompat`](/docs/tooling/manifest/#tscompat) folders, the findings of
   [`velt check --ts-compat`](/docs/tooling/cli/#code-shared-with-typescript---ts-compat) appear as you type,
