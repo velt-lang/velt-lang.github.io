@@ -55,7 +55,7 @@ console.log(a.v, c.v, a == b, a == c);   // 2 3 true false
 ```
 
 ```mermaid title="a and b refer to one object; c is a deep copy"
-flowchart TD
+flowchart LR
     a([a]) --> box["Box { v: 2 }"]
     b([b]) --> box
     c([c]) --> copy["Box { v: 3 }"]

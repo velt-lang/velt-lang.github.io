@@ -188,14 +188,14 @@ back, so `finally` blocks and `using` disposal run as usual
 ```mermaid title="The first error aborts the siblings; the scope settles once all have finished"
 sequenceDiagram
     participant S as taskScope
-    participant A as Task a
-    participant B as Task b
-    S->>A: scope.spawn
-    S->>B: scope.spawn
+    participant A as One task
+    participant B as Sibling
+    S->>A: spawn
+    S->>B: spawn
     A-->>S: throws
-    S->>B: aborts scope.signal
-    B-->>S: signal.throwIfAborted() stops it
-    Note over S: Fails with the error from task a
+    S->>B: abort signal
+    B-->>S: stops
+    Note over S: Fails with<br/>the first error
 ```
 
 ## Using every core with `spawn`

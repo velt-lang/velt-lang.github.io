@@ -11,7 +11,7 @@ const css = readFileSync(resolve(import.meta.dirname, '../styles/global.css'), '
 describe('mermaid theme', () => {
     // A token renamed in global.css would otherwise give diagrams an empty color.
     it('uses only design tokens that exist', () => {
-        const tokens = new Set([...css.matchAll(/^\s*--color-([\w-]+):/gm)].map((m) => m[1]));
+        const tokens = new Set([...css.matchAll(/^\s*(--color-[\w-]+):/gm)].map((m) => m[1]));
         const missing = Object.values(mermaidColors).filter((token) => !tokens.has(token));
         expect(missing).toEqual([]);
     });

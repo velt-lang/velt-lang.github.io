@@ -7,42 +7,43 @@
  */
 import { configureMermaid } from '@sigx/mermaid';
 
-/** mermaid theme variable → design token (`--color-<token>` in global.css). */
+/**
+ * mermaid theme variable → design token in global.css. The names are written
+ * out in full because Tailwind keeps a token in the build only if it finds the
+ * name in the source.
+ */
 export const mermaidColors = {
-    primaryColor: 'card',
-    primaryTextColor: 'fg',
-    primaryBorderColor: 'violet',
-    secondaryColor: 'tab',
-    secondaryTextColor: 'fg',
-    secondaryBorderColor: 'line-3',
-    tertiaryColor: 'surface',
-    tertiaryTextColor: 'fg-2',
-    tertiaryBorderColor: 'line-3',
-    lineColor: 'muted',
-    textColor: 'fg-2',
-    edgeLabelBackground: 'surface',
-    clusterBkg: 'surface',
-    clusterBorder: 'line-3',
-    noteBkgColor: 'tab',
-    noteTextColor: 'fg-2',
-    noteBorderColor: 'line-3',
-    actorBkg: 'card',
-    actorBorder: 'violet',
-    actorTextColor: 'fg',
-    actorLineColor: 'line-3',
-    signalColor: 'muted',
-    signalTextColor: 'fg-2',
-    activationBkgColor: 'tab',
-    activationBorderColor: 'violet',
+    primaryColor: '--color-card',
+    primaryTextColor: '--color-fg',
+    primaryBorderColor: '--color-violet',
+    secondaryColor: '--color-tab',
+    secondaryTextColor: '--color-fg',
+    secondaryBorderColor: '--color-line-3',
+    tertiaryColor: '--color-surface',
+    tertiaryTextColor: '--color-fg-2',
+    tertiaryBorderColor: '--color-line-3',
+    lineColor: '--color-muted',
+    textColor: '--color-fg-2',
+    edgeLabelBackground: '--color-surface',
+    clusterBkg: '--color-surface',
+    clusterBorder: '--color-line-3',
+    noteBkgColor: '--color-tab',
+    noteTextColor: '--color-fg-2',
+    noteBorderColor: '--color-line-3',
+    actorBkg: '--color-card',
+    actorBorder: '--color-violet',
+    actorTextColor: '--color-fg',
+    actorLineColor: '--color-line-3',
+    signalColor: '--color-muted',
+    signalTextColor: '--color-fg-2',
+    activationBkgColor: '--color-tab',
+    activationBorderColor: '--color-violet',
 } as const;
 
 function tokenVariables(): Record<string, string> {
     const styles = getComputedStyle(document.documentElement);
     return Object.fromEntries(
-        Object.entries(mermaidColors).map(([name, token]) => [
-            name,
-            styles.getPropertyValue(`--color-${token}`).trim(),
-        ]),
+        Object.entries(mermaidColors).map(([name, token]) => [name, styles.getPropertyValue(token).trim()]),
     );
 }
 
@@ -59,5 +60,7 @@ configureMermaid({
             }),
         },
     },
+    // Narrower than mermaid's defaults, so the text stays readable on phones.
+    config: { sequence: { width: 96, height: 44, actorMargin: 24, boxMargin: 8, diagramMarginX: 8 } },
     resolveColorScheme: () => 'dark',
 });
