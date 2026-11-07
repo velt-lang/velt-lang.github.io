@@ -110,6 +110,22 @@ const Notes = component<{ release: Release; preview: boolean }>(({ props }) => (
                                     <CodeCard title={h.code.file} code={h.code.src} />
                                 </div>
                             )}
+                            {h.uses && (
+                                <div class="flex min-w-0 basis-full flex-col gap-3 border-t border-line pt-6">
+                                    <span class="font-mono text-xs uppercase tracking-[0.08em] text-muted">The packages already build on it</span>
+                                    <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
+                                        {h.uses.map((u) => (
+                                            <a key={u.name} href={u.href} class="flex flex-col gap-1.5 rounded-xl border border-line-2 bg-bg-raised p-5 text-fg hover:border-line-3 hover:text-fg">
+                                                <span class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                                                    <span class="font-mono text-[15px] font-semibold">{u.name}</span>
+                                                    <span class="text-xs font-semibold uppercase tracking-[0.04em] text-green">{u.stat}</span>
+                                                </span>
+                                                <span class="text-sm text-fg-3">{ic(u.text)}</span>
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </article>
                     ))}
                 </section>

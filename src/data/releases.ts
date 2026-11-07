@@ -31,6 +31,8 @@ export interface Highlight {
     code?: { file: string; src: string };
     href?: string;
     link?: string;
+    /** Who already builds on it: shown as a row of cards under the highlight. */
+    uses?: { name: string; text: string; stat: string; href: string }[];
 }
 
 export interface ChangeGroup {
@@ -59,14 +61,37 @@ export const RELEASES: Release[] = [
         date: '2026-11-07',
         title: 'C libraries, JavaScript hosts, and more of TypeScript',
         summary:
-            'Call C directly from Velt, deploy the same server to Cloudflare Workers, and write default exports, decorators and operators as you would in TypeScript. Velt files are now `.velt`.',
+            'Use any C library straight from Velt (the packages already do), deploy the same server to Cloudflare Workers, and write default exports, decorators and operators as you would in TypeScript. Velt files are now `.velt`.',
         glance: [
+            { title: 'Any C library', text: 'One `declare c` away, and the packages use it.', href: '#call-c' },
             { title: '`.velt` files', text: 'So GitHub recognises and highlights Velt.', href: '#velt-files' },
-            { title: 'Call C', text: '`declare c`, checked against the C headers.', href: '#call-c' },
             { title: 'Cloudflare Workers', text: 'One `serve(...)` program, native or on a JS host.', href: '#js-hosts' },
             { title: 'More TypeScript', text: 'Default exports, decorators, operators.', href: '#typescript' },
         ],
         highlights: [
+            {
+                id: 'call-c',
+                kind: 'new',
+                title: 'Any C library is one declaration away',
+                body: 'Velt talks to C directly now. Declare a function from any library with a C header and call it: databases, compression, image and audio codecs, system APIs. No wrapper language, no build script, no Rust toolchain. `velt/ffi` covers pointers, buffers, C strings and out-parameters, and C structs and constants work too.',
+                aside: 'Every call is checked against the library’s real C headers, and bundled C sources build with a pinned compiler on every platform. You stay in control: a dependency with native code only builds if your `package.velt` lists it in `allowNative`, and `velt check` lists every unsafe place for review.',
+                code: {
+                    file: 'abs.velt',
+                    src: `[[k:declare]] [[f:c]]([[s:"c"]]) [[k:function]] [[f:llabs]](x: [[t:i64]]): [[t:i64]];
+
+[[k:export function]] [[f:absolute]](x: [[t:i64]]): [[t:i64]] {
+  [[c:// SAFETY: \`llabs\` takes any \`long long\` but LLONG_MIN.]]
+  [[k:return unsafe]] { [[f:llabs]](x) };
+}`,
+                },
+                href: '/docs/book/native-packages/',
+                link: 'Native packages',
+                uses: [
+                    { name: 'sqlite', stat: '35 C functions', text: 'Calls the real SQLite engine through `declare c`, compiled from the bundled SQLite 3.53.2. No Rust crate any more.', href: '/docs/packages/sqlite/' },
+                    { name: 'cloudflare', stat: '24 host functions', text: 'The same idea for JavaScript hosts: `declare host` binds R2, D1, KV, the cache and Durable Objects on Workers.', href: '/docs/packages/cloudflare/' },
+                    { name: 'redis', stat: 'No native code', text: 'Written in plain Velt, so it needs no `allowNative` entry at all.', href: '/docs/packages/redis/' },
+                ],
+            },
             {
                 id: 'velt-files',
                 kind: 'breaking',
@@ -81,24 +106,6 @@ src/
   main.velt         [[c:// was main.vlt]]
   routes.velt`,
                 },
-            },
-            {
-                id: 'call-c',
-                kind: 'new',
-                title: 'Call C libraries directly',
-                body: 'A package can declare C functions, constants and structs with `declare c` and call them from `unsafe` code, with `velt/ffi` for pointers, buffers and strings. Calls are checked against the library’s C headers, and C sources build with a pinned compiler.',
-                aside: 'You stay in control: a dependency with native code only builds if your `package.velt` lists it in `allowNative`, and `velt check` lists every unsafe place for review. `sqlite` uses this now, and `redis` has no native code at all.',
-                code: {
-                    file: 'abs.velt',
-                    src: `[[k:declare]] [[f:c]]([[s:"c"]]) [[k:function]] [[f:llabs]](x: [[t:i64]]): [[t:i64]];
-
-[[k:export function]] [[f:absolute]](x: [[t:i64]]): [[t:i64]] {
-  [[c:// SAFETY: \`llabs\` takes any \`long long\` but LLONG_MIN.]]
-  [[k:return unsafe]] { [[f:llabs]](x) };
-}`,
-                },
-                href: '/docs/book/native-packages/',
-                link: 'Native packages',
             },
             {
                 id: 'js-hosts',
