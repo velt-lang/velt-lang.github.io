@@ -271,7 +271,8 @@ uses, and run concurrently on every core ([Building an HTTP server](/docs/book/h
 
 ## Modules
 
-Modules work like TypeScript's ES modules, with named exports only:
+Modules work like TypeScript's ES modules, default exports included (the standard library has
+named exports only):
 
 ```ts
 import * as path from "velt/path";            // namespace import: path.join, path.basename, …

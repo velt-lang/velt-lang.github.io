@@ -26,27 +26,71 @@ Each file is a module. `export` marks functions, classes, structs, interfaces, t
 constants as importable; everything else is private to the file (``` `x` is not exported ```). `export { a, b as c };` exports names under the
 listed names.
 
-- Named exports only: `export default` is an error whose fix is a named export
-  (`export function name`, or `export { name };`), and so is a default import
-  (`import x from`).
 - `extend` blocks cannot be exported: they apply wherever their module is loaded.
+- A module-level declaration may destructure, in every form a local one has:
+  `export const { render, a = 1, ...rest } = renderer;`, `export const [x, ...xs] = gen();`.
+
+### Default exports
+
+A module may have one default export, as in TypeScript:
+
+```ts
+export default function greet(name: string): string {
+  return `hello ${name}`;
+}
+
+console.log(greet("ada")); // hello ada
+```
+
+- `export default` takes a declaration (`function`, `class`, `abstract class`, `struct`,
+  `interface`), an anonymous function or class, or an expression (`export default { a: 1 };`,
+  evaluated once, in module order). Overloads of a default function each say
+  `export default`, as in TypeScript.
+- `export default x;` reads `x` when it runs, so a later change of a `let` doesn't show (also
+  when `x` is an imported `let`); `export { x as default }` stays live. A `const` or class
+  declared below `export default x;` is an error, as in TypeScript (Node throws a
+  `ReferenceError`).
+- `export default enum E {}` works in a `.velt` file only. In a `.ts` or `.tsx` file it is an
+  error, as in TypeScript: declare the enum, then `export default E;`.
+- `export default interface I` may stand next to a value default (a function, a class,
+  `export { v as default }`) and gives `default` its type meaning. Next to
+  `export default expr;` it is an error (TypeScript's TS2528). With a class of the same name,
+  the class is the type (Velt doesn't merge an interface into a class).
+- `export default function main()` in a root file without top-level statements is the
+  program's entry point, as `function main()` is ([Scripts](#scripts-top-level-statements)).
+- The standard library has named exports only: `import * as fs from "velt/fs"`, not
+  `import fs from "velt/fs"`.
 
 ## Imports
 
 ```ts ignore
 import { a, b as c } from "…";     // binds exported names
+import x from "…";                 // binds the module's default export
+import x, { y } from "…";          // both
+import x, * as ns from "…";        // the default and the namespace
+import { default as x } from "…";  // the default, by its name
 import * as ns from "…";           // binds the module as a namespace
 import type { T } from "…";        // names for type positions only
+import type C from "…";            // the default, for type positions only
 import { type T, f } from "…";     // the same, for one name
 import "…";                        // loads a module without binding names
 ```
+
+A default import of a module without a default export is an error that lists what the module
+exports. There is no `esModuleInterop` default made up from a module's named exports.
+`import type C, { D } from "…"` is an error, as in TypeScript (TS1363).
 
 A namespace reaches the module's exports through `ns`: `ns.f()`, `ns.LIMIT`, `new ns.Class()`,
 `ns.Enum.Member`, `ns.Class.make()`, and `ns.Type` in type positions. `ns` itself is not a
 value; a local variable named `ns` shadows it.
 
 A name imported with `type` is for type positions only; using one as a value is an error. Types
-are compile-time only either way, so this changes no code, as in TypeScript.
+are compile-time only either way, so this changes no code, as in TypeScript, and a module
+imported only with `import type` (`{ T }`, a default or `* as ns`) is not evaluated.
+
+A read of a default export or of a module-level `let` before its initializer has run is a
+compile error where the read always runs. In a branch that may not run, it stops the program
+with Node's `ReferenceError` if it does run.
 
 A dynamic `import(…)` is an error: every module is loaded while compiling, so import it with a
 static `import` instead.
@@ -241,9 +285,24 @@ register("trim"); // runs when a module imports registry.ts
 ## Re-exports
 
 Re-exports make one module the public face of others: `export { x, y as z } from "…"`,
-`export type { T } from "…"`, and `export * from "…"` (every export of that module; a name the
-module exports itself or lists by name wins). Re-exports bind nothing in the re-exporting
-module; importers get the original declaration, and go-to-definition lands there too.
+`export type { T } from "…"`, and `export * from "…"` (every export of that module except
+`default`, as in Node; a name the module exports itself or lists by name wins). Re-exports bind
+nothing in the re-exporting module; importers get the original declaration, and go-to-definition
+lands there too.
+
+```ts ignore
+export { default } from "./greet";           // re-exports greet's default as this module's
+export { default as Point } from "./point";  // a default under a name
+export { area as default } from "./circle";  // a named export as the default
+export * as shapes from "./shapes";          // the module as a namespace export
+export * as default from "./config";         // the module as the default
+```
+
+`export * as ns from "…"` exports the module as one namespace, which importers reach as
+`ns.x` (`import { ns }`, then `ns.area(1)`), also nested and through import cycles
+(`a.b.a.x`). A namespace import can be exported too: `import * as ns from "…"`, then
+`export { ns }` or `export default ns`. A name exported twice is an error, these forms
+included.
 
 ## Types and values of one name
 
@@ -329,8 +388,9 @@ console.log(s.ends[1].x, s.length); // 3 5
 - An exported namespace is imported and re-exported by its name, like a type
   (`import { type Geo } from "./geo"`, `export type { Geo } from "./geo"`), and through
   `import * as m` as `m.Geo.Point`.
-- `declare global { namespace JSX { … } }` declares the namespace in its module, as a
-  `declare namespace` (a global visible in other modules is not supported yet).
+- A namespace in `declare global { … }` is global: `N.T` names a member another module declared
+  there (`declare global { namespace JSX { … } }`), unless the module declares or imports an `N`
+  of its own.
 - A namespace holds type aliases, interfaces and namespaces. Values in a namespace (`const`,
   `function`, `class`, `enum`: a run-time object in TypeScript) are not supported yet.
 
@@ -343,12 +403,93 @@ console.log(s.ends[1].x, s.length); // 3 5
 | an alias from `paths` in `package.velt` | `"@app/*": "src/*"` makes `"@app/util/strings"` mean `src/util/strings.velt` (or `.ts`, `.tsx`), resolved like a relative import ([`package.velt`](/docs/tooling/manifest/)) |
 | `"pkg"`, `"pkg/sub"` | a dependency from `package.velt`: its `src/lib.velt`, or `src/sub.velt` / `src/sub/index.velt` (or `.ts`, `.tsx`, as for a relative import) ([Packages](/docs/tooling/packages/)) |
 | `"@scope/pkg"`, `"pkg/sub"` of an npm package | when no dependency has that name: the npm package in `node_modules` or the workspace, compiled from the TypeScript source its `package.json` `exports` point back to ([npm packages](/docs/tooling/packages/#npm-packages)) |
+| `"#name"` | a conditional import of the importing package: the file that `imports` in its `package.velt` names for the build's target ([below](#conditional-imports)) |
 
 A specifier must spell file and directory names exactly as they are on disk, case included, on
 every OS, as TypeScript's `forceConsistentCasingInFileNames` requires: `"./Util"` does not load
 `util.velt` on Windows or macOS either, since it would fail on Linux. The error names the file on
 disk and the specifier to write (`import it as "./util"`). Files whose names differ only in case
 (`Util.ts` next to `util.velt`) are different modules everywhere.
+
+### Conditional imports
+
+A package that needs different code per target (a native socket here, the host's `fetch`
+there) maps a `#name` to one file per condition in the `imports` of its `package.velt`, as
+Node's `imports` field does:
+
+```ts ignore title="package.velt"
+import type { Package } from "velt/package";
+
+export const pkg: Package = {
+  name: "net-kit",
+  version: "0.1.0",
+  imports: {
+    "#transport": {
+      js: "./src/transport/js.velt",
+      default: "./src/transport/native.velt",
+    },
+    "#config": "./src/config.velt",
+  },
+};
+```
+
+```ts ignore
+import { send } from "#transport";
+```
+
+The build's target sets its conditions, and the first variant whose condition the build has
+wins, in the order written:
+
+| Condition | Builds |
+|---|---|
+| `native` | every native target |
+| `darwin`, `linux`, `win32` | native builds for that operating system (Node's `process.platform` names) |
+| `wasm` | both WebAssembly targets |
+| `wasi` | `wasm32-wasip1` |
+| `js` | `wasm32-unknown-unknown`, a module run by JavaScript (a browser, Node) |
+| `default` | every build: it comes last |
+
+A build no variant applies to is an error at the import
+(`` `#transport` of package `net-kit` has no variant for this build ``), so a map without
+`default` names every target the package supports. A plain string
+(`"#config": "./src/config.velt"`) is one file for every build.
+
+- A `#name` resolves only in the package that defines it: the package's own modules import
+  it; neither its dependencies nor the packages that depend on it can. Variants are files of
+  the package below `./src/`, named with their extension.
+- The variant is an ordinary module of the build; the others are not compiled. `velt check`
+  checks a package for the machine it runs on, and `velt check --target <triple>` for another
+  target and its variants. The editor checks an open variant for a target whose build uses it
+  (`js.velt` as `wasm32-unknown-unknown`).
+- The variants of one name export the same names with the same signatures (as written,
+  whitespace and comments aside; a class's members except `private` ones, without bodies;
+  re-exports followed to the declaration), so code that compiles for one target compiles for
+  all. `velt check`, `velt test` and the editor compare them and name both files where they
+  differ:
+
+  ```text
+  error: `#transport`: `send` has another signature in `./src/transport/js.velt` than in `./src/transport/native.velt`
+  ```
+
+  A name that `export *` brings in from two files with different signatures, or from a module
+  outside the package, can't be compared: an error. `velt build` and `velt run` compile only the
+  variant they use and don't compare them.
+
+Differences from Node's `imports`, each an error in `package.velt` where it is written:
+
+- No patterns: `"#io/*": "./src/io/*.velt"` is not supported; list each name.
+- A key is `#` and `/`-separated segments of letters, digits, `_` and `-`: no `.` in a key, no
+  `#/x`.
+- A value is a file or one flat object of conditions to files: no nested condition objects, no
+  arrays of fallbacks, no `null` targets.
+- A target is a file of the package (`./src/…` with its extension), never another package
+  (`"#bare": "dep"`).
+- The conditions are Velt's: an unknown one (`node`, `browser`, `import`) is an error rather
+  than skipped.
+
+An npm package compiled from its sources resolves its own `#name`s through the `imports` of its
+`package.json`, as Node does (patterns included), never through the Velt package around it
+([npm packages](/docs/tooling/packages/#npm-packages)).
 
 ### Standard library modules
 
@@ -423,6 +564,8 @@ handles). Outside the standard library, a `declare` may only name an export of t
 library of its own package, and must match that export exactly
 ([Packages with native code](/docs/book/native-packages/)). Anything else is a compile error: a
 program or a package without native code can't declare C functions such as `free` or `memcpy`.
+A package with native code binds a C library's functions with `declare c`
+([C functions and unsafe code](/docs/reference/c-interop/)).
 Compiler intrinsics (`declare intrinsic function`, in `velt/lang/intrinsics`) are reserved for the
 standard library too. A runtime function std declares writes the `string` it takes as `out` or
 `buf` (a string builder, or the slot for its result), so passing a place there modifies it, as a

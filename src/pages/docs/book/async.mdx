@@ -241,6 +241,9 @@ explicitly:
   gets the value itself and may return a result (a copy of anything that is part of the value).
   `shared` takes `x` itself: after `shared(new Mutex(o))`, use `o` only through the `shared`
   value (or pass `o.clone()` to keep your own).
+- `shared(f)` of a function can be called directly from any task (`await f(1)`), each call on
+  its own copy of what `f` captured, so `f` may not change it
+  ([Shared functions](/docs/reference/async/#shared-functions)).
 
 ```ts
 const seen = shared(new Mutex<string[]>([]));

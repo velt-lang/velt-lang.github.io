@@ -186,3 +186,24 @@ the line of the generated code in a note.
 Generators are built once and cached, and so is what they write: a build that needs the same
 code for the same types reuses it without running the generator. Changing a generator, or a
 type it was given, runs it again.
+
+A run of the generators may take 30 seconds. One that takes longer (an endless loop) is stopped
+and reported at the call that needed it (`` the generator `./gen` did not finish within 30 s ``),
+with the instance it was generating, and nothing of it is cached. `VELT_GENERATOR_TIMEOUT=<seconds>`
+changes the limit (decimals allowed; `0`: none; a value that isn't a number warns and keeps 30).
+A generator host that writes more than 128 MB to its standard output or standard error is
+stopped too. What a generator prints (`console.log` while you debug it) is not mistaken for its
+output. `Output.instance` accepts only the generator's own generated functions; any other name
+is an error (`` `…` is not a generated function of this generator ``).
+
+`velt build --no-generators` (and `velt check`, `velt run`) runs no generator, for audits: each
+call that needs generated code is an error naming the generator that would write it
+(`` `hello<User>` needs code from the generator `./gen`, and `--no-generators` runs none ``), also
+when an earlier build generated it. Std's `JSON.stringify`, `JSON.parse`, `deepEqual` and
+`toEqual` are generated too.
+
+In the editor, the generators run in the background after each check of the file, from the same
+caches, never delaying hover or completion: what they report (`JSON.parse` into a type it can't
+decode, say) is added to the file's diagnostics when they are done, and stays until their next
+run replaces it. Generator modules are read from disk, so an edit to a generator takes effect
+when it is saved.

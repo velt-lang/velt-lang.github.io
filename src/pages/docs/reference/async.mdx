@@ -65,7 +65,8 @@ An async arrow passed where the function type returns a union with one promise m
 (`(n: number) => View | Promise<View>`, or `Promise<T> | null`) returns that promise, as in
 TypeScript: its body returns `View`. The same holds for such an arrow as the value of a
 module-level constant or a field initializer (`const load: () => number | Promise<number> = async () => 1;`). Such a result is told apart with `r instanceof Promise`
-([unions](/docs/reference/types/#union-types)):
+([unions](/docs/reference/types/#union-types)); `x instanceof Promise` of an `object` or an
+`unknown` is `false`, since a promise is never held as one:
 
 ```ts
 type View = () => string;
@@ -139,7 +140,9 @@ Promises behave like JavaScript's, at Rust's cost:
   steps apart, and its `await`s cost what a plain call does.
 - Timers of one task fire in order: by deadline, then in the order the `sleep` calls were made.
   So the started promises (and the task itself) waiting for timers that are due together resume
-  in the order their timers were created, like `setTimeout` callbacks in Node. A timer that is
+  in the order their timers were created, like `setTimeout` callbacks in Node, also under
+  `Promise.all`: with `const b = step("b", 0); const a = step("a", 30);` and the task held up
+  past both deadlines, `await Promise.all([a, b])` resumes `b` first. A timer that is
   already due when it is first waited for (`sleep(0)`, or a `sleep` awaited after its delay
   passed) also waits for its turn: the code after it never runs before the synchronous code
   that started it, nor before timers due earlier. `sleep`s of different tasks have no order
@@ -283,12 +286,54 @@ value `f` gives the task a copy of `f`, and stops the program (```panic: cannot 
 `f` captured such a resource.
 
 A callback handed to a library function (std's or a package's) that runs it on other threads, as
-a server runs its handler once per connection, must not change what it captured (a sync callback
-included) nor capture a resource without `clone()`: each thread would change, or release, a copy
-of its own, out of sight. That is a compile-time error at the program's call into the library
-(```but it is passed here to a function that runs it on other threads```), with the
-`shared(...)` fix. A closure the program hands to `spawn` itself is copied as above and may
-change its copy.
+a server runs its handler once per connection, works on a copy of what it captured. So it must
+not change what it captured (a sync callback included), also through a method or function it
+calls (`c.handle(req)` whose method does `this.count++`), a closure it makes, a function value
+it calls, or a value reached from what it captured (`users.get(id)!.visits++`), nor capture a
+resource without `clone()`: each thread would change, or release, a copy of its own, out of
+sight. That is a compile-time error at the program's call into the library
+(```but it is passed here to a function that runs it on other threads```), naming the field,
+with the fix: `shared(...)`, `shared(new Mutex(...))` or an `Atomic`. A closure the program
+hands to `spawn` itself is copied as above and may change its copy.
+
+The compiler follows:
+
+- calls of the program's methods and functions, to any depth up to 48 calls;
+- a field of a new object filled from the captured value by key through the program's own code
+  (`const self: any = this; self.out = this.app.plugins`, or a helper storing into the object
+  it is given, `o[k] = v`), so a later `ctx.out.push(…)` is an error naming the field;
+- calls through function values: a route table (`Map<string, Handler>`), a middleware array, a
+  callback parameter, a local arrow (`const touch = (s) => { s.hits++; }; touch(c)`), a
+  function in an object (`helpers.touch(c)`) and a function read from an `any`
+  (`plugin[hook](ctx)` where a hook changes `ctx.app`). Each function value of the program that
+  accepts the arguments is followed; hooks that change only the new object's own state
+  (`ctx.out.push(…)`) compile;
+- in a program with a host import or a native function that can return a function, an `any` or
+  an interface value, a call through such a value given captured state, or a new object holding
+  it, is an error unless the state is `shared(...)`.
+
+**Known limits.** These changes are not detected, and still change only that request's copy.
+Use `shared(...)`, an `Atomic` or a `Mutex` for state that requests must share:
+
+- an element of a shallow copy (`list.filter(…)[0].visits++`, `[...list][0]`, `slice`, `map`,
+  `concat`, `toSorted`);
+- a captured value stored in a local container first (`p.rows = list; p.rows[0].visits++`,
+  `picked.push(list[0])`, `byName.set(k, u)` then `byName.get(k)!.visits++`);
+- typed arrays and other library writes into a buffer (`hist[1]++` on a captured `Int32Array`,
+  `fill`, `sort`, `reverse`, `copyWithin`, `subarray().fill`, a view over a captured buffer,
+  I/O that reads into a captured buffer);
+- a `RegExp` with the `g` or `y` flag used with `test` or `exec` (its `lastIndex`), and the
+  caches `Headers` and `URLSearchParams` fill while reading;
+- a library `struct` (handles such as `Channel` or `TcpStream`, and plain ones such as
+  `Duration`);
+- `Reflect.set(this, "out", captured)`;
+- a chain of calls deeper than 48.
+
+**Known false positives.** A change to an object the request made itself from a captured one is
+reported: a spread copy (`const c2 = { ...cfg }; c2.title = "x"`), a collection copied by its
+constructor (`new Map(cfg.headers)`, then `h.set(k, v)`), and a local object literal holding a
+captured value whose own field is written (`const page = { rows: list, n: 0 }; page.n = 1`).
+Copy the parts with `.clone()`, or compute the value without writing to the copy.
 
 ### Resources sent to another thread
 
@@ -394,8 +439,8 @@ like any stored promise:
 A callback that returns a promise is awaited (flattened): `p.then((id) => load(id))` is a
 promise of what `load` resolves to, settled in as many steps as in Node (one to adopt the
 returned promise, one after it settles). The new promise rejects with what `p` rejects with (unless
-it is handled) and with what the callback throws; a callback may throw a different error type
-only when `p` cannot reject (**Planned**: both, as a union). A `then` chain kept as a statement
+it is handled) and with what the callback throws, which may be another error type: the new
+promise then rejects with either (`any` when either is `any`). The same holds for `finally`. A `then` chain kept as a statement
 (`p.then(f);`) is not a floating promise: it runs to completion, and a rejection nobody handles
 is reported as uncaught, like a dropped promise, once the microtask queue is empty (as in
 Node). `queueMicrotask(f)` runs `f` as such a callback, but an error `f` throws ends the
@@ -424,8 +469,9 @@ before it closes the body), except for calls queued behind a running one: such a
 step later than in Node, and the code after an `await` of an earlier call can run after it
 rather than before (so a queued `return()` may run its `finally` blocks first). A promise settled from another task resumes its waiters at that
 task's next step (the tasks run in parallel; there is no order between them). On WebAssembly, a
-`resolve` called later resumes its waiters at the executor's next step, and so does a shared promise
-that settles (its other awaiters can run after callbacks queued later than in Node).
+shared promise that settles resumes its other awaiters at the next step, so they can run after
+callbacks queued later than in Node; `.then` callbacks and `queueMicrotask` jobs around a
+`resolve` called later can also run in a different order from Node's.
 
 ```ts
 class Failed extends Error {}
@@ -570,8 +616,9 @@ anything that task prints in response. Hand-offs are:
 Hand-offs through shared state (`shared`, a `Mutex`) and through timers are not covered: to keep
 such lines in order, print them from one task. Writing to stderr flushes stdout first.
 
-Built-ins: `sleep(ms)`, `yieldNow()`, `performance.now(): f64` (monotonic milliseconds) and
-`Date.now(): i64`. Timers and intervals are in [`velt/time`](/docs/std/time/timers/) (and
+Built-ins: `sleep(ms)`, `yieldNow()` (`await yieldNow()` lets the task's other ready promises
+run first, also when a timer resumed the task), `performance.now(): f64` (monotonic
+milliseconds) and `Date.now(): i64`. Timers and intervals are in [`velt/time`](/docs/std/time/timers/) (and
 `setTimeout`, `setInterval`, `setImmediate` are globals too).
 
 ## Cancellation
@@ -585,7 +632,7 @@ behind the program's back, so `finally` blocks and `using` disposal run as usual
 `Promise.race` loser: a running call keeps running, like JS).
 `taskScope(async (scope) => …)` is structured concurrency: it settles only after every task
 started with `scope.spawn`, fails with the first error of the body or a child, and that error
-aborts `scope.signal` so the siblings stop.
+aborts `scope.signal` so the siblings stop. `signal.reason` is an `any`, as in TypeScript.
 
 A task the runtime drops is cancelled at its current suspension point: the values it owns are dropped (`using` resources are disposed),
 `finally` blocks don't run, and its unfinished local promises are cancelled with it.
@@ -736,6 +783,46 @@ with `push` / `set`. Change a copy (`.clone()`, `s.ports.slice()`) instead.
 
 </Callout>
 
+#### Shared functions
+
+A `shared<F>` of a function type is called directly, from any thread, without a lock:
+
+```ts
+const f = shared(async (n: i64) => n + 1);
+console.log(await f(1)); // 2
+```
+
+- Each call runs on its own copy of what the function captured, a cost proportional to the
+  captures. Within the copy, a cycle stays a cycle and an object reached twice is copied once
+  (a captured cycle is not freed by reference counting, so it stays allocated once per call).
+- A change to a capture would be lost, so it is a compile error where the compiler follows the
+  function to `shared(...)`, also through a closure the function calls. Where it doesn't (the
+  function came out of a `Map`, an array or an interface method), `shared(x)` panics on a
+  function that changes what it captured or holds a captured variable that is assigned, also
+  one reached through an array, an object, an interface value or another captured function.
+- A view over a captured buffer (`new Uint8Array(u.buffer)`, `new DataView(u.buffer)`) may be
+  held only directly in a local of the function, and read through it; writing through it is
+  refused like any change to a capture. Held anywhere else (handed out by a nested closure or
+  generator, stored in an array, `Map`, object field, `any` or nullable), it is refused or
+  panics at `shared(x)`. A view over a copy (`new Uint8Array(b.slice(0))`) goes anywhere. A
+  server's handler has the same rule.
+- A captured `Mutex`, `RwLock` or `Atomic` held by value, at any depth, is refused or panics the
+  same way, since each call would have its own: share it with `shared(new Mutex(...))` or
+  `shared(0)`.
+- A captured class with a resource (`[Symbol.dispose]`) and its own `clone()` is refused or
+  panics, at any depth, since that `clone()` would run on one object from several threads at
+  once. A `RegExp` is the exception, unless it has the `g` or `y` flag (its `lastIndex` would
+  change on a copy, so that panics at `shared(x)`, whatever the regex is used for): write the
+  literal inside the function instead (`shared((s: string) => s.replace(/a/g, "b"))`). A
+  captured regex is compiled again on each call, about 200 times the cost of a module `const`,
+  so a route table should use a module `const`, or a `Mutex`, where it can.
+- A `shared` array of `shared` functions is read in place: it is the way to keep a table of
+  handlers. A function held by an object or a `Map` in `shared(...)` is not called on a copy
+  this way.
+- A `Mutex` around the function runs the calls one at a time on its own captures, and allows
+  changes and a `clone()` of them. A call inside `with` runs its synchronous start under the
+  lock, so the calls don't run in parallel.
+
 ### `Atomic<T>`
 
 `Atomic<T>` fields and array elements inside a `shared` value hold numbers and flags that tasks
@@ -855,6 +942,17 @@ program: one a function given the value's objects returns (`pick(s).tags.push("t
 value the callback calls reaches, or a closure made inside the callback captures
 (`s.items.forEach((it) => out.push(it))`).
 
+Two uses of the caller's objects are compile errors:
+
+- A `read` that returns an object it also stored into the caller's containers
+  (`out.push(c); return c`, also inside an array `[c]`): the result would leave as a copy, where
+  JavaScript returns that same object. Use it through the caller's container after `read`
+  (`out[0]`).
+- Changing, through an element of an object the callback made, what may be the caller's object
+  (`h.rows.push(mine[0]); h.rows[0].push(5)`): inside the callback the compiler cannot tell it
+  from the value's own. Change it through the caller's own variable (`mine[0].push(5)`), or
+  after `read`.
+
 ### `Mutex`
 
 `shared(new Mutex<T>(x))` with `m.with((v) => …)` is a synchronous lock. The callback gets the
@@ -884,6 +982,10 @@ converted to `any`, `unknown` or `object`
 (```cannot convert a `shared<Mutex<C>>` to `any`: it holds a lock```), all of which would read
 it without the lock, also not through a type parameter (a generic function printing its `T` is
 refused where it is called with one).
+
+A `Mutex` or `RwLock` is shared through its `shared(...)` handle, never by value: binding one
+held by value to another name inside a closure (`const q = m`), or passing one as a generic `T`
+that a closure holds, is an error (``this shares a `Mutex` held by value``).
 
 #### What crosses the lock
 
@@ -1062,6 +1164,16 @@ try {
   Where the compiler can't tell which written type the promise is stored into (a promise stored
   through `any`, an element of an untyped array), the error type must be written
   (`Promise<T, E>`).
+- Generators work the same way: an `AsyncGenerator<T>` or `Generator<T>` written without
+  Velt's error type throws what the generators stored there throw, as `Promise<T>` rejects with
+  what is stored into it, and a written `AsyncGenerator<T, E>` stays exact. A generator converts
+  to a generator type whose error type allows all of its errors (an `AsyncGenerator<T>` or
+  `AsyncGenerator<T, RangeError>` where an `AsyncGenerator<T, RangeError | TypeError>` is
+  expected), yielding the same values. An interface method whose result is `AsyncGenerator<T>`
+  (or `Generator<T>`) without an error type takes the errors of the generators that object
+  literals return for it (`{ chunks: (n) => parts(n) }`, a method, or a named function), so
+  implementations may throw different errors. Promises spread into an array of promises with a
+  wider error type (`[...map.values()]`) convert too.
 - A promise nobody can await reports its error as uncaught: see
   [Uncaught rejections](#uncaught-rejections).
 
@@ -1098,8 +1210,9 @@ first depends on the scheduling).
 `reject` is called with, as in TypeScript; `new Promise((resolve) => …)` takes no `reject`.
 
 - `resolve` and `reject` are owned handles to the promise's settle-once slot on the heap, not
-  closures from a caller: the executor may store them, capture them in callbacks, pass them to
-  `spawn` or `setTimeout`, and call them later from any task.
+  closures from a caller: the executor may store them (also in a variable of a function type,
+  `let rejectLater: (e: unknown) => void`), capture them in callbacks, pass them to `spawn` or
+  `setTimeout`, and call them later from any task.
 - The first `resolve(value)` or `reject(reason)` settles the promise; later calls do nothing.
   An error the executor throws rejects it.
 - For a `Promise<void>`, `resolve()` takes no argument (a trailing `void` parameter may be

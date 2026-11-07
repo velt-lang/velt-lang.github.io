@@ -146,7 +146,8 @@ the rest of the model's rules ([writing a generator](/docs/reference/source-gene
 - `helper(code)` adds a top-level declaration next to the instance, named with `fresh("name")`,
   a name no other instance uses.
 - `instance(fn, [typeIds])`: the name of the function generated for another instance of a
-  generated function of the same generator module, which is generated in the same run.
+  generated function of the same generator module, which is generated in the same run. Any
+  other name is an error (`` `…` is not a generated function of this generator ``).
 - `typeName(id)` writes a type of the model in generated code, also one that is not exported, is
   declared inside a function or has no name.
 - `literal(s)` writes a string as a Velt string literal; `quote(s)`, exported on its own, does the
@@ -177,7 +178,10 @@ main.velt:2:13: error: the generator `./gen` failed
 That is what lets the compiler cache what a generator writes, and what makes running a
 dependency's generator at compile time safe. Generators are built once and cached, and so is
 their output: a build that needs the same code for the same types reuses it. Changing a
-generator, or a type it was given, runs it again.
+generator, or a type it was given, runs it again. A run that takes longer than 30 seconds
+(`VELT_GENERATOR_TIMEOUT`) is stopped and reported, and `--no-generators` runs none, for audits
+([How it runs](/docs/reference/source-generators/#how-it-runs)). What a generator prints with
+`console.log` while you debug it is not mistaken for its output.
 
 Generated code that does not compile is reported at the call that needed it, with the line of
 the generated code in a note. The `show` generator above passes an optional field on without

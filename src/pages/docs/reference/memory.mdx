@@ -25,12 +25,16 @@ mutation, so programs carry no lifetime, borrow or `mut` annotations.
 ## Values and references
 
 - **Values that copy**: numbers, `bool`, strings ([Strings](/docs/reference/types/#strings)), literal and
-  enum types, and unions, tuples and `T | null` of those. A tuple is copied when it is
-  assigned or stored, but a function or callback that changes an element of a tuple it was
-  passed (`t[1] = 0`) changes the caller's tuple, as in JS. The objects a tuple holds are
-  shared, not copied: `pick()[0].x = 5` changes the object in the tuple `pick` returned. A
+  enum types, and unions and `T | null` of those.
+- **Tuples are shared where they are changed**: `const t = tp; t[0] = 5` changes `tp[0]` too,
+  as in JS, and so does a function or callback (an arrow passed to `forEach`, a closure) that
+  changes an element of a tuple it was passed. A tuple type the program never writes an element
+  of is stored as a value and copied, which nothing can tell from sharing it; one it writes into
+  and copies is shared as one counted object. Unlike JS arrays, tuples compare by their
+  elements: `t === u` is `true` for two tuples with equal elements. The objects a tuple holds
+  are shared, not copied: `pick()[0].x = 5` changes the object in the tuple `pick` returned. A
   write into an element of a tuple that a call or a conditional gives (`m.get(k)![1] = 2`) is
-  an error, since it would change a copy.
+  an error.
 - **Objects are references**, as in JS: class instances, arrays, maps, structs, object types
   (`type P = { x: i64 }`, object literals) and closures. `const b = a;`, passing `a` to a
   function, storing it in a field, an array or a map, returning it and capturing it all refer
@@ -51,7 +55,11 @@ mutation, so programs carry no lifetime, borrow or `mut` annotations.
   (unless a conflict elsewhere in the program makes them share; see
   [Captures](/docs/reference/functions/#captures)).
 - **Calls borrow**: passing an object to a function lends it, so `log(user); save(user);` costs
-  nothing. The compiler infers per parameter whether the callee reads it, modifies it, or keeps
+  nothing, except where something can replace the value during the call: a closure called with
+  a variable it assigns, a closure given a container and its part (`f(r, r.s)`), or a callee
+  that writes the field an argument was read from gets that argument as a reference of its own,
+  so its parameter keeps the old value, as in JS. (A field written only by its own constructor
+  is never in that case.) The compiler infers per parameter whether the callee reads it, modifies it, or keeps
   it. A parameter the body stores or returns takes ownership: a caller that does not use its
   variable again hands it over for free, one that does shares it. Returning a field of a class
   instance (a getter's `return this.ctl.sig`) shares the field and only borrows the instance.
@@ -121,7 +129,11 @@ console.log(a == b, a == copy); // true false: `==` compares objects by identity
 ### Evaluation order
 
 Evaluation order is JS's: operands and arguments run left to right, and one read before a later
-operand's call keeps the value it had (`f(o.v, o.change())` passes the old `o.v`). The target of
+operand's call keeps the value it had (`f(o.v, o.change())` passes the old `o.v`). An element
+read reads its array before it evaluates the index: in `rows[0][f()]`, when `f` replaces
+`rows[0]`, the element comes from the array that was there, with any change `f` made to it first
+(not yet for a typed array's element, nor for an element an assignment, `+=` or `++` writes:
+those use the array there after the index). The target of
 an assignment is evaluated before its right-hand side: a call at its root runs once, first
 (`get().v = f()`, `m.get(k)!.v = f()`).
 
@@ -226,6 +238,19 @@ pattern and the fields of an object (`const [a, b] = t; append(a, b)`, or
 `for (const [name, input] of cases) it(name, () => check(input))`), while each still overlaps
 the value it came from (`append(t[0], a)` is an error). This rule is what lets the compiler
 assume no aliasing for values with a single owner, like Rust.
+
+The rule is for class instances and arrays. A call that reads another value (a string, a
+number, a promise, a union or optional of those, `any`, an object type or tuple made of those)
+in one argument while another argument, or the callee's own closure, changes the same variable
+or field is allowed, and the callee keeps what was read when the argument was evaluated, as in
+JavaScript (`r.rename(r.name)` passes the old name). A write inside an object stored inline
+keeps the rule.
+
+```ts
+let s = "one";
+const f = (a: string, b: string) => a + "/" + b;
+console.log(f(s, (s = "x"))); // one/x
+```
 
 An argument may change the inside of a class instance or an array another argument passes while
 it is evaluated, before the call starts (`this.set(this.src.get(1))` with `get` changing

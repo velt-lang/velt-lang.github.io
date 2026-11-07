@@ -73,7 +73,8 @@ each; a code point that is not an integer from 0 to 0x10FFFF panics with JS's Ra
 ## Numbers
 
 - `NaN`, `Infinity`, `isNaN(x)`, `isFinite(x)`.
-- `Number(x)` converts a string, a number or a boolean (`Number(true)` is `1`), and
+- `Number(x)` converts any value as JS's `ToNumber` does: a string, a number, a boolean
+  (`Number(true)` is `1`), `null`, `undefined`, an object, an `any` or `unknown`, and
   `Boolean(x)` tests a value's truthiness, as in JS; `Number.isInteger(x)`, `Number.isNaN(x)`,
   `Number.isFinite(x)`, `Number.isSafeInteger(x)`, `Number.parseInt(s, radix = 0)`,
   `Number.parseFloat(s)` and the constants `Number.MAX_SAFE_INTEGER`, `MIN_SAFE_INTEGER`,
@@ -105,18 +106,24 @@ each; a code point that is not an integer from 0 to 0x10FFFF panics with JS's Ra
   32-bit wrapping product, one multiply instruction) and `clz32` (leading zero bits) take the low
   32 bits of their operands like JS. `umulh(a, b)` (not in JS) is the high 64 bits of the
   128-bit product of two `u64`s, one multiply instruction as well.
-- Bit casts (not in JS): `x.toBits()` is the IEEE 754 bits of an `f64` as a `u64` (sign,
-  exponent, fraction), and `f64.fromBits(b)` the `f64` with the bits of a `u64` (Rust's
-  `to_bits` / `from_bits`); each is one move between registers. They keep every bit pattern,
-  NaN payloads and signalling NaNs included, so `f64.fromBits(b).toBits() == b` for every `b`.
+- Bit casts (not in JS): `x.toBits()` is the IEEE 754 bits of an `f64` as a `u64`, or of an
+  `f32` as a `u32` (sign, exponent, fraction), and `f64.fromBits(b)` / `f32.fromBits(b)` the
+  float with those bits (Rust's `to_bits` / `from_bits`); each is one move between registers.
+  They keep every bit pattern, NaN payloads and signalling NaNs included, so
+  `f64.fromBits(b).toBits() == b` and `f32.fromBits(b).toBits() == b` for every `b`.
   The bits of a NaN made by arithmetic (`0 / 0`) or of the `NaN` constant are not specified:
   they depend on the processor (`fff8000000000000` on x86-64, `7ff8000000000000` on AArch64), as
-  in Rust. `f32` has no bit casts yet.
+  in Rust. `f16` and `bf16` have them too, on a `u16`
+  ([`f16` and `bf16`](/docs/reference/types/#f16-and-bf16)).
 
   ```ts
   const x: f64 = -1.5;
   console.log(x.toBits().toString(16)); // bff8000000000000
   console.log(f64.fromBits(0x7ff0000000000000)); // Infinity
+  console.log((0.1 as f32).toBits().toString(16)); // 3dcccccd
+  const b = (-6.25 as f32).toBits();
+  console.log(b >>> 31, (b >>> 23) & 0xff, (b & 0x7fffff).toString(16)); // 1 129 480000
+  console.log(f32.fromBits(0x40490fdb)); // 3.1415927410125732
   ```
 
 - Integers (not in JS): `x.leadingZeros()`, `x.trailingZeros()` and `x.countOnes()`, counted
@@ -148,7 +155,8 @@ so elements pushed meanwhile are not visited. Elements removed meanwhile:
 |---|---|
 | `length`, `push(x)`, `pop(): T \| undefined` | built in; `undefined` when empty |
 | `at(i): T \| undefined` | a negative `i` counts from the end; `undefined` out of range |
-| `forEach`, `map`, `filter`, `reduce(f, init)` | callbacks get `(x, i)` (`reduce`: `(acc, x, i)`) and may take fewer |
+| `forEach`, `map`, `filter`, `reduce(f, init?)`, `reduceRight(f, init?)` | callbacks get `(x, i)` (`reduce`: `(acc, x, i)`) and may take fewer; without `init`, `reduce` starts from the first element (`reduceRight` from the last) and an empty array throws JS's `TypeError` |
+| `flatMap(f)` | `map`, then one level of `flat()`: the callback returns an array or a single value |
 | `find`, `findIndex`, `findLast`, `findLastIndex`, `some`, `every` | likewise |
 | `indexOf`, `lastIndexOf`, `includes` | compare with `==` (objects by identity, like JS's `===`), so `indexOf` never finds `NaN`; `includes` also finds the number `NaN`, as in JS (SameValueZero; tuples still compare part by part) |
 | `slice(start = 0, end?)`, `concat(other)` | |

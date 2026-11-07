@@ -51,6 +51,14 @@ A module with JSX imports `<source>/jsx-runtime` implicitly. Its exports are the
 `JSX` in that module's types (`JSX.Element`, `JSX.IntrinsicElements`, …), as if the module had
 `import * as JSX from "<source>/jsx-runtime"`. A module without JSX loads no provider.
 
+What the runtime exports decides how its JSX compiles: a runtime that exports `jsxComponent`
+is a Velt provider (`velt/jsx`), and one that exports `jsx` or `jsxs`, as React's, Vue's,
+Preact's, Hono's and sigx's do, is TypeScript's automatic runtime, compiled as `tsc` with
+`"jsx": "react-jsx"` compiles against it ([below](#automatic-runtimes)). Such a runtime's
+`JSX.IntrinsicElements`, `JSX.IntrinsicAttributes`, `JSX.Element` and
+`JSX.ElementChildrenAttribute` are read from its exported `namespace JSX` or from
+`declare global { namespace JSX { … } }` in any module, and several modules may each add tags.
+
 ## Elements
 
 - `<div class="a">…</div>`, `<br />` and `<>…</>` (a fragment) are expressions of type
@@ -86,7 +94,8 @@ const link = <a hreff="/docs">Docs</a>;
 
 - Text between tags follows JSX's whitespace rules: a line break between two pieces of text,
   with the indentation around it, becomes one space; a line with only whitespace disappears; and
-  spaces within a line stay. Entities are decoded.
+  spaces and tabs within a line stay, as `tsc` and esbuild keep them (`velt fmt` keeps a tab as
+  written while the line holds, `{"\t"}` where it breaks a line). Entities are decoded.
 - `{expr}` is one child, converted to `JSX.Child`. `{...xs}` is one child too: the array `xs`.
 - `{}` and `{/* comment */}` are no children.
 - What `true`, `false` and `null` render is the provider's choice (`velt/jsx`: nothing).
@@ -206,11 +215,44 @@ An element becomes calls of the provider's functions, chosen by what it exports
   too (with the provider's `jsxList`), as a hand-written template literal would be. Both
   lowerings render the same bytes.
 
+### Automatic runtimes
+
+With a runtime that exports `jsx` or `jsxs`, every element is one call, as `tsc` emits it:
+
+```tsx ignore
+/** @jsxImportSource some-runtime */
+<box a={x}>c</box>   // jsx("box", { a: x, children: c }, key)
+<box>{a}{b}</box>    // jsxs("box", { children: [a, b] }, key)
+<Card a={x} />       // jsx(Card, { a: x }, key): the component as it is
+<>c</>               // jsx(Fragment, { children: c }, key)
+```
+
+- Only what a module's JSX uses must be exported: `jsxs` for an element with two or more
+  children or a spread child, `jsx` for the others, and `Fragment` for a fragment. A factory is
+  a function, or a constant holding one, with the parameters `type`, `props` and `key` (a
+  factory may leave out `key`). One of type `any` (`export const jsx: any`) is refused, with a
+  message.
+- The `props` parameter is a `Record<string, V>`, an index signature, `any`, `object`,
+  `unknown` or a type parameter. A named object type without an index signature is refused,
+  with a message: the props hold whatever the element was given.
+- `key` is not in the props: it is the third argument. A number key passed to a `key`
+  parameter that takes only a string arrives as its decimal string, and a written `key={null}`
+  passed to one that takes only `undefined` arrives as `undefined`.
+- `<box {...s} key="k" />` calls `jsx("box", { ...s }, "k")`, where `tsc` calls
+  `createElement`.
+- The component is passed as itself, so its properties stay, and a function with properties
+  held in an `any` can be called. Class components are not supported yet.
+- `[...x]` of an `any` holding an array works in any array literal; another value held there is
+  a `TypeError`.
+
+The runtime compiles; a package around it may still need changes to compile with Velt.
+
 ## Differences from TypeScript
 
-- The provider's types are the namespace `JSX` of its `jsx-runtime` module, not a global
-  `JSX` namespace or React's types; `JSX.IntrinsicElements` can't be extended by declaration
-  merging (a provider builds its own: [the contract](https://github.com/velt-lang/velt/blob/main/docs/internals/contracts/jsx.md#extending-intrinsicelements)).
+- A Velt provider's types are the namespace `JSX` of its `jsx-runtime` module, not a global
+  `JSX` namespace or React's types, and its `JSX.IntrinsicElements` can't be extended by
+  declaration merging (a provider builds its own: [the contract](https://github.com/velt-lang/velt/blob/main/docs/internals/contracts/jsx.md#extending-intrinsicelements)).
+  An [automatic runtime](#automatic-runtimes)'s can, through `declare global`.
 - `{flag && <x />}` with a `boolean` `flag` is an error (write `flag ? <x /> : null`); with a
   nullable object on the left it works as in TypeScript.
 - Children of a void element (`<br>x</br>`) are a compile error ("&lt;br> is a void element and
