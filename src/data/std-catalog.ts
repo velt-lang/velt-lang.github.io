@@ -131,4 +131,6 @@ export const PACKAGES: [pkg: string, line: string, href: string][] = [
     ['sqlite', 'Embedded SQLite close to better-sqlite3, and an engine written in Velt.', '/docs/packages/sqlite/'],
     ['postgres', 'A PostgreSQL client close to node-postgres.', '/docs/packages/postgres/'],
     ['redis', 'A Redis client close to ioredis: pipelines, transactions, pub/sub.', '/docs/packages/redis/'],
+    ['web', 'A reference router and middleware on http-server (its API may change).', '/docs/packages/web/'],
+    ['cloudflare', 'Cloudflare Workers: R2, D1, KV, cache and Durable Object bindings, with host-cloudflare.', '/docs/packages/cloudflare/'],
 ];

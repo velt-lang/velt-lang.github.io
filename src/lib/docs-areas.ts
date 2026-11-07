@@ -28,7 +28,7 @@ export const AREAS: Area[] = [
     { id: 'learn', label: 'Learn', meta: 'The book: getting started, tour, guides', glyph: '→', color: '#5FE1F7', href: '/docs/book/', group: 'book' },
     { id: 'language', label: 'Language', meta: 'Reference: types, classes, memory, TSX', glyph: '§', color: '#A592FF', href: '/docs/reference/', group: 'reference' },
     { id: 'std', label: 'Standard library', meta: 'guides and API', glyph: '{}', color: '#FF9F5A', href: '/docs/std/', group: 'std' },
-    { id: 'packages', label: 'Packages', meta: 'sqlite, postgres, redis, http-server', glyph: '+', color: '#FF8FD8', href: '/docs/packages/', group: 'packages' },
+    { id: 'packages', label: 'Packages', meta: 'sqlite, postgres, redis, http-server, web, cloudflare', glyph: '+', color: '#FF8FD8', href: '/docs/packages/', group: 'packages' },
     { id: 'tooling', label: 'Tooling', meta: 'CLI, packages, manifest, editors, debugging', glyph: '$', color: '#3DDC97', href: '/docs/tooling/', group: 'tooling' },
     { id: 'errors', label: 'Errors', meta: 'Every compiler diagnostic, explained', glyph: '!', color: '#FFC93C', href: DIAGNOSTICS_PATH, group: 'reference' },
 ];

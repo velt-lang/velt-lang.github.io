@@ -42,10 +42,12 @@ import { slugify } from "textkit";
 
 ## Official packages
 
-The SQLite, PostgreSQL and Redis drivers and the HTTP server are packages in the Velt
-repository, not part of the standard library: [`sqlite`](/docs/packages/sqlite/),
-[`postgres`](/docs/packages/postgres/), [`redis`](/docs/packages/redis/) and
-[`http-server`](/docs/packages/http-server/) ([all packages](/docs/packages/)). Until there is a
+The SQLite, PostgreSQL and Redis drivers, the HTTP server, the `web` router and the Cloudflare
+bindings are packages in the Velt repository, not part of the standard library:
+[`sqlite`](/docs/packages/sqlite/), [`postgres`](/docs/packages/postgres/),
+[`redis`](/docs/packages/redis/), [`http-server`](/docs/packages/http-server/),
+[`web`](/docs/packages/web/), and [`cloudflare`](/docs/packages/cloudflare/) with
+`host-cloudflare` ([all packages](/docs/packages/)). Until there is a
 public registry, depend on one through a [git dependency](#git-dependencies) on the repository
 (what `velt new --template api` writes), or on a checkout of it with a `path`:
 

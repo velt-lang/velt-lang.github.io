@@ -99,7 +99,7 @@ dependencies: {
   util: { path: "../util" },                         // a local directory
   "http-server": {                                   // a git repository
     git: "https://github.com/velt-lang/velt",
-    tag: "v0.5.0",
+    tag: "v0.6.0",
     path: "packages/http-server",                    // the package's directory in it
   },
 },
@@ -128,11 +128,12 @@ the lockfile, for reproducible builds. Commit `velt.lock.json` for applications.
 
 The HTTP server and the database drivers are packages in the Velt repository's `packages/`
 directory, not part of the standard library: [`http-server`](/docs/packages/http-server/),
-[`sqlite`](/docs/packages/sqlite/), [`postgres`](/docs/packages/postgres/) and
-[`redis`](/docs/packages/redis/). Until there is a public registry, depend on one with a git
+[`web`](/docs/packages/web/), [`sqlite`](/docs/packages/sqlite/), [`postgres`](/docs/packages/postgres/),
+[`redis`](/docs/packages/redis/) and [`cloudflare`](/docs/packages/cloudflare/). Until there is a public registry, depend on one with a git
 dependency as above, or with a `path` into a checkout of the repository. `velt new --template api`
-starts a project that depends on `http-server`. The database drivers include native code, built
-with cargo from a git or path dependency ([native code](/docs/tooling/packages/#packages-with-native-code)).
+starts a project that depends on `http-server`. `sqlite` calls SQLite through `declare c` and `postgres` includes a Rust crate, so a program
+lists them in [`allowNative`](/docs/tooling/manifest/#allownative); `redis` is plain Velt
+([native code](/docs/tooling/packages/#packages-with-native-code)).
 [Official packages](/docs/tooling/packages/#official-packages) has the details.
 
 ## Workspaces

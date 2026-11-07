@@ -347,6 +347,44 @@ plain `velt check` never lint.
 - A folder that doesn't exist is a warning in the editor and an error for
   `velt check --ts-compat`.
 
+## `host`
+
+A **host package** describes a JavaScript platform for [`velt build --host`](/docs/tooling/webassembly/#javascript-platforms-velt-build---host):
+its target, the condition its builds give [conditional imports](/docs/reference/modules/#conditional-imports),
+the entry module that adapts the platform to the runtime's glue, and configuration files to
+start from. `{{name}}` in a scaffolded file becomes the program's name.
+
+```ts ignore
+host: {
+  target: "wasm32-unknown-unknown",
+  condition: "workers",
+  entry: "./src/worker.mjs",
+  scaffold: { "wrangler.toml": "./src/wrangler.toml" },
+},
+```
+
+## `hostModules`
+
+The JavaScript of the host modules a package's [`declare host`](/docs/reference/host-functions/)
+functions call, by module name; a host build copies them next to the program
+([host modules](/docs/packages/cloudflare/#host-modules)).
+
+```ts ignore
+hostModules: { kv: "./src/kv.mjs" },
+```
+
+## `lint`
+
+Levels for [lint findings](/docs/tooling/lint/): `perf` for every `perf/…` finding (`"hint"`,
+the default, `"warn"`, `"deny"` or `"off"`), and `rules` for single rules by code.
+
+```ts ignore
+lint: {
+  perf: "warn",
+  rules: { "perf/number-double": "off" },
+},
+```
+
 ## `registry`
 
 ```ts ignore

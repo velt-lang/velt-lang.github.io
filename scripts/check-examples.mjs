@@ -38,7 +38,7 @@ const VELT = process.env.VELT ?? 'velt';
 const LANGS = new Set(['ts', 'velt', 'vlt', 'tsx']);
 const filter = process.argv[2];
 const PACKAGES_DIR = process.env.VELT_PACKAGES;
-const PACKAGES = ['http-server', 'sqlite', 'postgres', 'redis'];
+const PACKAGES = ['http-server', 'sqlite', 'postgres', 'redis', 'web'];
 
 /** The official packages a snippet imports (`import … from "sqlite"`, `"http-server/websocket"`). */
 export function packagesOf(source) {

@@ -15,7 +15,9 @@ order: 250
   `eol()`.
 - `lastOsError(): i32`: the `errno` (`GetLastError()` on Windows) the last failed
   [system function](/docs/reference/system-functions/) call on this thread left. Read it right
-  after the call.
+  after the call. After a [`declare c`](/docs/reference/c-interop/) call it reads the C
+  library's `errno` only when the declaration asks for it with `{ errno: true }`; on Windows it
+  doesn't report a C library's error yet.
 
 ```ts
 import { platform, arch, availableParallelism, tmpdir, eol } from "velt/os";

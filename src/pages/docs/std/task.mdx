@@ -23,7 +23,7 @@ disposal run as usual.
     anywhere, `spawn`ed tasks included.
   - `abort(reason = "This operation was aborted")` aborts it. Aborting twice does nothing.
 - `AbortSignal`:
-  - `aborted: bool` and `reason: string` (`""` while not aborted).
+  - `aborted: bool` and `reason: any`: what `abort` was given (`""` while not aborted).
   - `throwIfAborted()` throws if aborted: a `TimeoutError` if an `AbortSignal.timeout` aborted
     it, otherwise an `AbortError` with the reason as its message. `TimeoutError` extends
     `AbortError`, so `throws AbortError` covers both.
