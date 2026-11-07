@@ -6,7 +6,7 @@
 import { component } from 'sigx';
 import { ic } from '../lib/inline-code';
 import { formatDate } from '../lib/blog';
-import { AREAS, ROADMAP, type RoadmapItem } from '../data/roadmap';
+import { AREAS, DIRECTIONS, ROADMAP, type RoadmapItem } from '../data/roadmap';
 import { nextRelease, releaseUrl } from '../data/releases';
 import { REPO_URL } from '../lib/site';
 
@@ -52,6 +52,7 @@ export default component(() => () => {
                 </p>
                 <nav aria-label="On this page" class="flex flex-wrap gap-2 pt-2 text-sm">
                     {[
+                        { href: '#direction', label: 'Direction' },
                         ...(next ? [{ href: '#next', label: `In ${next.version}` }] : []),
                         { href: '#planned', label: 'Planned' },
                         { href: '#gaps', label: 'Not there yet' },
@@ -61,6 +62,42 @@ export default component(() => () => {
                     ))}
                 </nav>
             </div>
+
+            <section id="direction" aria-labelledby="direction-title" class="flex scroll-mt-28 flex-col gap-6">
+                <div class="flex flex-col gap-2">
+                    <span class={`${eyebrow} text-cyan`}>Direction</span>
+                    <h2 id="direction-title" class={h2}>Where we're heading</h2>
+                    <p class="m-0 max-w-[720px] text-[17px] text-fg-3">
+                        The longer-term goals behind the releases. Each one already has pieces in place; the Planned list further down is what's decided next.
+                    </p>
+                </div>
+                <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,460px),1fr))] gap-4">
+                    {DIRECTIONS.map((d) => (
+                        <article key={d.title} class="flex flex-col gap-4 rounded-2xl border border-line-2 bg-surface p-[clamp(20px,3vw,28px)]">
+                            <div class="flex flex-col gap-2">
+                                <h3 class="m-0 font-display text-[22px] font-semibold leading-[1.25]">{ic(d.title)}</h3>
+                                <p class="m-0 text-[15px] text-fg-3">{ic(d.why)}</p>
+                            </div>
+                            <div class="flex flex-col gap-2 border-t border-line pt-4">
+                                <span class={`${eyebrow} text-green`}>In place</span>
+                                <ul class="m-0 flex list-none flex-col gap-1.5 p-0 text-[15px]">
+                                    {d.inPlace.map((x) => (
+                                        <li key={x.href + x.text} class="flex gap-2.5">
+                                            <span aria-hidden="true" class="mt-[9px] size-1.5 flex-none rounded-full bg-green" />
+                                            <a href={x.href} class="text-fg-2 hover:text-cyan">{ic(x.text)}</a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            {d.track && (
+                                <a href={d.track.href} class="mt-auto self-start font-mono text-[13px] text-cyan hover:text-cyan-hover">
+                                    Tracked in {d.track.label} →
+                                </a>
+                            )}
+                        </article>
+                    ))}
+                </div>
+            </section>
 
             {next && (
                 <section id="next" aria-labelledby="next-title" class="flex scroll-mt-28 flex-col gap-6">

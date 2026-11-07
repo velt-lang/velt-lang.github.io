@@ -8,6 +8,7 @@ import { TOPICS, formatDate, posts } from '../../lib/blog';
 import { latestRelease, nextRelease } from '../../data/releases';
 import { ROADMAP } from '../../data/roadmap';
 import { RELEASES_URL } from '../../lib/site';
+import { ic } from '../../lib/inline-code';
 
 export const meta = {
     title: 'Blog — Velt',
@@ -51,7 +52,7 @@ export default component(() => () => {
                 <a href="/roadmap/" class="flex flex-col gap-1.5 border-line px-6 py-[22px] text-fg hover:text-fg [&:not(:last-child)]:border-r">
                     <span class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.06em] text-violet"><span class={`${dot} bg-violet`} />Planned</span>
                     <span class="font-display text-lg font-semibold">{planned.length} decided designs</span>
-                    <span class="text-sm text-muted">{planned[0]?.title ?? 'The roadmap'} and more →</span>
+                    <span class="text-sm text-muted">{planned[0] ? ic(planned[0].title) : 'The roadmap'} and more →</span>
                 </a>
                 <a href={RELEASES_URL} class="flex flex-col gap-1.5 px-6 py-[22px] text-fg hover:text-fg">
                     <span class="text-xs font-semibold uppercase tracking-[0.06em] text-cyan">Follow along</span>
