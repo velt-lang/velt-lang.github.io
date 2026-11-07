@@ -635,6 +635,10 @@
     font-size: 16px;
     line-height: 1.75;
 }
+/* Doc comments can hold long URLs and identifiers: they wrap on phones. */
+.api-page :is(.api-doc, .api-lead) {
+    overflow-wrap: anywhere;
+}
 .api-page :is(h2, h3, section) {
     scroll-margin-top: 24px;
 }
