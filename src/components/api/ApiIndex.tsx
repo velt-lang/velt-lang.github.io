@@ -13,25 +13,27 @@ export const ApiIndex = component(() => () => {
                 Every export of every <code>velt/…</code> module and the prelude's globals, with its signature and doc comment, generated from the
                 standard library sources. {total.documented} of {total.exports} exports ({percent(total)}%) have a doc comment.
             </p>
-            <div class="api-table overflow-x-auto rounded-xl border border-card-line">
+            <div class="api-table api-index-table overflow-x-auto rounded-xl border border-card-line">
                 <table>
                     <thead>
                         <tr>
                             <th scope="col">Module</th>
                             <th scope="col" class="min-w-64">What it is</th>
-                            <th scope="col" class="text-right">Exports</th>
-                            <th scope="col" class="text-right">Documented</th>
+                            <th scope="col" class="w-px whitespace-nowrap text-right">Exports</th>
                         </tr>
                     </thead>
                     <tbody>
                         {rows.map(({ m, c }) => {
                             const summary = guideIntro(m.module).summary;
+                            const pct = percent(c);
                             return (
                                 <tr key={m.module}>
                                     <td class="whitespace-nowrap"><a href={apiPath(m.module)} class="font-mono text-[13.5px]">{specifierOf(m)}</a></td>
                                     <td class="text-fg-3">{summary ? <DocInline md={sentences(summary)} /> : null}</td>
-                                    <td class="text-right font-mono text-[13.5px]">{c.exports}</td>
-                                    <td class={`text-right font-mono text-[13.5px] ${percent(c) < 50 ? 'text-orange' : 'text-fg-3'}`}>{percent(c)}%</td>
+                                    <td class="whitespace-nowrap text-right">
+                                        <span class="block font-mono text-[13.5px]">{c.exports}</span>
+                                        <span class={`block text-xs ${pct < 50 ? 'text-orange' : 'text-muted'}`}>{pct}% documented</span>
+                                    </td>
                                 </tr>
                             );
                         })}
