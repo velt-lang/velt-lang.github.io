@@ -1,0 +1,52 @@
+name: Refresh std API
+
+# Regenerates src/data/std-api.json with the velt release the docs describe
+# (DOCS_VERSION in src/lib/site.ts), for the API pages: step 4 of AGENTS.md's
+# refresh playbook, without installing velt locally. Push a branch named
+# refresh-std-api/<anything> (or run it by hand on a branch): when the file
+# changes, the job commits it to that branch. Commit it again under your own
+# name before opening the PR, so the squash commit has one author.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['refresh-std-api/**']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-std-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install velt at DOCS_VERSION
+        id: velt
+        run: |
+          version=$(node -e "console.log(require('fs').readFileSync('src/lib/site.ts','utf8').match(/DOCS_VERSION = '([^']+)'/)[1])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          curl -fsSL https://github.com/velt-lang/velt/releases/latest/download/get-velt.sh | sh -s -- --version "$version" --no-modify-path
+          echo "$HOME/.velt/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh src/data/std-api.json
+        run: node scripts/refresh-std-api.mjs
+
+      - name: Commit it if it changed
+        run: |
+          if git diff --quiet -- src/data/std-api.json; then
+            echo "std-api.json is already current for velt ${{ steps.velt.outputs.version }}"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/std-api.json
+          git commit -m "Refresh src/data/std-api.json from velt ${{ steps.velt.outputs.version }}"
+          git push
