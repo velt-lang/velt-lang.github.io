@@ -135,6 +135,28 @@ each; a code point that is not an integer from 0 to 0x10FFFF panics with JS's Ra
   const bits: u64 = 40;
   console.log(bits.leadingZeros(), bits.trailingZeros(), bits.countOnes()); // 58 3 2
   ```
+- Rotations and byte order (not in JS), on every integer type, as Rust's `rotate_left`,
+  `rotate_right` and `swap_bytes`: `x.rotateLeft(n: u32)` and `x.rotateRight(n: u32)` are the
+  bits rotated by `n` places, modulo the type's width (signed types rotate their two's-complement
+  bits), and `x.swapBytes()` is the bytes in reverse order (big-endian to little-endian and
+  back). Each is one instruction in release builds:
+
+  ```ts
+  const x: u32 = 0x80000001;
+  console.log(x.rotateLeft(1), x.rotateRight(1).toString(16), x.swapBytes().toString(16)); // 3 c0000000 1000080
+  ```
+- Checked, saturating and wrapping arithmetic (not in JS), on every integer type, as Rust's:
+  `checkedAdd`, `checkedSub` and `checkedMul` give the result, or `null` when it leaves the
+  type's range; `saturatingAdd`, `saturatingSub` and `saturatingMul` clamp it to the range; and
+  `wrappingAdd`, `wrappingSub` and `wrappingMul` wrap it, which is what `+`, `-` and `*` on a
+  declared integer type already do (the methods name the intent):
+
+  ```ts
+  const a: u8 = 250;
+  console.log(a.checkedAdd(10), a.saturatingAdd(10), a.wrappingAdd(10)); // null 255 4
+  const b: i32 = -2147483648;
+  console.log(b.checkedSub(1), b.saturatingMul(2)); // null -2147483648
+  ```
 - Every number type implements `Comparable` ([Comparable](/docs/reference/classes/#comparable)).
 
 ## Arrays
@@ -191,6 +213,32 @@ string. Their ranges are clamped as `toString` clamps them: a negative `start` i
 past the array is its end (Node's `buf.utf8Slice` throws for both instead). `write` and the comparisons are Velt
 code in the prelude: they read the string's bytes where it keeps them, sixteen at a time with
 SIMD vectors, and are compiled into their caller.
+
+`write`, `set` and `copy` take their positions as `number`s, read as Node reads them, and an
+out-of-range position throws a catchable `RangeError` with Node's message (their error type
+includes `RangeError`), since such offsets usually come from outside the program; pass an
+integer-typed position `as number`:
+
+- `set(src, offset = 0)` truncates a fraction and takes `NaN` as 0. When `src` doesn't fit, or
+  the offset is negative or infinite, it throws `RangeError: offset is out of bounds`.
+- `copy(target, targetStart = 0, sourceStart = 0, sourceEnd?)` rounds a fraction down and takes
+  `NaN` and non-safe integers as 0. It throws Node's message for whichever of `targetStart`
+  (`It must be >= 0. Received -1`), `sourceStart` (`It must be >= 0 && <= 4. Received 9`) and
+  `sourceEnd` (`It must be >= 0`) Node checks first.
+- `write(s, offset = 0)` takes a whole number from 0 to the length; otherwise it throws
+  `The value of "offset" is out of range. It must be >= 0 && <= 4. Received 9` (for
+  `write("ab", 9)` on four bytes), or `It must be an integer. Received 1.5` for a fraction, `NaN`
+  or `Infinity`. `Received` writes integers beyond 2^32 in `_` groups, as Node does
+  (`12_345_678_901`).
+
+```ts
+const buf: u8[] = Buffer.alloc(16);
+try {
+  buf.set([1, 2], 15);
+} catch (e) {
+  console.log(e instanceof RangeError, e.message); // true offset is out of bounds
+}
+```
 
 `subarray(begin?, end?)` of a `u8[]` (Node's `buf.subarray`) is a
 [`Uint8Array`](/docs/std/prelude/typed_array/) over the array's bytes, sharing them: writes through either are

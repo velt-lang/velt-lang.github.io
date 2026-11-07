@@ -177,6 +177,10 @@ No raw pointers, no callbacks into Velt, and no function that keeps a buffer aft
 File descriptors and handles are plain integers: closing one the runtime owns is not a memory
 error, but it breaks what the runtime does with it, as it would in C.
 
+Other C libraries, and C functions outside the table, are for packages with native code: they
+declare them with `declare c` and call them in `unsafe` code, checked against the library's C
+headers ([C functions and unsafe code](/docs/reference/c-interop/)).
+
 ## The table
 
 | function | macOS, Linux | Windows |

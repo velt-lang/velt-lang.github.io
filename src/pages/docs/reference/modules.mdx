@@ -562,10 +562,13 @@ and the language server take `.ts` and `.tsx` files along with `.velt` ones
 library uses them to bind `velt_rt_*`, and only it may declare those (they take raw runtime
 handles). Outside the standard library, a `declare` may only name an export of the native
 library of its own package, and must match that export exactly
-([Packages with native code](/docs/book/native-packages/)). Anything else is a compile error: a
-program or a package without native code can't declare C functions such as `free` or `memcpy`.
-A package with native code binds a C library's functions with `declare c`
-([C functions and unsafe code](/docs/reference/c-interop/)).
+([Packages with native code](/docs/book/native-packages/)). A package with native code that the
+program allows (`allowNative`) may also declare the functions of its C libraries with
+`declare c`, called in `unsafe` code ([C functions and unsafe code](/docs/reference/c-interop/)).
+Anything else is a compile error: a program, or a package the program doesn't allow native
+code for, can't declare C functions such as `free` or `memcpy`.
+`declare host("m") function` declares a function the JavaScript host provides, for a
+WebAssembly module run by JavaScript ([Host functions](/docs/reference/host-functions/)).
 Compiler intrinsics (`declare intrinsic function`, in `velt/lang/intrinsics`) are reserved for the
 standard library too. A runtime function std declares writes the `string` it takes as `out` or
 `buf` (a string builder, or the slot for its result), so passing a place there modifies it, as a

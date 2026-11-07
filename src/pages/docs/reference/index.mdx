@@ -54,8 +54,11 @@ and no garbage collector. Three rules shape every decision:
     components, how elements are compiled
 15. [System functions](/docs/reference/system-functions/) — `declare system function`: the C
     library, safely
-16. [C functions and unsafe code](/docs/reference/c-interop/) — `declare c`, `unsafe`
-17. [Source generators](/docs/reference/source-generators/) — `declare generated function`:
+16. [C functions and unsafe code](/docs/reference/c-interop/) — `declare c`, `unsafe` and
+    `// SAFETY:`: C libraries in packages with native code
+17. [Host functions](/docs/reference/host-functions/) — `declare host`: functions a JavaScript
+    host provides to a WebAssembly module
+18. [Source generators](/docs/reference/source-generators/) — `declare generated function`:
     bodies a library writes per type at compile time (experimental)
 
 How Velt differs from TypeScript, item by item, is in
