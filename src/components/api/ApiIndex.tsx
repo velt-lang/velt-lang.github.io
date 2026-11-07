@@ -13,7 +13,7 @@ export const ApiIndex = component(() => () => {
                 Every export of every <code>velt/…</code> module and the prelude's globals, with its signature and doc comment, generated from the
                 standard library sources. {total.documented} of {total.exports} exports ({percent(total)}%) have a doc comment.
             </p>
-            <div class="api-table overflow-x-auto rounded-xl border border-card-line">
+            <div class="api-table api-index-table overflow-x-auto rounded-xl border border-card-line">
                 <table>
                     <thead>
                         <tr>
@@ -25,13 +25,14 @@ export const ApiIndex = component(() => () => {
                     <tbody>
                         {rows.map(({ m, c }) => {
                             const summary = guideIntro(m.module).summary;
+                            const pct = percent(c);
                             return (
                                 <tr key={m.module}>
                                     <td class="whitespace-nowrap"><a href={apiPath(m.module)} class="font-mono text-[13.5px]">{specifierOf(m)}</a></td>
                                     <td class="text-fg-3">{summary ? <DocInline md={sentences(summary)} /> : null}</td>
                                     <td class="whitespace-nowrap text-right">
                                         <span class="block font-mono text-[13.5px]">{c.exports}</span>
-                                        <span class={`block text-xs ${percent(c) < 50 ? 'text-orange' : 'text-muted'}`}>{percent(c)}% documented</span>
+                                        <span class={`block text-xs ${pct < 50 ? 'text-orange' : 'text-muted'}`}>{pct}% documented</span>
                                     </td>
                                 </tr>
                             );

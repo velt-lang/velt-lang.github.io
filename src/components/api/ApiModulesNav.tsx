@@ -6,7 +6,7 @@
  */
 import { component } from 'sigx';
 import { CATEGORIES } from '../../data/std-catalog';
-import { apiModule, apiModules, apiPath, countedExports, specifierOf, type ApiModule } from '../../lib/std-api';
+import { API_ROOT, apiModule, apiModules, apiPath, countedExports, specifierOf, type ApiModule } from '../../lib/std-api';
 
 const label = 'font-mono text-xs uppercase tracking-[0.08em] text-muted';
 
@@ -46,9 +46,9 @@ export const ApiModulesNav = component<{ current: string }>(({ props }) => () =>
             <div class="flex flex-col gap-0.5">
                 <span class={`${label} px-3 pb-2`}>API reference</span>
                 <a
-                    href="/docs/api/"
-                    aria-current={props.current === '/docs/api/' ? 'page' : undefined}
-                    class={`rounded-lg px-3 py-1.5 ${props.current === '/docs/api/' ? 'bg-[#17172A] font-semibold text-fg shadow-[inset_0_0_0_1px_#2E2A5C]' : 'text-fg-3 hover:text-cyan'}`}
+                    href={API_ROOT}
+                    aria-current={props.current === API_ROOT ? 'page' : undefined}
+                    class={`rounded-lg px-3 py-1.5 ${props.current === API_ROOT ? 'bg-[#17172A] font-semibold text-fg shadow-[inset_0_0_0_1px_#2E2A5C]' : 'text-fg-3 hover:text-cyan'}`}
                 >
                     All {total} modules
                 </a>

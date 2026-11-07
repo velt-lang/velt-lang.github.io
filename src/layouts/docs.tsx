@@ -167,7 +167,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                         {api ? <span class="font-mono">{specifierOf(api)} exports</span> : nav.title}
                         <ChevronDown size={16} cls="menu-chev ml-auto transition-transform" />
                     </summary>
-                    <nav aria-label="Documentation" class="pb-6 pt-2">
+                    <nav aria-label={api ? `${specifierOf(api)} API` : path === API_PATH ? 'API reference' : 'Documentation'} class="pb-6 pt-2">
                         {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : path === API_PATH ? <ApiModulesNav current={path} /> : <Sidebar area={area} current={path} />}
                         <p class="m-0 mt-6 flex gap-4 px-3 text-[13px] text-muted">
                             <a href={`${RELEASES_URL}/tag/v${DOCS_VERSION}`} class="text-muted hover:text-cyan">
@@ -177,7 +177,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                         </p>
                     </nav>
                 </details>
-                <nav aria-label={api ? `${specifierOf(api)} API` : 'Documentation'} class="sticky-col hidden max-w-[290px] flex-[1_1_240px] py-8 min-[900px]:block">
+                <nav aria-label={api ? `${specifierOf(api)} API` : path === API_PATH ? 'API reference' : 'Documentation'} class="sticky-col hidden max-w-[290px] flex-[1_1_240px] py-8 min-[900px]:block">
                     {api ? <ApiSidebar module={api} catalog={CATALOG_PATH} /> : path === API_PATH ? <ApiModulesNav current={path} /> : <Sidebar area={area} current={path} />}
                 </nav>
 
