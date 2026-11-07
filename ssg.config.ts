@@ -132,7 +132,7 @@ export default defineSSGConfig({
     // "Point your AI assistant at veltlang.com/llms.txt" strip on the home page.
     llms: {
         intro: [
-            'Velt is a compiled language with TypeScript syntax: `velt run app.ts` compiles a `.ts`/`.tsx`/`.vlt`',
+            'Velt is a compiled language with TypeScript syntax: `velt run app.ts` compiles a `.ts`/`.tsx`/`.velt`',
             'file to native code through LLVM. Valid TypeScript behaves as in Node, but the dynamic parts of',
             'JavaScript are left out on purpose (`eval`, prototypes, decorators, `with`, `delete`, loose `==`);',
             'read [Velt for TypeScript developers](https://veltlang.com/docs/book/ts-developers.md) before writing',

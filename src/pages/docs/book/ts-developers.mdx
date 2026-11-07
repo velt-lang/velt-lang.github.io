@@ -11,7 +11,7 @@ order: 40
 If you write TypeScript, you already write Velt: classes, interfaces, generics, unions and
 narrowing, discriminated unions, closures, `async`/`await`, template literals, destructuring,
 spread, optional chaining, `??`, ES modules, `throw`/`try`/`catch`, `using`. Velt reads `.ts`
-and `.tsx` files directly (`velt run app.ts`), and they import `.vlt` files and the other way
+and `.tsx` files directly (`velt run app.ts`), and they import `.velt` files and the other way
 round, so an existing project can move over one file at a time.
 
 What you get in return is a native executable: no interpreter or JIT, no garbage collector, and
@@ -327,8 +327,8 @@ reference count. Reference cycles are not freed; `WeakRef`, `WeakMap` and `WeakS
 - Named exports only: `export default` and default imports are errors with a fix.
 - Standard library modules are imported as `velt/<module>`: `import { readFile } from "velt/fs"`.
 - Relative imports drop the extension: `import { x } from "./util"`. A folder is a module
-  through its `index.vlt`, `index.ts` or `index.tsx`. `paths` aliases in `package.vlt` work like `compilerOptions.paths`.
-- Modules can be `.ts` and `.tsx` files as well as `.vlt`, so a folder can be shared with a
+  through its `index.velt`, `index.ts` or `index.tsx`. `paths` aliases in `package.velt` work like `compilerOptions.paths`.
+- Modules can be `.ts` and `.tsx` files as well as `.velt`, so a folder can be shared with a
   TypeScript project; as in TypeScript, JSX needs `.tsx`, and `"./x.js"` names `x.ts`
   ([TypeScript files](/docs/reference/modules/#typescript-files-ts-and-tsx)).
 

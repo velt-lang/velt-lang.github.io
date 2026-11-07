@@ -71,7 +71,7 @@ Windows), which the installers set up:
 
 The launcher runs one toolchain's `bin/velt` with the same arguments, so every command behaves
 as that version's. Which one: `velt +<toolchain>` or `$VELT_TOOLCHAIN` for one command, else the
-[`velt` field](/docs/tooling/manifest/#velt) of the nearest `package.vlt` (the newest installed version it
+[`velt` field](/docs/tooling/manifest/#velt) of the nearest `package.velt` (the newest installed version it
 accepts; `velt new` writes the creating version's `"0.1"`), else the default. A version the
 package pins that isn't installed is downloaded and installed on first use: the launcher reads
 the release's `SHA256SUMS` after checking its signature with the velt release key built into
@@ -108,7 +108,7 @@ prefix needs nothing registered globally: its `bin/velt` finds everything relati
   std/**                  standard library sources
   share/velt/lldb/velt_lldb.py
                           LLDB support for Velt programs (the VS Code extension loads it)
-  share/velt/warm/*.vlt   programs `velt cache warm` compiles std into the build cache with
+  share/velt/warm/*.velt   programs `velt cache warm` compiles std into the build cache with
   README.md, LICENSE-MIT, LICENSE-APACHE, NOTICE
 ```
 
@@ -161,8 +161,8 @@ downloaded from the same release):
 
 ```sh
 velt target add x86_64-pc-windows-msvc        # into <prefix>/lib/targets/<triple>/
-velt build --target x86_64-pc-windows-msvc app.vlt
-velt build --release --target x86_64-unknown-linux-musl app.vlt   # static Linux executable
+velt build --target x86_64-pc-windows-msvc app.velt
+velt build --release --target x86_64-unknown-linux-musl app.velt   # static Linux executable
 velt target list                              # this machine, installed and available targets
 velt target remove x86_64-pc-windows-msvc
 ```
@@ -226,7 +226,7 @@ emulates them at several times the cost.
   older than 2010 needs `--cpu baseline`). WebAssembly has no CPU choice: `--cpu` is an error
   there.
 - **Choosing.** `--cpu` comes first, then `$VELT_CPU`, then the package's `build.cpu`
-  ([`package.vlt`](/docs/tooling/manifest/#build)), then the target's default. A setting of another
+  ([`package.velt`](/docs/tooling/manifest/#build)), then the target's default. A setting of another
   architecture's (`VELT_CPU=x86-64-v3` in a build for arm64, `neoverse-n1` in one for x86_64)
   does not apply, so one setting serves every target of a package; the same name in `--cpu` is
   an error. A name no architecture has (`skylkae`) is an error wherever it comes from, in debug

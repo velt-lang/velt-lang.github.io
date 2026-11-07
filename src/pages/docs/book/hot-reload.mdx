@@ -13,7 +13,7 @@ program, usually in well under 100 ms and without losing its state.
 
 ```sh
 velt dev                  # the current package
-velt dev server.vlt       # one file
+velt dev server.velt       # one file
 ```
 
 ## A session
@@ -22,7 +22,7 @@ Take a server that counts requests, in a package that depends on
 [`http-server`](/docs/packages/http-server/) ([Building an HTTP server](/docs/book/http-server/#setting-up)
 shows how):
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { serve } from "http-server";
 
 const hits = shared(0);

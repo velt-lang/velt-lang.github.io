@@ -1,15 +1,19 @@
 ---
-title: "package.vlt"
-description: "Every package has a package.vlt at its root: the manifest, written in Velt. velt new and velt init write one."
+title: "package.velt"
+description: "Every package has a package.velt at its root: the manifest, written in Velt. velt new and velt init write one."
 layout: "docs"
 category: "Tooling"
 order: 40
 ---
 
-# `package.vlt`
+import { Callout } from '@/components/mdx';
 
-Every package has a `package.vlt` at its root: the manifest, written in Velt. `velt new` and
+# `package.velt`
+
+Every package has a `package.velt` at its root: the manifest, written in Velt. `velt new` and
 `velt init` write one.
+
+<Callout title="Coming from 0.5">The manifest used to be `package.vlt`. It is no longer read: rename it to `package.velt` (the error says so), and your `.vlt` source files to `.velt`.</Callout>
 
 ```ts ignore
 import type { Package } from "velt/package";
@@ -28,7 +32,7 @@ export const pkg: Package = {
       path: "packages/http-server",
     },
   },
-  paths: { "@app/*": "src/*" }, // import { x } from "@app/util"  →  src/util.vlt (or .ts, .tsx)
+  paths: { "@app/*": "src/*" }, // import { x } from "@app/util"  →  src/util.velt (or .ts, .tsx)
 };
 ```
 
@@ -39,7 +43,7 @@ objects. Comments and trailing commas are fine; anything else (`null`, template 
 variables, calls, spreads) is an error that points at it:
 
 ```text
-package.vlt:5:13: error: `null` is not allowed; leave the key out
+package.velt:5:13: error: `null` is not allowed; leave the key out
 ```
 
 In an editor, the language server ([`velt lsp`](/docs/tooling/editors/)) completes the fields valid where
@@ -74,10 +78,10 @@ file and reports these errors without building anything.
 
   The registry keeps both per published version, so changing them means publishing a new
   version.
-- `entry`: the program's root file, a path inside the package (default `"src/main.vlt"`). A
-  package with `src/main.vlt` is runnable; a package with `src/lib.vlt` is a library that other
+- `entry`: the program's root file, a path inside the package (default `"src/main.velt"`). A
+  package with `src/main.velt` is runnable; a package with `src/lib.velt` is a library that other
   packages import. A package can have both. Without an `entry`, `src/main.ts` or
-  `src/main.tsx` (`src/lib.ts`, `src/lib.tsx`) work like `src/main.vlt` (`src/lib.vlt`); two of
+  `src/main.tsx` (`src/lib.ts`, `src/lib.tsx`) work like `src/main.velt` (`src/lib.velt`); two of
   them at once are an error.
 
 ## `velt`
@@ -95,7 +99,7 @@ the field accepts, installing one first when none is
 own `velt` started directly warns when its version is not one the field accepts:
 
 ```text
-warning: package.vlt asks for velt "0.2", but this is velt 0.1.0; it may not build the package
+warning: package.velt asks for velt "0.2", but this is velt 0.1.0; it may not build the package
 ```
 
 | `velt` | builds with |
@@ -117,7 +121,7 @@ a requirement that names one (`"0.2.0-rc.1"`). Leave the field out to build with
 ## `dependencies`
 
 `import … from "json"` and `"json/sub"` resolve through `dependencies`: the dependency's
-`src/lib.vlt`, or `src/sub.vlt` / `src/sub/index.vlt` (or `.ts`, `.tsx`, tried like a relative
+`src/lib.velt`, or `src/sub.velt` / `src/sub/index.velt` (or `.ts`, `.tsx`, tried like a relative
 import's files). Standard library imports (`"velt/x"`)
 and relative imports (`"./x"`) never do. Names that aren't identifiers are quoted
 (`"my-lib": "1.0"`, `"@sigx/reactivity": { path: "../reactivity" }`; a scoped dependency needs
@@ -221,7 +225,7 @@ tsCompat: ["src/components", "src/models"],
 
 Folders whose modules a TypeScript client shares, so they must stay in the
 common subset of TypeScript and Velt (like the
-client's `tsconfig.json` `include`). `velt check --ts-compat` without paths lints every `.vlt`,
+client's `tsconfig.json` `include`). `velt check --ts-compat` without paths lints every `.velt`,
 `.ts` and `.tsx` file in them ([`velt check`](/docs/tooling/cli/#code-shared-with-typescript---ts-compat)),
 and the editor shows the findings, with their fixes, as you type
 ([editors](/docs/tooling/editors/#code-shared-with-typescript)). Nothing else changes: `velt build` and a
@@ -234,7 +238,7 @@ plain `velt check` never lint.
   are the same folder, so such a list would mean something else on Linux.
 - The files in a folder are found as `velt check` finds a package's: `node_modules/`,
   `target/`, hidden and symlinked directories are skipped, and so is a package nested in the
-  folder (a directory with its own `package.vlt`), which lints its own `tsCompat`.
+  folder (a directory with its own `package.velt`), which lints its own `tsCompat`.
 - Not empty: leave the field out instead of writing `[]`.
 - A folder that doesn't exist is a warning in the editor and an error for
   `velt check --ts-compat`.
@@ -260,7 +264,7 @@ $ velt manifest --json
   "dependencies": {
     "json": "1.2"
   },
-  "entry": "src/main.vlt",
+  "entry": "src/main.velt",
   "name": "hello",
   "paths": {},
   "velt": "0.1",

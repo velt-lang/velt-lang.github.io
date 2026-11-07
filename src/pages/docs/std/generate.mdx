@@ -30,7 +30,7 @@ strings quoted.
 The library declares the function. `declare generated("./gen")` names the generator module as an
 import would: a relative path, a module of a package (`some-package/gen`), or a std module.
 
-```ts ignore title="show/index.vlt"
+```ts ignore title="show/index.velt"
 /** `value` as text: the type's name, then its fields in order; strings quoted. */
 export declare generated("./gen") function show<T>(value: T): string;
 ```
@@ -38,7 +38,7 @@ export declare generated("./gen") function show<T>(value: T): string;
 The generator module exports a function of the same name, which gets the instance the program
 needs (an `InstanceRequest`) and writes its body into an `Output`:
 
-```ts title="show/gen.vlt"
+```ts title="show/gen.velt"
 import { InstanceRequest, Output } from "velt/generate";
 
 export function show(req: InstanceRequest, out: Output): void {
@@ -71,7 +71,7 @@ export function show(req: InstanceRequest, out: Output): void {
 
 The program calls `show` as any generic function. It never names the generator:
 
-```ts ignore title="main.vlt"
+```ts ignore title="main.velt"
 import { show } from "./show";
 
 class Point {
@@ -89,7 +89,7 @@ console.log(show(new Shape())); // Shape { name: 'triangle', corners: [Point { x
 console.log(show([1, 2, 3])); // [1, 2, 3]
 ```
 
-`velt run main.vlt` builds the generator, runs it for `show<Point>`, `show<Shape>`,
+`velt run main.velt` builds the generator, runs it for `show<Point>`, `show<Shape>`,
 `show<number[]>` and the instances they ask for (`show<string>`, `show<Point[]>`, …), checks the
 code it wrote with the rest of the program, and runs the program. Each type gets its own function,
 also through generic code: a `show<T>` call in a function that is called with `Point` needs
@@ -99,7 +99,7 @@ A type the generator refuses, such as a `Map` in `show(new Map<string, i64>())`,
 call that needs it, as any compile error:
 
 ```text
-main.vlt:4:13: error: show cannot write a map
+main.velt:4:13: error: show cannot write a map
 ```
 
 ## `InstanceRequest`
@@ -170,7 +170,7 @@ environment, the clock or random numbers, start processes or call native code. T
 checks this from everything the generator's code can reach, and reports what it found:
 
 ```text
-main.vlt:2:13: error: the generator `./gen` failed
+main.velt:2:13: error: the generator `./gen` failed
   = note: error: a source generator cannot reach the clock: it runs at compile time and gets everything from its request
 ```
 
@@ -184,8 +184,8 @@ the generated code in a note. The `show` generator above passes an optional fiel
 testing it, so a class with `legs?: i64` gets:
 
 ```text
-main.vlt:7:13: error: the code generated for `show<Pet>` by `./gen` does not compile (a bug in the generator)
-  = note: <generated>/show/1.vlt:6:36: mismatched types
+main.velt:7:13: error: the code generated for `show<Pet>` by `./gen` does not compile (a bug in the generator)
+  = note: <generated>/show/1.velt:6:36: mismatched types
   = note:     s += ", legs: " + __gen_r1_n2_show(value.legs);
   = note: expected i64, found i64 | undefined
 ```

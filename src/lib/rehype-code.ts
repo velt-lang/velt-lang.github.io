@@ -6,7 +6,7 @@
  * vite.config.ts), which only takes bundled theme names.
  *
  * Fence meta:
- *   ```ts title="server.vlt"   file name in the bar instead of the language
+ *   ```ts title="server.velt"   file name in the bar instead of the language
  *   ```ts error                a "does not compile" badge (velt's docs-test meta)
  *   ```ts ignore               accepted and ignored (velt's docs-test meta)
  *
@@ -52,7 +52,7 @@ export const VELT_THEME: ThemeRegistration = {
 };
 
 const LANGS = ['ts', 'tsx', 'js', 'jsx', 'json', 'sh', 'bash', 'powershell', 'rust', 'toml', 'yaml', 'diff', 'html', 'css', 'sql'] as const;
-/** Fence names that highlight with another grammar. `vlt` is TypeScript syntax. */
+/** Fence names that highlight with another grammar. `velt` (and the old `vlt`) is TypeScript syntax. */
 export const ALIASES: Record<string, string> = { vlt: 'ts', velt: 'ts', shell: 'sh', console: 'sh', zsh: 'sh', ps1: 'powershell', pwsh: 'powershell', rs: 'rust', typescript: 'ts', javascript: 'js' };
 const LABELS: Record<string, string> = { sh: 'Terminal', bash: 'Terminal', powershell: 'PowerShell', text: 'Text', txt: 'Text' };
 

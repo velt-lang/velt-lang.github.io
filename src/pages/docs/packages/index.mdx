@@ -10,7 +10,7 @@ navTitle: "Overview"
 # Official packages
 
 The Velt repository ships four packages next to the standard library: an HTTP server and three
-database drivers. A program imports one by its package name once its `package.vlt` lists it in
+database drivers. A program imports one by its package name once its `package.velt` lists it in
 `dependencies`.
 
 | Package | What it is |
@@ -34,11 +34,11 @@ repository's `packages/`.
 
 ## Depending on a package
 
-Add the package to `dependencies` in [`package.vlt`](/docs/tooling/manifest/): from the Velt
+Add the package to `dependencies` in [`package.velt`](/docs/tooling/manifest/): from the Velt
 repository on GitHub as a [git dependency](/docs/tooling/packages/#git-dependencies), or from a
 local checkout as a path dependency. `velt install` fetches it and pins it in `velt.lock.json`:
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -52,7 +52,7 @@ export const pkg: Package = {
 };
 ```
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { serve } from "http-server";
 
 await serve({ port: 8080 }, (req: Request): Response => new Response("hello"));

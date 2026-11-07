@@ -187,8 +187,8 @@ pnpm typecheck    # tsgo --noEmit
 - Links between pages are absolute routes with a trailing slash
   (`/docs/book/memory/`, `/docs/reference/types/#strings`). The build fails on
   a link or `#anchor` that doesn't resolve.
-- Code: fence with the language (`ts` for Velt code, `vlt` works too; `sh`,
-  `powershell`, `rust`, `toml`, `json`). Meta: `title="server.vlt"` puts a file
+- Code: fence with the language (`ts` for Velt code, `velt` works too; `sh`,
+  `powershell`, `rust`, `toml`, `json`). Meta: `title="server.velt"` puts a file
   name in the bar; `error` adds a "does not compile" badge. Highlighting is the
   Velt palette from `src/lib/rehype-code.ts`.
 - Diagrams: a ` ```mermaid ` fence renders as a diagram (`@sigx/mermaid`; the
@@ -208,7 +208,7 @@ pnpm typecheck    # tsgo --noEmit
   pages, give it the same treatment rather than a longer list.
 - Code examples must be valid Velt for the release the docs describe
   (`DOCS_VERSION` in `src/lib/site.ts`). `pnpm check:examples` runs every
-  `ts` / `vlt` / `tsx` fence through the installed `velt check` (CI does it
+  `ts` / `velt` / `tsx` fence through the installed `velt check` (CI does it
   with `DOCS_VERSION`): a plain fence must check, `ts error` must be rejected,
   `ts ignore` (an excerpt, not a program) is skipped. A snippet is checked as
   written, as a program's root file: top-level statements run as in Node, so

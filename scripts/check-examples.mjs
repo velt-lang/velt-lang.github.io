@@ -9,7 +9,7 @@
  *   ```ts ignore   not a complete program (an excerpt, pseudo-code): skipped
  *   ```ts planned  designed but not implemented yet: skipped
  *
- * `vlt` and `tsx` fences follow the same rules; `title="…"` is allowed with any of them.
+ * `velt` (or `vlt`) and `tsx` fences follow the same rules; `title="…"` is allowed with any of them.
  * Each snippet is checked as written, as the root file of a program: Velt runs a root
  * file's top-level statements like Node (top-level `await` included), and a file with
  * only declarations, or with `function main()`, checks too. So a snippet means what it
@@ -35,7 +35,7 @@ import { join, relative } from 'node:path';
 const ROOT = join(import.meta.dirname, '..');
 const DOCS = join(ROOT, 'src/pages/docs');
 const VELT = process.env.VELT ?? 'velt';
-const LANGS = new Set(['ts', 'vlt', 'tsx']);
+const LANGS = new Set(['ts', 'velt', 'vlt', 'tsx']);
 const filter = process.argv[2];
 const PACKAGES_DIR = process.env.VELT_PACKAGES;
 const PACKAGES = ['http-server', 'sqlite', 'postgres', 'redis'];
@@ -50,7 +50,7 @@ export function packagesOf(source) {
     return [...names].sort();
 }
 
-/** package.vlt for a snippet that uses `pkgs`, each by path from VELT_PACKAGES. */
+/** package.velt for a snippet that uses `pkgs`, each by path from VELT_PACKAGES. */
 const manifest = (pkgs) =>
     `import type { Package } from "velt/package";\n\nexport const pkg: Package = {\n  name: "example",\n  version: "0.1.0",\n  dependencies: {\n${pkgs
         .map((p) => `    ${JSON.stringify(p)}: { path: ${JSON.stringify(join(PACKAGES_DIR, p).replace(/\\/g, '/'))} },`)
@@ -64,7 +64,7 @@ const walk = (dir) =>
         return statSync(f).isDirectory() ? walk(f) : n.endsWith('.mdx') ? [f] : [];
     });
 
-/** The `ts` / `vlt` / `tsx` fences of one MDX file. */
+/** The `ts` / `velt` / `tsx` fences of one MDX file. */
 export function snippets(rel, text) {
     const out = [];
     const errors = [];
@@ -127,10 +127,10 @@ async function main() {
             const program = s.source;
             const pkgs = packagesOf(program);
             if (pkgs.length) {
-                writeFileSync(join(sub, 'package.vlt'), manifest(pkgs));
+                writeFileSync(join(sub, 'package.velt'), manifest(pkgs));
                 mkdirSync(join(sub, 'src'), { recursive: true });
             }
-            const file = join(sub, pkgs.length ? 'src' : '', `main.${s.lang === 'tsx' ? 'tsx' : 'vlt'}`);
+            const file = join(sub, pkgs.length ? 'src' : '', `main.${s.lang === 'tsx' ? 'tsx' : 'velt'}`);
             writeFileSync(file, program);
             const { code, output } = await run(file);
             const shown = () => program.split('\n').map((l, i) => `${String(i + 1).padStart(4)} | ${l}`).join('\n');

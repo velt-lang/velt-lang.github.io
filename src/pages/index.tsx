@@ -112,7 +112,7 @@ export default component(() => () => (
                     <span class="size-[11px] rounded-full bg-line-3" />
                     <span class="size-[11px] rounded-full bg-line-3" />
                     <span class="size-[11px] rounded-full bg-line-3" />
-                    <span class="ml-3 font-mono text-[13px] text-fg-3">src/main.vlt</span>
+                    <span class="ml-3 font-mono text-[13px] text-fg-3">src/main.velt</span>
                     <span class="ml-auto font-mono text-xs text-muted">velt run</span>
                 </div>
                 <pre class="overflow-x-auto px-[22px] py-5 font-mono text-[13.5px] leading-[1.7] text-fg">{hl(SERVER_TS)}</pre>
@@ -141,7 +141,7 @@ export default component(() => () => (
                 <span class={`${eyebrow} text-cyan`}>Why Velt</span>
                 <h2 class={`${h2} text-[clamp(34px,4vw,52px)] leading-[1.08]`}>If you write TypeScript, you already write Velt.</h2>
                 <p class="m-0 text-lg text-fg-3">
-                    <C>velt run app.ts</C> runs your file, and <C>.ts</C> and <C>.vlt</C> import each other, so a project
+                    <C>velt run app.ts</C> runs your file, and <C>.ts</C> and <C>.velt</C> import each other, so a project
                     moves over one file at a time. Valid TypeScript behaves as it does in Node; where JavaScript is a trap,
                     the compiler stops and says what to write instead.
                 </p>
@@ -204,7 +204,7 @@ export default component(() => () => (
         <section id="beyond" class="scroll-mt-6 border-y border-line bg-bg-raised">
             <div class="mx-auto flex max-w-[1248px] flex-wrap-reverse items-center gap-14 px-6 py-28">
                 <div class="min-w-0 flex-[1.2_1_520px]">
-                    <CodeCard title="beyond.vlt" code={BEYOND_VLT} />
+                    <CodeCard title="beyond.velt" code={BEYOND_VLT} />
                 </div>
                 <div class="flex min-w-0 flex-[1_1_380px] flex-col gap-6">
                     <div class="flex flex-col gap-3.5">

@@ -25,7 +25,7 @@ The package declares each Rust function with the signature its library exports, 
 a Velt API. `velt` checks every `declare` against the library, so a mismatch is a compile error at
 the `declare`, not a crash at run time:
 
-```ts ignore title="src/lib.vlt"
+```ts ignore title="src/lib.velt"
 import { IoResult, unwrapIo } from "velt/native";
 
 declare function velt_greet__parse(text: string): IoResult<i64>;
@@ -37,7 +37,7 @@ export function parse(text: string): i64 {
 
 A package with an error class of its own builds it from the code's name:
 
-```ts title="src/errors.vlt"
+```ts title="src/errors.velt"
 import { errorCodeName, IoStatus } from "velt/native";
 
 export class GreetError extends Error {

@@ -28,9 +28,9 @@ console.log(renderToStringSync(<Greeting name="Ada & Bo" />));
 
 ## Where JSX is allowed
 
-JSX is allowed in `.vlt` and `.tsx` files. In a `.ts` file it is an error, as in TypeScript
+JSX is allowed in `.velt` and `.tsx` files. In a `.ts` file it is an error, as in TypeScript
 ("JSX is not allowed in a `.ts` file"; rename the file to `.tsx`). Velt has no `<T>expr`
-casts, so in `.vlt` and `.tsx` files a `<` where an expression starts is an element or a
+casts, so in `.velt` and `.tsx` files a `<` where an expression starts is an element or a
 generic arrow function (`<T>(x: T): T => x`, [Functions](/docs/reference/functions/)).
 
 ## The provider
@@ -40,7 +40,7 @@ The *import source* of a module decides its provider, in this order:
 1. a `/** @jsxImportSource <source> */` comment among the comments before the first token
    (Velt also reads `// @jsxImportSource <source>`, but `tsc` reads only the block comment,
    so a file shared with TypeScript uses that one);
-2. `jsx: { importSource: "<source>" }` in the package's [`package.vlt`](/docs/tooling/manifest/#jsx);
+2. `jsx: { importSource: "<source>" }` in the package's [`package.velt`](/docs/tooling/manifest/#jsx);
 3. `velt/jsx`.
 
 So `/** @jsxImportSource velt/jsx */` (or `jsx: { importSource: "velt/jsx" }`) names the default

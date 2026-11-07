@@ -22,9 +22,9 @@ import { openDatabase } from "sqlite/engine";
 ## Adding it to a program
 
 There is no public package registry yet. Depend on the package in the Velt repository, from git
-or from a local checkout, in `package.vlt`:
+or from a local checkout, in `package.velt`:
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -49,7 +49,7 @@ statically.
 
 ## A first database
 
-```ts title="src/main.vlt"
+```ts title="src/main.velt"
 import { open } from "sqlite";
 
 struct User {

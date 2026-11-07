@@ -21,9 +21,9 @@ import { connect, subscribe, psubscribe, RedisClient, RedisPipeline, RedisReply,
 ## Adding it to a program
 
 There is no public package registry yet. Depend on the package in the Velt repository, from git
-or from a local checkout, in `package.vlt`:
+or from a local checkout, in `package.velt`:
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -46,7 +46,7 @@ prebuilt libraries, and then needs no Rust
 
 ## A first program
 
-```ts title="src/main.vlt"
+```ts title="src/main.velt"
 import { connect, subscribe } from "redis";
 
 const redis = await connect("redis://127.0.0.1:6379/0");

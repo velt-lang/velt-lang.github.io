@@ -9,7 +9,7 @@ order: 30
 # `velt dev`: hot reload
 
 ```
-velt dev [<file.vlt>] [--exe [--release] [-g] [--cpu <name>] [--backend <name>]] [--locked] [-v] [--timings] [-- <program args>...]
+velt dev [<file.velt>] [--exe [--release] [-g] [--cpu <name>] [--backend <name>]] [--locked] [-v] [--timings] [-- <program args>...]
 ```
 
 `velt dev` runs your program like `velt run`, then keeps it up to date while you edit. Save a
@@ -17,7 +17,7 @@ file and the running program picks up the change, usually with its in-memory sta
 connections intact.
 
 ```
-$ velt dev server.vlt
+$ velt dev server.velt
 velt dev: started in 410 ms
 velt dev: hot-swapped 3 functions in 82 ms
 velt dev: build failed (the previous version keeps running); waiting for changes
@@ -27,7 +27,7 @@ velt dev: restarted (Point gained a field) in 380 ms
 ## What happens on save
 
 `velt dev` watches every file the build read (your modules, the standard library, path
-dependencies) plus `package.vlt` and `velt.lock.json`, and new `.vlt` files next to them (so a module
+dependencies) plus `package.velt` and `velt.lock.json`, and new `.velt` files next to them (so a module
 that an import was missing is picked up as soon as you create it). Changes come from the
 operating system's file notifications; where those don't work (some network or container file
 systems), set `VELT_DEV_POLL=1` to check the files every 10 ms instead. A file saved while a

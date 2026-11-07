@@ -17,14 +17,14 @@ This chapter writes one; `packages/sqlite` in the Velt repository is a complete 
 
 ```text
 greet/
-  package.vlt
-  src/lib.vlt          # the package's Velt API
+  package.velt
+  src/lib.velt          # the package's Velt API
   native/Cargo.toml    # the Rust crate
   native/src/lib.rs
 ```
 
 ```ts ignore
-// package.vlt
+// package.velt
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -183,7 +183,7 @@ export function hello(name: string): string {
 differs, is a compile error at the `declare`, not a crash at run time:
 
 ```text
-src/lib.vlt:4:1: error: `declare` of `velt_greet__parse` does not match the native library of `greet 0.1.0`
+src/lib.velt:4:1: error: `declare` of `velt_greet__parse` does not match the native library of `greet 0.1.0`
   = note: the library exports `(string)->IoResult<i64>`
   = note: this declares     `(string)->IoResult<i32>`
 ```
@@ -221,7 +221,7 @@ binder through velt/db's `decodeRows` and `bindParams` ([velt/db: native drivers
 the Velt side never holds an address that a wrong number could stand in for.
 
 Wrap handles in a class that releases them in `[Symbol.dispose]()`, so `using` and the end of
-the object's life close them (see `packages/sqlite/src/lib.vlt`).
+the object's life close them (see `packages/sqlite/src/lib.velt`).
 
 ## Building and publishing
 

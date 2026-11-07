@@ -6,13 +6,17 @@ category: "Language reference"
 order: 20
 ---
 
+import { Callout } from '@/components/mdx';
+
 # Lexical structure
 
 ## Programs
 
-A program is a set of `.vlt` files. As in Node, it runs its root file's top-level statements in
+A program is a set of `.velt` files. As in Node, it runs its root file's top-level statements in
 order ([Scripts](/docs/reference/modules/#scripts-top-level-statements)); top-level `await`
 works there. Declarations are hoisted: a function can be called above its definition.
+
+<Callout title="Coming from 0.5">Velt files used to end in `.vlt`. Rename them to `.velt`: `.vlt` files still build in this release, with a warning, and stop building in the next one. The manifest is [`package.velt`](/docs/tooling/manifest/) now.</Callout>
 
 ```ts
 console.log(greeting("world"));
@@ -68,7 +72,7 @@ export function larger(a: i64, b: i64): i64 {
 ```
 
 - Semicolons are optional: automatic semicolon insertion follows JavaScript's rules, as
-  TypeScript and Node apply them, in `.vlt`, `.ts` and `.tsx` files alike. A statement, a
+  TypeScript and Node apply them, in `.velt`, `.ts` and `.tsx` files alike. A statement, a
   declaration, or a member of a class, an interface or an object type ends with `;`, or without
   one at a line break, before `}` or at the end of the file, when the next token cannot
   continue it. No `;` is inserted in a `for (;;)` header; one is after `do { … } while (c)`,

@@ -16,9 +16,9 @@ Velt programs compile to WebAssembly for two hosts:
 | `wasm32-unknown-unknown` | the browser (and Node) | `target/velt/<stem>.wasm` plus the JavaScript glue `velt_web.mjs` |
 
 ```sh
-velt run --target wasm32-wasip1 hello.vlt             # builds, then `wasmtime run --dir=. …`
-velt build --target wasm32-unknown-unknown hello.vlt  # hello.wasm + velt_web.mjs
-velt run --target wasm32-unknown-unknown hello.vlt    # runs it with node and the glue
+velt run --target wasm32-wasip1 hello.velt             # builds, then `wasmtime run --dir=. …`
+velt build --target wasm32-unknown-unknown hello.velt  # hello.wasm + velt_web.mjs
+velt run --target wasm32-unknown-unknown hello.velt    # runs it with node and the glue
 ```
 
 ## Setup

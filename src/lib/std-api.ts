@@ -183,7 +183,7 @@ let bySlug: Map<string, ApiModule> | undefined;
 
 /**
  * The modules that get an API page, keyed by module id: the importable ones
- * (a folder's `index.vlt`) that have a guide page under src/pages/docs/std/.
+ * (a folder's `index.velt`) that have a guide page under src/pages/docs/std/.
  * The other files are their internals; a guide about one part of a module
  * (`collections/deque`) shares the module's API page. Sorted by the name the
  * pages show.
@@ -192,7 +192,7 @@ export function apiModules(): Map<string, ApiModule> {
     if (pageModules) return pageModules;
     pageModules = new Map(
         apiDoc()
-            .modules.filter((m) => m.module.startsWith('std/') && /(^|\/)index\.vlt$/.test(m.file) && guideFile(guideSlug(m.module)))
+            .modules.filter((m) => m.module.startsWith('std/') && /(^|\/)index\.velt$/.test(m.file) && guideFile(guideSlug(m.module)))
             .sort((a, b) => specifierOf(a).localeCompare(specifierOf(b)))
             .map((m) => [m.module, m]),
     );

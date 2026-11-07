@@ -20,14 +20,14 @@ modules, with tests.
 ## Setting up
 
 The HTTP server is a package, not part of the standard library. Start a project and add it to
-`package.vlt`'s `dependencies`:
+`package.velt`'s `dependencies`:
 
 ```sh
 velt new todo
 cd todo
 ```
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -52,9 +52,9 @@ instead. `velt new todo --template api` writes the git dependency for you.
 
 ## Hello, HTTP
 
-Replace `src/main.vlt` with:
+Replace `src/main.velt` with:
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { serve } from "http-server";
 
 const server = await serve({ port: 8080 }, (req: Request) => {
@@ -81,10 +81,10 @@ serializes any value with `JSON.stringify`, which is generated at compile time f
 
 ## A JSON API
 
-The API goes into its own module, `src/server.vlt`, with a `startServer(port)` function, so tests
+The API goes into its own module, `src/server.velt`, with a `startServer(port)` function, so tests
 can start it too:
 
-```ts ignore title="src/server.vlt"
+```ts ignore title="src/server.velt"
 import { serve, HttpServer } from "http-server";
 
 class ApiError extends Error {
@@ -182,9 +182,9 @@ export async function startServer(port: number): Promise<HttpServer> {
 }
 ```
 
-`src/main.vlt` starts it:
+`src/main.velt` starts it:
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { startServer } from "./server";
 
 const server = await startServer(8080);
@@ -246,9 +246,9 @@ The [http-server reference](/docs/packages/http-server/) has every option, limit
 ## Testing it
 
 Start the server on port 0 (any free port), read the port from `server.port`, and call it with
-the global [`fetch`](/docs/std/net/http/). In `tests/api.test.vlt`:
+the global [`fetch`](/docs/std/net/http/). In `tests/api.test.velt`:
 
-```ts ignore title="tests/api.test.vlt"
+```ts ignore title="tests/api.test.velt"
 import { startServer } from "../src/server";
 
 export async function test_create_and_validate() {
@@ -265,14 +265,14 @@ export async function test_create_and_validate() {
 
 ```sh
 $ velt test
-running tests/api.test.vlt (ran: not cacheable, it uses … the clock, the network)
+running tests/api.test.velt (ran: not cacheable, it uses … the clock, the network)
 ok test_create_and_validate
 
 test result: ok. 1 passed; 0 failed
 ```
 
-The test imports `src/server.vlt`, not `src/main.vlt`: importing a module runs its top-level
-statements, and `main.vlt`'s would start a server on port 8080. See [Testing](/docs/book/testing/).
+The test imports `src/server.velt`, not `src/main.velt`: importing a module runs its top-level
+statements, and `main.velt`'s would start a server on port 8080. See [Testing](/docs/book/testing/).
 
 ## HTTPS and HTTP/2
 

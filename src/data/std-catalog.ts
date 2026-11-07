@@ -102,7 +102,7 @@ export const CATEGORIES: Category[] = [
         id: 'tools', title: 'Tests & tooling', blurb: 'For libraries and tools', modules: [
             ['test', 'The runner velt test builds into test programs.'],
             ['test/http', 'expect matchers for a Response.'],
-            ['package', 'The type of the package manifest, package.vlt.'],
+            ['package', 'The type of the package manifest, package.velt.'],
             ['dev', 'The graceful stop under velt dev.'],
             ['generate', 'What source generators are written with.'],
             ['native', 'The Velt side of packages with native code.'],

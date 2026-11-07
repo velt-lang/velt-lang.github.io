@@ -600,7 +600,7 @@ capture or object holding it) must not modify what it captured. The error names 
 
 ```text
 error: this async closure modifies captured `count`, so it must stay on the task that created it
-  --> main.vlt:9:9: but it reaches `spawn` here
+  --> main.velt:9:9: but it reaches `spawn` here
 ```
 
 An async closure that never leaves its task may: its calls run as started promises on that

@@ -48,14 +48,14 @@ LSP client; the repository ships a Visual Studio Code extension in `editors/vsco
     standard library's modules (`velt/fs`, `velt/collections`, with a line about each),
     files and folders next to the file for `./` and `../`, and the package's dependencies.
     Typing `"` or `/` there opens the list. Files are named as imports name them: without the
-    extension, unless two files share a name (`./dup.ts` next to `./dup.vlt`);
+    extension, unless two files share a name (`./dup.ts` next to `./dup.velt`);
   - **auto-import**: typing a name that isn't imported yet offers the exports of std modules,
     of the dependencies and of the package's other files (unsaved changes of open files
     included) that start with what you typed, marked with the module (`readFile  velt/fs`).
     Accepting one adds it to the file's `import { … } from` that module (in order, if its names
     are sorted), or adds that import after the other imports. A file is named so that the
     import loads it: with its extension when another file shares its name, and a folder module
-    as `./shapes/index` when a file `shapes.vlt` would win over the folder.
+    as `./shapes/index` when a file `shapes.velt` would win over the folder.
   - the exports offered inside the braces and by auto-import show their doc comments, and
     `@deprecated` ones are struck through.
 - **JSX**: go to definition, hover, references and rename on tags, opening and closing
@@ -88,12 +88,12 @@ LSP client; the repository ships a Visual Studio Code extension in `editors/vsco
   [`velt check --ts-compat`](/docs/tooling/cli/#code-shared-with-typescript---ts-compat) appear as you type,
   with the rule as the diagnostic's code and `velt ts-compat` as its source (see
   [below](#code-shared-with-typescript)).
-- **Package manifests**: `package.vlt` is read as data, the way `velt` reads it, not checked as a
+- **Package manifests**: `package.velt` is read as data, the way `velt` reads it, not checked as a
   program. Its diagnostics are exactly `velt`'s; completion offers the fields valid at the cursor
   and fixed values (native targets, `true`/`false`); hover explains each field. Saving a changed
-  `package.vlt` reinstalls the package's dependencies for the other open files
-  ([`package.vlt`](/docs/tooling/manifest/)).
-- **Live registry data** in `package.vlt`, from the package's registry: completion of versions
+  `package.velt` reinstalls the package's dependencies for the other open files
+  ([`package.velt`](/docs/tooling/manifest/)).
+- **Live registry data** in `package.velt`, from the package's registry: completion of versions
   (typing `"` after a dependency's name) and of package names in `dependencies`; hover on a
   dependency shows its newest and locked versions; a requirement no published version matches,
   or a package the registry doesn't have, is an error, a requirement that leaves out a newer
@@ -107,38 +107,38 @@ server down.
 
 `.ts` and `.tsx` modules ([TypeScript files](/docs/reference/modules/#typescript-files-ts-and-tsx))
 are part of the programs the server analyzes, and it asks the editor to report changes to them.
-The workspace symbol index takes `.vlt` files anywhere in the workspace folders, but `.ts` and
+The workspace symbol index takes `.velt` files anywhere in the workspace folders, but `.ts` and
 `.tsx` files only in a package's `src/` and `tests/` (and open documents), so the TypeScript
 frontend of a monorepo is not indexed as Velt. Whether the editor sends it `.ts` and `.tsx` documents to
 analyze is up to the client: the VS Code extension leaves them to VS Code's TypeScript support.
 
 ## Code shared with TypeScript
 
-A file in a folder that `package.vlt`'s `tsCompat` lists gets the TypeScript-compatibility
+A file in a folder that `package.velt`'s `tsCompat` lists gets the TypeScript-compatibility
 lint's findings next to the compiler's diagnostics: errors where `tsc` would reject the code or
 JavaScript would run it differently, warnings where it may. Each finding's code is its rule
 (`velt-number-type`) and its source is `velt ts-compat`; the message ends with what TypeScript
 does and what to write. A finding with a mechanical replacement (`f64` → `number`, `bool` →
 `boolean`, a dropped suffix) offers it as a preferred quick fix, so **Fix all** applies it too.
 
-- The findings follow your edits, also unsaved edits to `package.vlt`'s `tsCompat`; closing
-  `package.vlt` without saving goes back to the file on disk. Changes made outside the editor
-  (`package.vlt` saved by another program, folders created or deleted) apply when the editor
+- The findings follow your edits, also unsaved edits to `package.velt`'s `tsCompat`; closing
+  `package.velt` without saving goes back to the file on disk. Changes made outside the editor
+  (`package.velt` saved by another program, folders created or deleted) apply when the editor
   reports them (VS Code does). A folder `tsCompat` lists that doesn't exist is a warning in
-  `package.vlt`.
+  `package.velt`.
 - The files in the folders are the ones `velt check --ts-compat` finds: not under
   `node_modules/`, `target/`, hidden or symlinked directories, or in a nested package.
 - Like the command, the lint skips a file with errors of its own: fix those first.
 - An import of a file outside the folders is the finding `outside-import`.
 - Files outside the folders never get findings, and nothing changes for them.
-- The VS Code extension sends only `.vlt` files to the server; `.ts` and `.tsx` files in the
+- The VS Code extension sends only `.velt` files to the server; `.ts` and `.tsx` files in the
   folders get findings in editors that send them, and from `velt check --ts-compat`.
 
 ## Visual Studio Code
 
 The extension adds syntax highlighting, starts `velt lsp`, and debugs Velt programs with F5
 ([Debugging](/docs/tooling/debugging/#vs-code)). Above `main` the server shows **▶ Run | Debug**, and above
-each test of a test file (`export function test_*` in `*.test.vlt`) **▶ Run test | Debug test**,
+each test of a test file (`export function test_*` in `*.test.velt`) **▶ Run test | Debug test**,
 to a client that asks for these lenses (`"initializationOptions": {"runLenses": true}`, as the
 VS Code extension does): they run the extension's `velt.runFile`, `velt.debugFile`,
 `velt.runTest` and `velt.debugTest` commands, so other editors don't get them. A program

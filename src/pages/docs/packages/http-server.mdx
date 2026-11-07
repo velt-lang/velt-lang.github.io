@@ -35,9 +35,9 @@ and the WebSocket client. For a walkthrough, see
 There is no public package registry yet. `velt new --template api` (or `--template websocket`)
 starts a project that depends on `http-server` from the Velt repository on GitHub, pinned to the
 release tag of the `velt` that made it. In an existing project, add the same dependency to
-`package.vlt`:
+`package.velt`:
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -62,7 +62,7 @@ so it needs no Rust toolchain. Import it as `"http-server"`, and its WebSocket h
 
 ## A first server
 
-```ts title="src/main.vlt"
+```ts title="src/main.velt"
 import { serve } from "http-server";
 
 const server = await serve({ port: 0 }, async (req: Request): Promise<Response> => {

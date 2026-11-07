@@ -16,7 +16,7 @@ time.
 
 ## Declaring a generated function
 
-```ts ignore title="show/index.vlt"
+```ts ignore title="show/index.velt"
 /** `value` as text: fields in order, strings quoted. */
 export declare generated("./gen") function show<T>(value: T): string;
 ```
@@ -26,7 +26,7 @@ generator module as an import of the declaring module would: a relative path (`.
 module of a package (`some-package/gen`) or of the standard library. Callers are checked against the signature,
 like any generic function, and use it as one:
 
-```ts ignore title="main.vlt"
+```ts ignore title="main.velt"
 import { show } from "./show";
 
 class Point {
@@ -48,7 +48,7 @@ one): code generated for it that throws something else is an error.
 The generator module exports a function with the same name, which [`velt/generate`](/docs/std/generate/) gives an
 `InstanceRequest` and an `Output`:
 
-```ts ignore title="show/gen.vlt"
+```ts ignore title="show/gen.velt"
 import { InstanceRequest, Output } from "velt/generate";
 
 export function show(req: InstanceRequest, out: Output): void {

@@ -1,6 +1,6 @@
 ---
 title: "Modules and packages"
-description: "Split a program into modules with ES module syntax, and share code as packages declared in package.vlt."
+description: "Split a program into modules with ES module syntax, and share code as packages declared in package.velt."
 layout: "docs"
 category: "The book"
 order: 110
@@ -11,10 +11,10 @@ navTitle: "Packages"
 
 ## Modules
 
-Every `.vlt` file is a module, with ES module syntax and named exports only:
+Every `.velt` file is a module, with ES module syntax and named exports only:
 
 ```ts ignore
-// src/geometry.vlt
+// src/geometry.velt
 export type Point = { x: f64; y: f64 };
 
 export function distance(a: Point, b: Point): f64 {
@@ -25,15 +25,15 @@ const EPSILON = 1e-9;                // not exported: private to the file
 ```
 
 ```ts ignore
-// src/main.vlt
+// src/main.velt
 import { distance, type Point } from "./geometry";
 import * as path from "velt/path";
 
 const a: Point = { x: 0.0, y: 0.0 };
-console.log(distance(a, { x: 3.0, y: 4.0 }), path.basename("/srv/app.vlt")); // 5 app.vlt
+console.log(distance(a, { x: 3.0, y: 4.0 }), path.basename("/srv/app.velt")); // 5 app.velt
 ```
 
-- Relative imports drop the extension. A folder is a module through its `index.vlt`, which
+- Relative imports drop the extension. A folder is a module through its `index.velt`, which
   usually re-exports its parts: `export { Circle } from "./circle";`, `export * from "./square";`.
 - `import * as ns` binds a namespace; `import type` imports names for type positions only.
 - `export default` and default imports don't exist: the compiler's error suggests the named
@@ -48,7 +48,7 @@ All rules are in [Modules and packages](/docs/reference/modules/) in the Referen
 
 ## Path aliases
 
-In a package, `paths` in `package.vlt` replaces long `../../` chains, like TypeScript's
+In a package, `paths` in `package.velt` replaces long `../../` chains, like TypeScript's
 `compilerOptions.paths`:
 
 ```ts ignore
@@ -56,17 +56,17 @@ paths: { "@app/*": "src/*" },
 ```
 
 ```ts ignore
-import { execute } from "@app/commands";        // src/commands.vlt or src/commands/index.vlt
+import { execute } from "@app/commands";        // src/commands.velt or src/commands/index.velt
 ```
 
 ## Packages
 
-A package is a directory with a `package.vlt` ([reference](/docs/tooling/manifest/)). An
-application has `src/main.vlt`; a library has `src/lib.vlt`, whose exports are what other
-packages import. `package.vlt` is written in Velt, as data only: building or installing a
+A package is a directory with a `package.velt` ([reference](/docs/tooling/manifest/)). An
+application has `src/main.velt`; a library has `src/lib.velt`, whose exports are what other
+packages import. `package.velt` is written in Velt, as data only: building or installing a
 package never runs code from it.
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -78,11 +78,11 @@ export const pkg: Package = {
 ```
 
 ```sh
-velt new textkit --template lib     # a library: src/lib.vlt, tests, doc comments
+velt new textkit --template lib     # a library: src/lib.velt, tests, doc comments
 cd textkit
 velt test
 velt doc                            # HTML docs in target/doc from the doc comments
-velt publish                        # to the local registry, or the one in package.vlt
+velt publish                        # to the local registry, or the one in package.velt
 ```
 
 The names `velt` and `std` are reserved for the standard library, whose modules are `velt/…`:
@@ -91,7 +91,7 @@ library``), so an import of `velt/…` always means the standard library.
 
 ## Dependencies
 
-A package's `dependencies` in `package.vlt` say where each one comes from:
+A package's `dependencies` in `package.velt` say where each one comes from:
 
 ```ts ignore
 dependencies: {
@@ -105,17 +105,17 @@ dependencies: {
 },
 ```
 
-`velt add` writes the first two forms, and keeps your comments in `package.vlt`:
+`velt add` writes the first two forms, and keeps your comments in `package.velt`:
 
 ```sh
 cd ../app
-velt add textkit                    # the latest version, into package.vlt and velt.lock.json
+velt add textkit                    # the latest version, into package.velt and velt.lock.json
 velt add util --path ../util        # or a package from a local directory
 ```
 
 ```ts ignore
-import { slugify } from "textkit";             // the package's src/lib.vlt
-import { wrap } from "textkit/format";         // its src/format.vlt
+import { slugify } from "textkit";             // the package's src/lib.velt
+import { wrap } from "textkit/format";         // its src/format.velt
 ```
 
 A git dependency names a `branch`, a `tag` or a `rev` (a commit); the first install resolves it
@@ -138,10 +138,10 @@ with cargo from a git or path dependency ([native code](/docs/tooling/packages/#
 ## Workspaces
 
 A repository with several packages (a server, a CLI and the library they share) is a workspace:
-a `velt.workspace.vlt` at its root lists the members, which share one `velt.lock.json` and one
+a `velt.workspace.velt` at its root lists the members, which share one `velt.lock.json` and one
 `velt` version, and depend on each other with `"workspace"`:
 
-```ts ignore title="velt.workspace.vlt"
+```ts ignore title="velt.workspace.velt"
 import type { Workspace } from "velt/package";
 
 export const workspace: Workspace = {
@@ -150,7 +150,7 @@ export const workspace: Workspace = {
 };
 ```
 
-```ts ignore title="apps/server/package.vlt"
+```ts ignore title="apps/server/package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {

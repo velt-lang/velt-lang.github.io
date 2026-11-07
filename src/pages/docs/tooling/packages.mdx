@@ -1,6 +1,6 @@
 ---
 title: "Packages"
-description: "The package manager is built into velt. A package is a directory with a package.vlt; dependencies come from a registry, a local path or a git repository, and velt.lock.json pins them."
+description: "The package manager is built into velt. A package is a directory with a package.velt; dependencies come from a registry, a local path or a git repository, and velt.lock.json pins them."
 layout: "docs"
 category: "Tooling"
 order: 50
@@ -9,18 +9,18 @@ order: 50
 # Packages and registries
 
 The package manager is built into `velt`. A package is a directory with a
-[`package.vlt`](/docs/tooling/manifest/); dependencies come from a registry, a local path or a git
+[`package.velt`](/docs/tooling/manifest/); dependencies come from a registry, a local path or a git
 repository, and `velt.lock.json` pins them.
 
 | Command | What it does |
 |---|---|
-| `velt add <pkg>[@<req>]` | add a registry dependency to `package.vlt` (latest version without a requirement) and install it; comments in `package.vlt` are kept |
+| `velt add <pkg>[@<req>]` | add a registry dependency to `package.velt` (latest version without a requirement) and install it; comments in `package.velt` are kept |
 | `velt add <pkg> --path <dir>` | add a local package |
 | `velt install [--locked]` | resolve and fetch dependencies, write `velt.lock.json`; `--locked` fails if the lock would change |
 | `velt update` | resolve again, ignoring `velt.lock.json`, with the newest published velt the package's `velt` field accepts, installed first (recorded in the lock) |
 | `velt publish` | publish the current package to its registry (with its prebuilt native libraries) |
 | `velt native build [--target <t>]` | build the package's native library (package authors; needs Rust) |
-| `velt manifest [--json]` | check `package.vlt`, or print it as JSON for other tools |
+| `velt manifest [--json]` | check `package.velt`, or print it as JSON for other tools |
 | `velt search <text>` | find packages by name, keywords and description (`--json` for scripts) |
 | `velt yank <pkg>@<version> [--undo]` | withdraw a published version: lockfiles that pin it keep working, new requirements skip it |
 | `velt owner list\|add\|remove <pkg> [<user>]` | who may publish a package on a registry server |
@@ -31,7 +31,7 @@ velt new textkit --template lib     # a library with doc comments and tests
 cd textkit && velt test && velt publish
 
 cd ../app
-velt add textkit                    # the latest version, into package.vlt and velt.lock.json
+velt add textkit                    # the latest version, into package.velt and velt.lock.json
 ```
 
 ```ts ignore
@@ -83,7 +83,7 @@ dependencies: {
   repository's default branch. `path` is the package's directory in the repository, for a
   repository that holds several packages. A `version` beside them is a requirement the package
   must meet.
-- **npm packages too.** A target without a `package.vlt` but with a `package.json` is an npm
+- **npm packages too.** A target without a `package.velt` but with a `package.json` is an npm
   package, compiled from its TypeScript sources ([npm packages](#npm-packages)), as
   `npm install git+…` takes it; a workspace's root (`pnpm-workspace.yaml`, or `workspaces` in its
   `package.json`) provides every package of the workspace besides its own. As in npm, a
@@ -142,11 +142,11 @@ dependencies: {
 ## Workspaces
 
 A repository with several Velt packages (an app, the libraries it shares with a CLI) is a
-workspace: a `velt.workspace.vlt` at its root lists the member packages, which then share one
+workspace: a `velt.workspace.velt` at its root lists the member packages, which then share one
 `velt.lock.json`, one `velt` version and one registry, and depend on each other by name.
 
 ```ts ignore
-// velt.workspace.vlt
+// velt.workspace.velt
 import type { Workspace } from "velt/package";
 
 export const workspace: Workspace = {
@@ -157,7 +157,7 @@ export const workspace: Workspace = {
 ```
 
 ```ts ignore
-// apps/server/package.vlt
+// apps/server/package.velt
 export const pkg: Package = {
   name: "server",
   version: "0.4.0",
@@ -169,9 +169,9 @@ export const pkg: Package = {
 };
 ```
 
-- **Members** are the directories with a `package.vlt` that the `members` globs list: `*` matches
+- **Members** are the directories with a `package.velt` that the `members` globs list: `*` matches
   one directory name, `**` any number of them, a `!` in front excludes (`"!packages/old"`), and
-  `"."` is a `package.vlt` beside the workspace file. A glob that lists no package is an error, so
+  `"."` is a `package.velt` beside the workspace file. A glob that lists no package is an error, so
   a typo never drops a member silently. Two members can't have the same name.
 - **`"workspace"`** names the member of that name, else the workspace's `dependencies` entry. A
   member is always a `"workspace"` dependency: `core: "0.1"` or `core: { path: "../core" }` for a
@@ -202,7 +202,7 @@ export const pkg: Package = {
   |---|---|
   | `--workspace` | all of them |
   | `-p <glob>` (repeatable) | those whose name matches (`-p 'server*'`); a scoped name matches whole or without its scope (`-p 'server*'` and `-p '@org/*'` both select `@org/server`) |
-  | `--affected [<base>]` | those with a file changed since `<base>` (committed or not), and every member that uses them; without a base, the merge base with the upstream branch (in CI, name it: `--affected origin/main`). A change to `velt.workspace.vlt` or `velt.lock.json` affects all |
+  | `--affected [<base>]` | those with a file changed since `<base>` (committed or not), and every member that uses them; without a base, the merge base with the upstream branch (in CI, name it: `--affected origin/main`). A change to `velt.workspace.velt` or `velt.lock.json` affects all |
 
   Members run in dependency order, several at once, each in its own `velt`; each member's output
   is printed in one piece when it finishes, and a summary names the members that failed. A failed
@@ -288,7 +288,7 @@ paths: {
 
 - **Local** (the default): a directory, `$VELT_REGISTRY` or `~/.velt/registry/<name>/<version>/`.
   Downloads are cached in `~/.velt/cache`.
-- **HTTP**: `registry: "https://…"` in `package.vlt`, or `VELT_REGISTRY` set to an
+- **HTTP**: `registry: "https://…"` in `package.velt`, or `VELT_REGISTRY` set to an
   `http(s)://` URL. `velt registry serve [--dir <d>] [--port <n>] [--host <addr>]` serves a
   registry directory (default `127.0.0.1:8091`). `https://` registries are verified against
   Mozilla's root certificates, plus the PEM file in `$VELT_CA_FILE` for a private CA.
@@ -301,7 +301,7 @@ paths: {
   `[::1]`), and refuses a write that would send one anywhere else.
 - A request may take 10 minutes in all. `velt` gives up on a server that stays silent for 60
   seconds, or that it can't connect to within 10 seconds.
-- Package archives contain `package.vlt`, `src/**` and the sources of a `native` crate. Their checksum is the content hash that
+- Package archives contain `package.velt`, `src/**` and the sources of a `native` crate. Their checksum is the content hash that
   `velt.lock.json` records, and every download is verified against it before it enters the cache.
 
 ### Users, owners and yanking
@@ -323,7 +323,7 @@ velt yank textkit@1.2.0                          # withdraw a broken version
 `velt login <url>` reads the token from stdin (a prompt that doesn't echo in a terminal, or a
 pipe in a script) and stores it in `$VELT_HOME/credentials.json`, keyed by the registry's URL and
 readable only by you (mode 0600 on Unix; on Windows an access list for its owner alone). `velt`
-sends a stored token only to the registry it was stored for, so a checkout whose `package.vlt`
+sends a stored token only to the registry it was stored for, so a checkout whose `package.velt`
 names another registry never receives it, and `velt login` refuses a plain `http://` registry on
 another machine. `velt logout <url>` forgets the token. `VELT_REGISTRY_TOKEN`, if set,
 overrides the stored tokens and is sent to whichever registry the command uses, which suits CI

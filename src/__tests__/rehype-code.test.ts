@@ -25,10 +25,10 @@ describe('rehypeVeltCode', () => {
     });
 
     it('uses title= for the bar and badges error fences', async () => {
-        const tree = fence('vlt', 'x', 'error title="bad.vlt"');
+        const tree = fence('velt', 'x', 'error title="bad.velt"');
         await rehypeVeltCode()(tree);
         const header = text(find(tree, hasClass('code-window-header'))!);
-        expect(header).toBe('bad.vltdoes not compile');
+        expect(header).toBe('bad.veltdoes not compile');
     });
 
     it('leaves mermaid fences alone', async () => {

@@ -1,7 +1,7 @@
 /** Home page code samples, hand-highlighted (see src/components/Hl.tsx for the markers). */
 
 /**
- * src/main.vlt of a package that depends on http-server (as `velt new <name>
+ * src/main.velt of a package that depends on http-server (as `velt new <name>
  * --template api` sets it up). Check changes with `velt check` in such a package.
  */
 export const SERVER_TS = `[[k:import]] { serve } [[k:from]] [[s:"http-server"]];
@@ -49,7 +49,7 @@ export const BEYOND_VLT = `[[k:class]] [[t:NotFound]] [[k:extends]] [[t:Error]] 
 
 export const TERMINAL = `[[c:$]] velt new hello [[c:   # --template api | cli | websocket | lib]]
 [[c:$]] cd hello
-[[c:$]] velt run        [[c:# build and run src/main.vlt]]
+[[c:$]] velt run        [[c:# build and run src/main.velt]]
 [[c:$]] velt dev        [[c:# hot-swap your changes on every save]]
 [[c:$]] velt test       [[c:# run the tests]]
 [[c:$]] velt fmt        [[c:# format the code]]

@@ -35,7 +35,7 @@ the sources; the [API pages](/docs/api/) here are generated the same way.
 
 - **An area or a module is a folder**, and its import path is that folder: `velt/fs`,
   `velt/net`, `velt/net/http`, `velt/encoding/json`. Each has one public API, the names its
-  `index.vlt` exports. The other files of a module are its internals, and importing one is an
+  `index.velt` exports. The other files of a module are its internals, and importing one is an
   error that names the module to import instead:
 
   ```ts error
@@ -100,7 +100,7 @@ below its own. The [catalog](/docs/std/modules/) groups them by what they are fo
 | [native](/docs/std/native/) | the Velt side of packages with native code |
 | [net](/docs/std/net/) | TCP and TLS · [dns](/docs/std/net/dns/) · [http](/docs/std/net/http/) (`fetch`, global) · [http/h2](/docs/std/net/http/h2/) · [udp](/docs/std/net/udp/) · [url](/docs/std/net/url/) · [websocket](/docs/std/net/websocket/) (the client) |
 | [os](/docs/std/os/) | platform facts |
-| [package](/docs/std/package/) | the type of `package.vlt` |
+| [package](/docs/std/package/) | the type of `package.velt` |
 | [path](/docs/std/path/) | paths |
 | [process](/docs/std/process/) | arguments, environment, exit · [standard input](/docs/std/process/stdin/) · [child](/docs/std/process/child/) (child processes) |
 | [random](/docs/std/random/) | a fast per-thread generator · [uuid](/docs/std/random/uuid/) |
@@ -122,7 +122,7 @@ libraries, so they are [packages](/docs/packages/), written on public std APIs o
 [http-server](/docs/packages/http-server/) (`serve`, with web-standard `Request` and `Response`
 handlers), [sqlite](/docs/packages/sqlite/), [postgres](/docs/packages/postgres/) and
 [redis](/docs/packages/redis/). A program imports a package by its name
-(`import { serve } from "http-server"`) once `package.vlt` lists it in `dependencies`. std keeps
+(`import { serve } from "http-server"`) once `package.velt` lists it in `dependencies`. std keeps
 what any of them builds on: `fetch` and the web types, [`velt/net/http/h2`](/docs/std/net/http/h2/),
 [`velt/db`](/docs/std/db/), [`velt/dev`](/docs/std/dev/), [`velt/native`](/docs/std/native/) and
 the [WebSocket client](/docs/std/net/websocket/).
