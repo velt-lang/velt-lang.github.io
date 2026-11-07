@@ -2,13 +2,14 @@
  * The docs sidebar, built from page frontmatter (`category`, `order`,
  * `navTitle`) through the SSG navigation for the `docs` collection.
  *
- * Scaling rule: a group lists every page, except groups in COMPACT, which
- * show their `featured` pages plus the current one, and fold the rest into an
- * "All modules" disclosure. Add a group here when a section outgrows a list.
+ * Scaling rule: a group lists every page. A group too long for one list
+ * (the standard library) is split into labelled sections: std's follow the
+ * catalog's categories (src/data/std-catalog.ts), so every module stays in view.
  */
 import { getSidebar } from 'virtual:ssg-navigation';
 import routes from 'virtual:ssg-routes';
 import { GROUPS, isModuleName } from './docs-groups';
+import { CATEGORIES } from '../data/std-catalog';
 
 export interface DocLink {
     title: string;
@@ -21,15 +22,20 @@ export interface DocGroup {
     title: string;
     href: string;
     items: DocLink[];
-    /** For compact groups: the items always shown. */
-    featured?: DocLink[];
+    /** For a long group: its items in labelled sections (pages in no section come first). */
+    sections?: { title: string; items: DocLink[] }[];
 }
 
 export { GROUPS };
 
-const COMPACT: Record<string, string[]> = {
-    std: ['/docs/std/fs/', '/docs/std/net/http/', '/docs/std/encoding/json/', '/docs/std/process/', '/docs/std/time/', '/docs/std/collections/', '/docs/std/crypto/'],
-};
+/** The std pages in the catalog's categories, in the catalog's order. */
+function stdSections(items: DocLink[]): { title: string; items: DocLink[] }[] {
+    const byHref = new Map(items.map((i) => [i.href, i]));
+    return CATEGORIES.map((c) => ({
+        title: c.title,
+        items: c.modules.map(([page]) => byHref.get(`/docs/std/${page}/`)).filter((i): i is DocLink => !!i),
+    })).filter((s) => s.items.length > 0);
+}
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
 
@@ -59,8 +65,7 @@ export function docGroups(): DocGroup[] {
                 const title = String(meta.navTitle ?? i.title);
                 return { title, href, mono: isModuleName(title) };
             });
-        const featured = COMPACT[g.id]?.map((h) => items.find((i) => i.href === h)).filter((i): i is DocLink => !!i);
-        return { ...g, items, featured };
+        return { ...g, items, sections: g.id === 'std' ? stdSections(items) : undefined };
     });
     return cache;
 }

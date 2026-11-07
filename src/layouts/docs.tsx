@@ -11,7 +11,7 @@
 import { component } from 'sigx';
 import type { LayoutProps, LayoutSlots } from '@sigx/ssg';
 import { DocsHeader } from '../components/DocsHeader';
-import { ChevronDown, ChevronRight, GridIcon, MenuIcon } from '../components/Icons';
+import { ChevronDown, GridIcon, MenuIcon } from '../components/Icons';
 import { OnThisPage, type TocHeading } from '../islands/OnThisPage';
 import { PageActions } from '../islands/PageActions';
 import { docGroups, docSequence, type DocGroup, type DocLink } from '../lib/docs-nav';
@@ -60,31 +60,21 @@ function apiOfEntry(href: string): ApiModule | undefined {
     return m && countedExports(m).length > 0 ? m : undefined;
 }
 
-/** One area's pages. Compact groups (std) show their featured pages and fold the rest. */
+/** One area's pages: a list, or for a long group (std) labelled sections with every page in view. */
 const NavGroup = component<{ group: DocGroup; title: string; current: string; all?: DocLink }>(({ props }) => () => {
     const g = props.group;
-    const inGroup = g.items.some((i) => i.href === props.current);
-    const compact = g.featured && g.featured.length > 0;
-    const head = compact ? g.items.filter((i) => i.href === g.href) : [];
-    const shown = compact
-        ? [...head, ...g.featured!, ...g.items.filter((i) => i.href === props.current && !g.featured!.includes(i) && !head.includes(i))]
-        : g.items;
-    const rest = compact ? g.items.filter((i) => !shown.includes(i)) : [];
+    const inSections = new Set((g.sections ?? []).flatMap((s) => s.items.map((i) => i.href)));
+    const loose = g.sections ? g.items.filter((i) => !inSections.has(i.href)) : g.items;
     return (
         <div class="flex flex-col gap-0.5">
             <span class={`${label} px-3 pb-2`}>{props.title}</span>
-            {shown.map((i) => <NavLink key={i.href} item={i} current={props.current} api={apiOfEntry(i.href)} />)}
-            {rest.length > 0 && (
-                <details class="nav-group" open={inGroup && !shown.some((i) => i.href === props.current) ? true : undefined}>
-                    <summary class="flex items-center gap-1 rounded-lg px-3 py-1.5 text-muted hover:text-cyan">
-                        {rest.length} more modules
-                        <ChevronRight size={14} cls="chev" />
-                    </summary>
-                    <div class="flex flex-col gap-0.5 pl-2">
-                        {rest.map((i) => <NavLink key={i.href} item={i} current={props.current} api={apiOfEntry(i.href)} />)}
-                    </div>
-                </details>
-            )}
+            {loose.map((i) => <NavLink key={i.href} item={i} current={props.current} api={apiOfEntry(i.href)} />)}
+            {(g.sections ?? []).map((s) => (
+                <div key={s.title} class="mt-4 flex flex-col gap-0.5">
+                    <span class="px-3 pb-1.5 text-xs font-medium text-dim">{s.title}</span>
+                    {s.items.map((i) => <NavLink key={i.href} item={i} current={props.current} api={apiOfEntry(i.href)} />)}
+                </div>
+            ))}
             {props.all && (
                 <a href={props.all.href} class="mt-3 flex min-h-11 items-center gap-2.5 rounded-xl border border-[#3F2A1A] bg-[#17110C] px-3 font-semibold text-peach hover:text-peach hover:brightness-125">
                     <GridIcon size={16} stroke={2} />

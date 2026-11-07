@@ -204,10 +204,11 @@ pnpm check:responsive  # after a build: every page at 360-1440 px, no sideways s
   Import them at the top of the page:
   `import { Callout, Cards, Card } from '@/components/mdx';`. They render to
   static HTML.
-- Sidebar: groups list every page in `order`, except the standard library,
-  which shows its featured modules (`COMPACT` in `src/lib/docs-nav.ts`) and
-  folds the rest under "All N modules". When another group grows past ~20
-  pages, give it the same treatment rather than a longer list.
+- Sidebar: groups list every page in `order`. The standard library is split
+  into labelled sections that follow the catalog's categories
+  (`src/data/std-catalog.ts`), so every module stays in view; a new std page
+  needs its category there. When another group grows past ~20 pages, split it
+  into sections the same way rather than folding pages away.
 - Code examples must be valid Velt for the release the docs describe
   (`DOCS_VERSION` in `src/lib/site.ts`). `pnpm check:examples` runs every
   `ts` / `velt` / `tsx` fence through the installed `velt check` (CI does it
@@ -258,7 +259,7 @@ reaches this repo two ways.
    of a page here.
 2. **Update the pages** under `src/pages/docs/`: new or changed syntax in the
    reference, new std functions in their module page (new module → new page in
-   `std/`, a category in `src/data/std-catalog.ts`, and a `COMPACT` entry if it's a headline module), new CLI behavior in
+   `std/` and a category in `src/data/std-catalog.ts`), new CLI behavior in
    `tooling/`, and the book chapters a change affects. Write for a reader meeting
    the feature for the first time: state what is true, don't narrate history.
 3. **Home page**: if the release changes a claim on the home page (the
