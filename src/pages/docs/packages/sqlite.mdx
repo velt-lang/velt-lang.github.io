@@ -10,8 +10,8 @@ import { Callout } from '@/components/mdx';
 
 # sqlite
 
-Embedded SQLite, compiled into the package's native library (Rust over rusqlite, no system
-library), with an API close to better-sqlite3. The package also holds a SQLite engine written in
+Embedded SQLite, the real SQLite engine (3.53.2) built with the package and called through
+[`declare c`](/docs/reference/c-interop/) from plain Velt, with an API close to better-sqlite3. The package also holds a SQLite engine written in
 Velt, [`sqlite/engine`](#the-engine-written-in-velt), which reads databases today.
 
 ```ts
@@ -35,17 +35,29 @@ export const pkg: Package = {
     // Or a local checkout of the repository:
     // sqlite: { path: "../velt/packages/sqlite" },
   },
+  // The package calls C, so the program allows it: with the repository for a git dependency,
+  // or by name (`allowNative: ["sqlite"]`) for a path one.
+  allowNative: [{ name: "sqlite", git: "https://github.com/velt-lang/velt" }],
 };
 ```
 
-The driver is a Rust crate (the package's `native/` directory), so both forms build it with cargo
-the first time and need a [Rust toolchain](https://rustup.rs). A path dependency builds it
-directly (into `packages/sqlite/target/velt-native/`, again when it changes); a git dependency
-builds it only when you allow that with `VELT_NATIVE_FROM_SOURCE=1`, since the build runs the
-package's build scripts. A package published to a registry carries prebuilt libraries, and
-then needs no Rust ([packages with native code](/docs/tooling/packages/#packages-with-native-code)).
-`velt run` and debug builds link the library as a shared library; `velt build --release` links it
-statically.
+The package's `native/` directory holds SQLite's amalgamation (`sqlite3.c` and `sqlite3.h`,
+3.53.2 as released), which `velt` compiles with the package using the pinned zig: no system
+`libsqlite3` is needed, and every platform gets the same SQLite. A path dependency builds it the
+first time, into `packages/sqlite/target/velt-native/`, and again when it changes; the first build
+downloads zig once (about 55 MB, or the one `VELT_ZIG` names) and compiles SQLite once, and later
+builds reuse it. A git dependency builds it only when you allow that with
+`VELT_NATIVE_FROM_SOURCE=1`, since it compiles code it fetched. A package published to a registry
+carries a prebuilt library for each target, and then compiles nothing
+([packages with native code](/docs/tooling/packages/#packages-with-native-code)). `velt run` and
+debug builds link the library as a shared library; `velt build --release` links it statically.
+
+SQLite is built with these options: FTS3 and FTS5, R-Tree, STAT4, DBSTAT, column metadata, JSON,
+foreign keys on by default, and `SQLITE_THREADSAFE=1` with each connection opened
+`SQLITE_OPEN_NOMUTEX` (the driver keeps one thread in a connection at a time).
+`velt check` lists the package with its two C libraries, `c` and `sqlite3` (built from
+`native/sqlite3.c`), both checked against their headers, and its places of unsafe code
+([what a program trusts](/docs/tooling/packages/#what-a-program-trusts)).
 
 ## A first database
 
@@ -120,7 +132,7 @@ releases itself when dropped; `close()` releases it at once (later calls throw `
 
 ### Parameters
 
-Parameters bind as their `JSON.stringify` text would; [velt/db](/docs/std/db/)'s `bindParams`
+Parameters bind as their `JSON.stringify` text would; [velt/db](/docs/std/db/)'s `writeParams`
 hands numbers, strings, bools, `null` and `u8[]` to SQLite directly, without making the text.
 
 - An object binds `:name`, `@name` and `$name` by field name. Extra fields are ignored; a missing
@@ -132,7 +144,7 @@ hands numbers, strings, bools, `null` and `u8[]` to SQLite directly, without mak
 
 ### Rows
 
-Rows are decoded by velt/db's `decodeRows` (as `JSON.parse<T>` would decode them), so a column
+Rows are decoded by velt/db's `readRows` (as `JSON.parse<T>` would decode them), so a column
 fills the field with the same name; rename with `AS`.
 
 | SQLite | Velt field |
@@ -278,5 +290,5 @@ The package's tests (`velt test` in `packages/sqlite`) need nothing but the pack
 `:memory:` databases and temporary files.
 
 <Callout kind="info" title="Not available on WebAssembly">
-The driver is a native library, which a WebAssembly build can't use.
+The driver calls SQLite's C library, which a WebAssembly build can't use.
 </Callout>

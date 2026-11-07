@@ -34,6 +34,9 @@ export const pkg: Package = {
     // Or a local checkout of the repository:
     // postgres: { path: "../velt/packages/postgres" },
   },
+  // The package has native code, so the program allows it: with the repository for a git
+  // dependency, or by name (`allowNative: ["postgres"]`) for a path one.
+  allowNative: [{ name: "postgres", git: "https://github.com/velt-lang/velt" }],
 };
 ```
 

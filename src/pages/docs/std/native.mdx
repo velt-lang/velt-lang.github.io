@@ -1,6 +1,6 @@
 ---
 title: "velt/native"
-description: "What the Velt side of a package with native code binds its Rust functions with: IoResult, IoStatus, and the functions that turn a failed result into an IoError."
+description: "What the Velt side of a package with a Rust crate binds its Rust functions with: IoResult, IoStatus, and the functions that turn a failed result into an IoError."
 layout: "docs"
 category: "Standard library"
 order: 235
@@ -9,8 +9,9 @@ order: 235
 # velt/native
 
 `import { IoResult, IoStatus, unwrapIo, checkIo } from "velt/native"`. What the Velt side of a
-[package with native code](/docs/book/native-packages/) binds its Rust functions with. Programs
-that don't wrap a native library never import it.
+[package with a Rust crate](/docs/book/native-packages/#rust-crates) binds its Rust functions
+with. Programs that don't wrap a native library never import it. A package that calls a C library
+uses [`declare c`](/docs/reference/c-interop/) and [`velt/ffi`](/docs/std/ffi/) instead.
 
 - `IoResult<T>`: the C layout a native function that produces a `T` returns (in Rust,
   `Result<T, Error>`), a struct of `code` (0 on success), `message` and `value`. `IoStatus` is the

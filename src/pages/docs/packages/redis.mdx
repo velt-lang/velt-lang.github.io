@@ -12,7 +12,7 @@ import { Callout } from '@/components/mdx';
 
 A Redis client close to ioredis: strings with expiry, counters, hashes, lists, sets, sorted sets,
 pipelines, `MULTI`/`EXEC` transactions and pub/sub, over `redis://` or `rediss://` (TLS). The
-client is the package's native library: RESP2 in Rust, on Velt's own sockets and rustls.
+client is written in Velt: RESP2, with sockets and TLS from [`velt/net`](/docs/std/net/).
 
 ```ts
 import { connect, subscribe, psubscribe, RedisClient, RedisPipeline, RedisReply, RedisSubscriber, RedisMessage, RedisError, ZMember, SetOptions, RedisConnectOptions } from "redis";
@@ -37,12 +37,8 @@ export const pkg: Package = {
 };
 ```
 
-The client is a Rust crate (the package's `native/` directory), so both forms build it with cargo
-the first time and need a [Rust toolchain](https://rustup.rs). A path dependency builds it
-directly; a git dependency builds it only when you allow that with `VELT_NATIVE_FROM_SOURCE=1`,
-since the build runs the package's build scripts. A package published to a registry carries
-prebuilt libraries, and then needs no Rust
-([packages with native code](/docs/tooling/packages/#packages-with-native-code)).
+The package has no native code, so it builds like any Velt package: no Rust toolchain, no
+`VELT_NATIVE_FROM_SOURCE=1`, and no [`allowNative`](/docs/tooling/manifest/#allownative) entry.
 
 ## A first program
 
@@ -126,7 +122,8 @@ console.log(reply.asString()); // int
 `pipeline()` and `multi()` return a `RedisPipeline`. Queue commands with `get`, `set`, `del`,
 `incr`, `incrBy`, `expire`, `hget`, `hset`, `lpush`, `rpush`, `sadd`, `zadd(key, score, member)`,
 `publish` or `call(args)` (they return nothing), then `exec(): Promise<RedisReply[]>` sends them
-and returns one reply per command. `length` counts the queued commands.
+and returns one reply per command. `length` counts the queued commands. `JSON.stringify` of a
+pipeline gives `{}`; a `RedisClient` or a `RedisSubscriber` has no JSON form (a compile error).
 
 In a pipeline a rejected command is an `"error"` reply, not a throw. `multi()` wraps the commands
 in `MULTI`/`EXEC`, so they run as one transaction; one the server aborts throws `RedisError`
@@ -170,5 +167,5 @@ Most of the package's tests (`velt test` in `packages/redis`) need a server: set
 that use Redis need a server the same way; pass its URL in an environment variable.
 
 <Callout kind="info" title="Not available on WebAssembly">
-The client is a native library, which a WebAssembly build can't use.
+The client can't be used in a WebAssembly build.
 </Callout>

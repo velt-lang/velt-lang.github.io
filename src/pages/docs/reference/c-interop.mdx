@@ -1,0 +1,300 @@
+---
+title: "C functions and unsafe code"
+description: "declare c binds C functions, constants, types and structs, checked against the library's C headers; unsafe blocks and SAFETY comments mark every call."
+layout: "docs"
+category: "Language reference"
+order: 155
+navTitle: "C functions"
+---
+
+import { Callout } from '@/components/mdx';
+
+# C functions and unsafe code
+
+A package with native code calls the functions of a C library directly: `declare c` states a C
+function's signature in Velt, the call is a plain C call with no runtime in between, and every
+call sits in `unsafe` code with a comment saying why it is sound. The declarations are checked
+against the library's C headers, and only packages the program allows in
+[`allowNative`](/docs/tooling/manifest/#allownative) may contain them.
+
+```ts ignore title="src/lib.velt"
+declare c("c") function abs(n: i32): i32;
+
+/** `n` without its sign. */
+export function magnitude(n: i32): i32 {
+  // SAFETY: abs of any i32 but INT_MIN, which is clamped first.
+  return unsafe { abs(n == -2147483648 ? -2147483647 : n) };
+}
+```
+
+Code that uses the package calls `magnitude`, a safe function, and never sees the C call. This
+page is the language side: the declarations, what crosses, `unsafe` and where it may be. The
+types for pointers, buffers and strings are in [`velt/ffi`](/docs/std/ffi/); writing, building and
+publishing such a package is in [Packages with native code](/docs/book/native-packages/).
+
+## `declare c` functions
+
+```ts ignore
+declare c("c") function llabs(x: i64): i64;
+declare c("sqlite3") function sqlite3_libversion_number(): i32;
+declare c("c", { errno: true }) function close(fd: i32): i32;
+```
+
+- `declare c("<library>") function name(…): R;` declares the C function `name` of a library. The
+  library is a key of `native.c` in the package's `package.velt`
+  ([`native`](/docs/tooling/manifest/#native)); `"c"` is the platform's C library. A package
+  that declares C functions says so in its manifest: `native: { c: { c: { headers: ["<stdlib.h>"] } } }`
+  is enough to call the C library alone. Without `native.c`, its first declaration is an error.
+- A declaration is allowed only in a file of a package, not in a lone file, and only in a package
+  the program allows ([below](#where-unsafe-code-may-be)).
+- `name$suffix` declares the same C function under another Velt name, with the same signature.
+  One C function has one signature in a program.
+- Calling one needs an `unsafe` block or function ([below](#unsafe)).
+- `{ errno: true }` saves the C library's `errno` after each call, for
+  [`lastOsError()`](/docs/std/os/) (velt/os) to read right after it. Without it, a call leaves what
+  `lastOsError()` reads alone. On Windows, `lastOsError()` after a `declare c` call does not
+  report the C library's error yet: it reads `GetLastError()`, which the C library doesn't set.
+- `export declare c function` exports the declaration. It is raw API: only other allowed native
+  packages can import it.
+- Parameters are plain: type parameters, rest and optional parameters and `async` are errors that
+  name the parameter.
+- On WebAssembly targets there are no C libraries, so a call of a C function (or a read of a C
+  constant) is an error naming it.
+
+### What crosses
+
+| Velt parameter or result | C type | at the call |
+|---|---|---|
+| `i8` … `u64` | an integer of that width and sign (`char` matches either sign) | passed as it is |
+| `isize`, `usize` | `ssize_t`, `ptrdiff_t`, `intptr_t`; `size_t`, `uintptr_t` | passed as it is |
+| `f32`, `f64`, `bool` | `float`, `double`, `_Bool` | passed as it is |
+| `void` (result only) | `void` | |
+| `Ptr<T>`, `Ptr<T> \| null` | `T *` (`void *` matches any `Ptr`) | the address; `null` is `NULL` |
+| `null` | any pointer | always `NULL` |
+| `u8[]`, `f64[]`, … | `T *` | the address of the first element, borrowed for the call |
+| `readonly u8[]`, … | `const T *` or `T *` | the same; C only reads it |
+| `StrBytes` | `const char *` | the string's UTF-8 bytes, no NUL, no copy |
+| `CString` | `const char *` | NUL-terminated bytes made once |
+| `Out<T>` | `T *` (a number or `bool`) | C writes its `value` |
+| `OutPtr<T>` | `T **` or `const T **` | C writes the pointer |
+| `Ptr<void>` | a function pointer | the address |
+
+- An array of numbers is read at the call, after every argument: a written array (not
+  `readonly`) counts as modified, and a `u8[]` parameter also takes a typed array, a `DataView` or
+  a `subarray`. An empty array reaches C as a non-null address that must not be read.
+- `long` and `unsigned long` follow the target: 64 bits on Linux and macOS, 32 on Windows. The
+  header check holds a declaration to the target's width.
+- A C enum crosses as the integer type of its width: its fixed type, or its widest constant. A
+  packed enum can't cross.
+- A `Ptr<T>` result (not `| null`) that is `NULL` stops the program, naming the C function, since
+  no C header says a pointer can't be `NULL`. Declare `Ptr<T> | null` where it can.
+- A parameter typed `string` is an error that points at `StrBytes` and `CString`. The types are in
+  [`velt/ffi`](/docs/std/ffi/).
+
+## `declare c type`
+
+```ts ignore
+import { Ptr } from "velt/ffi";
+
+declare c type FILE;
+declare c("c") function tmpfile(): Ptr<FILE> | null;
+declare c("c") function fwrite(buf: readonly u8[], size: usize, n: usize, f: Ptr<FILE>): usize;
+```
+
+A C type that exists only behind pointers. `Ptr<FILE>` and `Ptr<u8>` are different types, so one
+can't be passed for the other. A `declare c type` can't be made with `new` or held by value. It
+is raw API: only allowed native packages can import it.
+
+## `declare c const`
+
+```ts ignore
+import { Ptr } from "velt/ffi";
+
+export declare c const SQLITE_OK: i32;
+export declare c const SQLITE_OPEN_READWRITE: i32;
+export declare c const SQLITE_TRANSIENT: Ptr<void>;
+```
+
+A constant whose value comes from the package's C headers, for each target: an object-like
+macro, an enumerator, or a `static const` that clang can evaluate. It has no initializer and no
+library name: the package's libraries that list `headers` are read. Reading one needs no
+`unsafe`.
+
+- `T` is an integer, `f32`, `f64`, `bool`, `Ptr<U>` or `Ptr<U> | null`.
+- An integer type fits by the value: a flag `#define`d as an `int` can be a `u32` if its value
+  fits. `f32` needs a C `float`, `f64` a `float` or `double`, `bool` a `_Bool`, and `Ptr<U>` a
+  pointer of that C type. A `NULL` needs `| null`.
+- A C function pointer is a `Ptr<void>`, so `declare c const SQLITE_TRANSIENT: Ptr<void>;` binds
+  that value.
+- A string macro, a function-like macro and a variable are errors.
+- A package needs `native.c` with `headers` and must be allowed by the program, as for C
+  functions. A library with `unchecked: true` has no headers to read, so it has no constants.
+- Users of a registry or git package never run clang for these: a build takes the values from
+  the package's [`c-headers.json`](#checked-against-c-headers).
+
+## `declare c struct`
+
+```ts ignore
+export declare c struct CGPoint { x: f64; y: f64; }
+export declare c struct CGSize { width: f64; height: f64; }
+export declare c struct CGRect { origin: CGPoint; size: CGSize; }
+
+const r: CGRect = { origin: { x: 1, y: 2 }, size: { width: 3, height: 4 } };
+const wider = { ...r, size: { ...r.size, width: 6 } } as CGRect;
+```
+
+A C struct as a Velt value, laid out as C lays it out.
+
+- **Fields** are listed in C's order. Each is an integer (`i8` … `u64`, `isize`, `usize`), `f32`,
+  `f64`, `bool` or another C struct. A C enum field is its integer type (`i32`), not a Velt enum
+  (which is an `i64`); a `declare c type` exists only behind a pointer.
+- **What it can't have:** methods, a constructor, type parameters, defaults, optional, private
+  or static fields, and `implements`. It can't be empty, and it can't hold itself by value.
+- **A value.** A C struct is copied and never counted. Build it from a literal of its type. Its
+  fields are read-only: a changed copy is `{ ...v, x: … }`. On 64-bit targets (x86-64 and arm64
+  on Linux, macOS and Windows) the fields sit in order, each at its alignment, as in C. On
+  wasm32, `isize` and `usize` are 8 bytes in Velt and 4 in C, so the layout differs there.
+- **Equality by content.** A C struct has no identity, so every comparison compares its fields,
+  each number as that operation compares numbers: `==`, `===`, `indexOf` and `lastIndexOf` treat
+  `NaN` as unequal and `-0` as `0`; `Object.is` treats `NaN` as itself and `-0` as not `0`;
+  `Map` and `Set` keys and `includes` treat every `NaN` as equal and `-0` as `0`. An `any` holding
+  a C struct compares the same way.
+- `Ptr<S>` is a C pointer to one.
+- A package's users can import its C structs: unlike `declare c type`, they aren't raw API.
+
+## `unsafe`
+
+```ts ignore
+/** The bytes at `p`. Unsafe: `p` points at `len` readable bytes. */
+export unsafe function bytesAt(p: Ptr<u8>, len: usize): u8[] {
+  return readBytes(p, len);
+}
+
+export function home(): string | null {
+  // SAFETY: getenv returns a NUL-terminated string or NULL, read before any setenv.
+  const p = unsafe { getenv(new CString("HOME")) };
+  // SAFETY: as above.
+  return p === null ? null : unsafe { readCString(p) };
+}
+```
+
+Calling an unsafe function or method needs an unsafe context: an `unsafe { … }` block, an
+`unsafe { … }` expression (one expression, and its value), or the body of an unsafe function.
+`declare c` functions, [`velt/ffi`](/docs/std/ffi/)'s `readBytes`, `readUtf8` and `readCString`,
+and `Ptr.at` are unsafe. Calling one anywhere else is an error:
+
+```text
+error: calling unsafe function `raw` needs an `unsafe` block or function
+```
+
+- Contexts are lexical. A closure written inside one is unsafe code
+  (`(n: i64) => unsafe { raw(n) }` is one too); a nested function declaration is not.
+- `unsafe` marks functions (`unsafe function`, `unsafe async function`,
+  `export unsafe function`) and methods (`unsafe at(i: i64)`, `static unsafe m()`,
+  `unsafe get x()`), not fields.
+- An unsafe function can be called, not used as a value. An unsafe method can't implement an
+  interface method or override a safe one, and overloads and their implementation are all unsafe
+  or all safe.
+- The methods the language calls by itself can't be unsafe: symbol-keyed methods
+  (`[Symbol.dispose]`, iterators, operators), `toString`, `toLocaleString`, `valueOf`, `toJSON`
+  and `then`.
+- Dynamic code doesn't reach unsafe members: an unsafe method, getter or setter read, called or
+  written through `any`, `Proxy` or `Reflect` is a `TypeError` naming it
+  (``'peek' is unsafe, so it can't be reached through `any` ``). Call it on its class, in unsafe
+  code.
+- `unsafe` is a contextual keyword: a variable, function or member named `unsafe` still works,
+  and a line break after it ends it.
+
+### Safety comments
+
+Each piece of unsafe code says why it is sound, or the build fails:
+
+- an unsafe block or expression needs a comment with `SAFETY:` in the comment lines directly
+  above its line, saying why the code is sound;
+- an unsafe function or method needs such a comment, or an `Unsafe:` paragraph in its doc
+  comment saying what callers must guarantee.
+
+```text
+error: `unsafe` code needs a `// SAFETY:` comment directly before it
+```
+
+### Where unsafe code may be
+
+`unsafe` blocks, expressions, functions and methods, and `declare c` declarations, are allowed
+only in the standard library and in packages with native code (`native.c` in `package.velt`)
+that the program allows with [`allowNative`](/docs/tooling/manifest/#allownative). A program's
+own files count when the program's own `package.velt` declares native code. Anywhere else they
+are an error:
+
+```ts error
+// SAFETY: callers pass a non-negative `n`.
+unsafe function raw(n: i64): i64 {
+  return n * 2;
+}
+
+// SAFETY: 3 is non-negative.
+console.log(unsafe { raw(3) });
+```
+
+```text
+error: unsafe function `raw` needs a native package
+error: `unsafe` code needs a native package
+```
+
+- **The raw API stays there too.** `Ptr`, `OutPtr`, `readBytes`, `readUtf8` and `readCString`
+  from velt/ffi, a package's `declare c type`s, its exported `declare c` functions and its unsafe
+  functions can be imported only by allowed native packages: by name, re-exported, or as a
+  namespace import's member (`ffi.Ptr`). Other code uses a binding's safe API. `CString`, `Out`,
+  `StrBytes`, `byteLength` and C structs can be imported anywhere.
+- A safe function can still return a `Ptr`; code that receives one can't read or write through
+  it without `unsafe`. A `Ptr`'s address can't be written through `any`, and the fields of an
+  `OutPtr` or a `CString` are no members through `any`.
+- An npm package isn't part of the package around it: a file under a `node_modules`, or under a
+  directory below a package's root with its own `package.json` or `package.velt`, has no
+  package's trust.
+- A [source generator](/docs/reference/source-generators/)'s output can't contain `unsafe` code.
+- `velt check` lists every piece of unsafe code a program allows, by package, file and line
+  ([Packages with native code](/docs/tooling/packages/#what-a-program-trusts)).
+
+## Checked against C headers
+
+A wrong declaration would corrupt memory, so `velt` checks each `declare c` function against the
+library's C headers, for the build's target, in the packages built where they are developed (the
+program's own package, a path dependency, a workspace member). A library in `native.c` lists its
+`headers`, or says `unchecked: true` (a binary-only SDK, which `allowNative`'s refusal and
+`velt check` point out).
+
+- A declaration must name a function the headers declare, with as many parameters, and each
+  parameter and the result must match the [table above](#what-crosses), typedefs resolved.
+  `isize` and `usize` match exactly C's pointer-sized types and those need them, so a declaration
+  right on one target is right on every target.
+- A mismatch is an error naming the header line and what to declare. On Windows, where `long` is
+  32 bits (`velt check --target x86_64-pc-windows-msvc` checks it from any machine):
+
+  ```text
+  error: parameter 1 of C function `labs` is `long` in stdlib.h:301, not the declaration's `i64`
+    = note: declare `i32`
+  ```
+
+- The check uses a pinned zig (0.17.1) for clang and the C library headers of every target,
+  downloaded once into `~/.velt/cache/zig/` (about 55 MB, 100 MB on Windows, checksum-verified),
+  or the one `VELT_ZIG` names. A check that passed is remembered, so clang runs again only when a
+  header or a declaration changes.
+- `velt native headers` checks the package on every target and writes `c-headers.json`, which
+  `velt publish` runs and a git package commits. Users of a registry or git package never need
+  zig: their builds compare the package's declarations with that record
+  ([publishing](/docs/book/native-packages/#checking-against-c-headers)).
+
+<Callout kind="warn" title="Not supported yet">
+Variadic functions (`printf`), callbacks into Velt, pointers C keeps after the call, `async` C
+calls, string constants, headers per build condition (macOS frameworks), and in C structs:
+arrays, pointer fields, passing or returning a struct by value, `Out<S>`, and the header check
+of structs. Each is an error that says so.
+</Callout>
+
+`velt check --ts-compat` reports `unsafe` under the rule `unsafe`, `declare c` functions under
+`declare-fn`, and `declare c const` and `declare c struct` as Velt-only
+([code shared with TypeScript](/docs/tooling/cli/#code-shared-with-typescript---ts-compat)).
+`declare system function` ([System functions](/docs/reference/system-functions/)) is separate: it
+binds C library functions from the compiler's table of safe ones, in any module, with no
+`unsafe`.
