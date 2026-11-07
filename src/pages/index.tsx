@@ -8,6 +8,7 @@ import { BenchmarkPanel } from '../islands/BenchmarkPanel';
 import { HEADLINE_STATS } from '../data/benchmarks';
 import { BEYOND_VLT, SERVER_TS, TERMINAL } from '../data/samples';
 import { LLM_PROMPT, LLMS_URL, VSCODE_URL } from '../lib/site';
+import { EXPECTATIONS_POST, post } from '../lib/blog';
 
 export const meta = {
     title: 'Velt — TypeScript, compiled native',
@@ -67,22 +68,33 @@ const BEYOND = [
 const btnPrimary = 'inline-flex min-h-[52px] items-center gap-2.5 rounded-xl bg-accent px-6 font-semibold text-white hover:text-white hover:brightness-110';
 const btnGhost = 'inline-flex min-h-[52px] items-center rounded-xl border border-line-3 px-6 font-semibold text-fg';
 
-export default component(() => () => (
+export default component(() => () => {
+    const expectations = post(EXPECTATIONS_POST);
+    return (
     <>
         {/* Hero */}
         <section id="top" class="mx-auto flex max-w-[1248px] flex-wrap items-center gap-14 px-6 pb-[72px] pt-[88px]">
             <div class="flex min-w-0 flex-[1_1_460px] flex-col gap-7">
-                <div class="inline-flex items-center gap-2.5 self-start rounded-full border border-line-3 px-3.5 py-1.5 text-[13px] text-fg-3">
-                    <span class="size-2 rounded-full bg-green" />
-                    Linux · macOS · Windows · WebAssembly
+                <div class="flex flex-wrap items-center gap-2.5">
+                    {expectations && (
+                        <a href={expectations.href} class="inline-flex min-h-9 items-center gap-2.5 rounded-full border border-[#2E2A5C] bg-[#12101F] py-1 pl-1.5 pr-3 text-[13px] text-fg hover:text-fg">
+                            <span class="rounded-full bg-yellow px-2.5 py-0.5 text-xs font-semibold text-bg">Pre-1.0</span>
+                            What works today, and what doesn't yet
+                            <ArrowRight size={14} stroke={2} />
+                        </a>
+                    )}
+                    <span class="inline-flex min-h-9 items-center gap-2.5 rounded-full border border-line-3 px-3.5 text-[13px] text-fg-3">
+                        <span class="size-2 rounded-full bg-green" />
+                        Linux · macOS · Windows · WebAssembly
+                    </span>
                 </div>
                 <h1 class="m-0 font-display text-[clamp(44px,6vw,76px)] font-bold leading-[1.02] tracking-[-0.035em]">
-                    TypeScript’s good parts, <span class="brand-text">compiled native.</span>
+                    Familiar as TypeScript. <span class="brand-text">Fast as Rust.</span>
                 </h1>
                 <p class="m-0 max-w-[560px] text-xl leading-[1.55] text-fg-3">
-                    Velt runs typed, modern TypeScript — your <code class="c text-[0.85em]">.ts</code> and{' '}
-                    <code class="c text-[0.85em]">.tsx</code> files — compiled through LLVM to one native executable. No
-                    interpreter, no garbage collector, every core in use. Not JavaScript's dynamic tricks:{' '}
+                    Velt compiles typed, modern TypeScript (classes, interfaces, generics, <code class="c text-[0.85em]">async</code>/
+                    <code class="c text-[0.85em]">await</code>) through LLVM to one native executable. No interpreter, no garbage
+                    collector, every core in use. It isn't a drop-in for every <code class="c text-[0.85em]">.ts</code> file yet:{' '}
                     <a href="#compat" class="text-cyan underline decoration-cyan/35 underline-offset-[3px] hover:text-cyan-hover hover:decoration-current">see what's in</a>.
                 </p>
                 <div class="flex flex-wrap gap-3">
@@ -273,4 +285,5 @@ export default component(() => () => (
             </div>
         </section>
     </>
-), { name: 'HomePage' });
+    );
+}, { name: 'HomePage' });

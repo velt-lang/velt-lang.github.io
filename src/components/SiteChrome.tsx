@@ -24,8 +24,9 @@ const NAV = [
     { label: 'Docs', href: '/docs/' },
     { label: 'Why Velt', href: '/#why' },
     { label: 'Benchmarks', href: '/#benchmarks' },
-    { label: 'Beyond TypeScript', href: '/#beyond' },
-    { label: 'Tooling', href: '/#tooling' },
+    { label: "What's new", href: '/whats-new/' },
+    { label: 'Roadmap', href: '/roadmap/' },
+    { label: 'Blog', href: '/blog/' },
 ];
 
 export const SiteHeader = component(() => () => (
@@ -80,6 +81,9 @@ const FOOTER = [
         title: 'Project',
         label: 'Community',
         links: [
+            { label: "What's new", href: '/whats-new/' },
+            { label: 'Roadmap', href: '/roadmap/' },
+            { label: 'Blog', href: '/blog/' },
             { label: 'GitHub', href: REPO_URL },
             { label: 'Releases', href: RELEASES_URL },
             { label: 'VS Code', href: VSCODE_URL },
