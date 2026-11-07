@@ -356,10 +356,10 @@ export default component(() => () => {
                         <a href={VSCODE_URL} class="text-[15px] font-medium text-cyan hover:text-cyan-hover">Get the extension →</a>
                     </article>
                     <article class="flex flex-col gap-2.5 rounded-2xl border border-card-line bg-card p-6">
-                        <h3 class="m-0 font-display text-[19px] font-semibold">Any Rust crate, a few lines away</h3>
+                        <h3 class="m-0 font-display text-[19px] font-semibold">Any C library, one declaration away</h3>
                         <p class="m-0 text-[15px] text-fg-3">
-                            Until a library exists in Velt, a package can include the Rust crate that does it and export functions
-                            with <C>#[export]</C>. Its users never need Rust.
+                            Until a library exists in Velt, a package calls the C library that does it with <C>declare c</C>,
+                            checked against its headers. <C>sqlite</C> does. Its users need no C compiler.
                         </p>
                         <a href="/docs/book/native-packages/" class="text-[15px] font-medium text-cyan hover:text-cyan-hover">Native packages →</a>
                     </article>

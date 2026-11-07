@@ -108,7 +108,7 @@ export default component(() => () => {
                 <div class="flex max-w-[640px] flex-col gap-1">
                     <strong class="font-display text-xl font-semibold">Need something that isn't here yet?</strong>
                     <span class="text-[15px] text-fg-3">
-                        A Velt package can include any Rust crate and export its functions with <code class="font-mono text-fg">#[export]</code>. Your users never need Rust.
+                        A Velt package can call any C library with <code class="font-mono text-fg">declare c</code>, checked against its headers, with <a href="/docs/std/ffi/" class="text-cyan hover:text-cyan-hover">velt/ffi</a> for pointers and strings. Your users need no C compiler.
                     </span>
                 </div>
                 <a href="/docs/book/native-packages/" class="inline-flex min-h-11 items-center rounded-[10px] border border-line-3 px-[18px] text-sm font-semibold text-fg">

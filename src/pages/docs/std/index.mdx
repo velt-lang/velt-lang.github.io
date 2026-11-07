@@ -134,8 +134,9 @@ handlers), [sqlite](/docs/packages/sqlite/), [postgres](/docs/packages/postgres/
 [redis](/docs/packages/redis/). A program imports a package by its name
 (`import { serve } from "http-server"`) once `package.velt` lists it in `dependencies`. std keeps
 what any of them builds on: `fetch` and the web types, [`velt/net/http/h2`](/docs/std/net/http/h2/),
-[`velt/db`](/docs/std/db/), [`velt/dev`](/docs/std/dev/), [`velt/native`](/docs/std/native/) and
-the [WebSocket client](/docs/std/net/websocket/).
+[`velt/db`](/docs/std/db/), [`velt/dev`](/docs/std/dev/), [`velt/ffi`](/docs/std/ffi/) for
+C libraries (and [`velt/native`](/docs/std/native/) for a Rust crate), and the
+[WebSocket client](/docs/std/net/websocket/).
 
 ## Runtime-backed and pure modules
 
