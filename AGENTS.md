@@ -66,8 +66,9 @@ optional; for agents the issue-first flow below is required.)
 3. **Implement & verify.** Make the change, then prove it: `pnpm typecheck`,
    `pnpm test`, and `pnpm build` (a docs build catches broken MDX and every
    broken internal link or `#anchor` — `linkCheck: 'error'` — so it's the real
-   gate for a docs site). For visual changes, look at the page at 1440 px and
-   390 px wide (`pnpm preview`). Stage specific files (`git add <path>`), never
+   gate for a docs site), then `pnpm check:responsive` (CI runs it too). For visual
+   changes, also look at the page at 1440 px and 390 px wide (`pnpm preview`, or
+   `pnpm check:responsive -- --pages /x/ --screenshots shots`). Stage specific files (`git add <path>`), never
    `git add -A`. No co-author trailers.
 
 4. **Open a PR with Copilot as the reviewer.** Reference the issue so it auto-closes
@@ -163,6 +164,7 @@ pnpm build        # sigx build → static site in dist/ (run before any PR)
 pnpm preview      # serve the built dist/ locally
 pnpm test         # vitest run
 pnpm typecheck    # tsgo --noEmit
+pnpm check:responsive  # after a build: every page at 360-1440 px, no sideways scroll
 ```
 
 ## Writing docs pages
