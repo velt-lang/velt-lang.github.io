@@ -63,7 +63,8 @@ export function posts(): Post[] {
             };
         })
         .filter((p) => !p.draft || SHOW_UNPUBLISHED);
-    cache = all.sort((a, b) => Number(b.pinned) - Number(a.pinned) || (b.date ?? '9999').localeCompare(a.date ?? '9999'));
+    // Undated posts (drafts) sort last, so they never pass for the newest.
+    cache = all.sort((a, b) => Number(b.pinned) - Number(a.pinned) || (b.date ?? '').localeCompare(a.date ?? ''));
     return cache;
 }
 

@@ -66,7 +66,7 @@ export default component(() => () => {
                 <section id="next" aria-labelledby="next-title" class="flex scroll-mt-28 flex-col gap-6">
                     <div class="flex flex-col gap-2">
                         <span class={`${eyebrow} text-yellow`}>Next release · {formatDate(next.date)}</span>
-                        <h2 id="next-title" class={h2}>Velt {next.version}: {next.title.toLowerCase()}</h2>
+                        <h2 id="next-title" class={h2}>Velt {next.version}: {next.title}</h2>
                         <p class="m-0 max-w-[720px] text-[17px] text-fg-3">{ic(next.summary)}</p>
                     </div>
                     <ul class={`${grid} m-0 list-none p-0`}>

@@ -353,9 +353,9 @@ export function publishedReleases(): Release[] {
     return RELEASES.filter((r) => SHOW_UNPUBLISHED || compareVersions(r.version, DOCS_VERSION) <= 0);
 }
 
-/** The release the docs describe. */
+/** The release the docs describe: the newest one at or below DOCS_VERSION (RELEASES is newest first). */
 export function latestRelease(): Release {
-    return RELEASES.find((r) => compareVersions(r.version, DOCS_VERSION) === 0) ?? RELEASES[RELEASES.length - 1];
+    return RELEASES.find((r) => compareVersions(r.version, DOCS_VERSION) <= 0) ?? RELEASES[RELEASES.length - 1];
 }
 
 /** Notes written ahead of the docs: the next release, if there is one. */
