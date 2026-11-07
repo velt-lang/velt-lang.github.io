@@ -44,9 +44,35 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # Every ts/vlt/tsx example in the docs checks with the velt release the docs
+  # Every page of the built site at phone, tablet and desktop widths: no page may
+  # scroll sideways or throw (scripts/check-responsive.mjs).
+  responsive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check every page at 360-1440 px
+        run: pnpm check:responsive
+
+  # Every ts/velt/tsx example in the docs checks with the velt release the docs
   # describe (DOCS_VERSION in src/lib/site.ts), and examples that import one of
-  # velt's packages (http-server, sqlite, postgres, redis) check against the
+  # velt's packages (http-server, sqlite, postgres, redis, web) check against the
   # packages of that release. Until the release is published, velt is built
   # from velt-lang/velt's main. scripts/check-examples.mjs.
   examples:

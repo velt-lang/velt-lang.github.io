@@ -36,7 +36,7 @@ export const CATEGORIES: Category[] = [
             ['encoding/json', 'JSON values. JSON.parse<T> is built in.'],
             ['encoding/csv', 'RFC 4180 parse and stringify.'],
             ['encoding', 'Base64, hex and UTF-8.'],
-            ['compress', 'gzip, zlib, DEFLATE and Brotli decompression.'],
+            ['compress', 'gzip, zlib, DEFLATE and Brotli, compressed and decompressed.'],
         ],
     },
     {
@@ -63,7 +63,7 @@ export const CATEGORIES: Category[] = [
     },
     {
         id: 'enc', title: 'Security & randomness', blurb: 'Hashes, keys, ids', modules: [
-            ['crypto', 'SHA-256, SHA-1, HMAC, randomBytes, timingSafeEqual.'],
+            ['crypto', 'SHA-256, HMAC, HKDF, X25519, P-256, AES-GCM, ChaCha20-Poly1305.'],
             ['hash', 'fnv1a64: a stable, non-cryptographic hash.'],
             ['random', 'Fast random numbers, not for secrets.'],
             ['random/uuid', 'uuidv4, uuidv7, parse and validate.'],
@@ -96,16 +96,19 @@ export const CATEGORIES: Category[] = [
             ['math', 'gcd, lcm, clamp and other integer helpers.'],
             ['math/bigint', 'Arbitrary-precision integers.'],
             ['simd', 'Vector types and lane-wise methods.'],
+            ['half', 'f16[] and bf16[] in bulk: from bytes, widened, narrowed.'],
         ],
     },
     {
         id: 'tools', title: 'Tests & tooling', blurb: 'For libraries and tools', modules: [
             ['test', 'The runner velt test builds into test programs.'],
             ['test/http', 'expect matchers for a Response.'],
-            ['package', 'The type of the package manifest, package.vlt.'],
+            ['package', 'The type of the package manifest, package.velt.'],
             ['dev', 'The graceful stop under velt dev.'],
             ['generate', 'What source generators are written with.'],
             ['native', 'The Velt side of packages with native code.'],
+            ['ffi', 'Pointers, C strings and buffers for declare c code.'],
+            ['host', 'HostRef: JS values for host functions on JavaScript hosts.'],
             ['reflect', 'What an any holds at run time.'],
         ],
     },
@@ -128,4 +131,6 @@ export const PACKAGES: [pkg: string, line: string, href: string][] = [
     ['sqlite', 'Embedded SQLite close to better-sqlite3, and an engine written in Velt.', '/docs/packages/sqlite/'],
     ['postgres', 'A PostgreSQL client close to node-postgres.', '/docs/packages/postgres/'],
     ['redis', 'A Redis client close to ioredis: pipelines, transactions, pub/sub.', '/docs/packages/redis/'],
+    ['web', 'A reference router and middleware on http-server (its API may change).', '/docs/packages/web/'],
+    ['cloudflare', 'Cloudflare Workers: R2, D1, KV, cache and Durable Object bindings, with host-cloudflare.', '/docs/packages/cloudflare/'],
 ];

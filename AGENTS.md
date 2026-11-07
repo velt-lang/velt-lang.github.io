@@ -66,8 +66,9 @@ optional; for agents the issue-first flow below is required.)
 3. **Implement & verify.** Make the change, then prove it: `pnpm typecheck`,
    `pnpm test`, and `pnpm build` (a docs build catches broken MDX and every
    broken internal link or `#anchor` — `linkCheck: 'error'` — so it's the real
-   gate for a docs site). For visual changes, look at the page at 1440 px and
-   390 px wide (`pnpm preview`). Stage specific files (`git add <path>`), never
+   gate for a docs site), then `pnpm check:responsive` (CI runs it too). For visual
+   changes, also look at the page at 1440 px and 390 px wide (`pnpm preview`, or
+   `pnpm check:responsive -- --pages /x/ --screenshots shots`). Stage specific files (`git add <path>`), never
    `git add -A`. No co-author trailers.
 
 4. **Open a PR with Copilot as the reviewer.** Reference the issue so it auto-closes
@@ -163,6 +164,7 @@ pnpm build        # sigx build → static site in dist/ (run before any PR)
 pnpm preview      # serve the built dist/ locally
 pnpm test         # vitest run
 pnpm typecheck    # tsgo --noEmit
+pnpm check:responsive  # after a build: every page at 360-1440 px, no sideways scroll
 ```
 
 ## Writing docs pages
@@ -187,8 +189,8 @@ pnpm typecheck    # tsgo --noEmit
 - Links between pages are absolute routes with a trailing slash
   (`/docs/book/memory/`, `/docs/reference/types/#strings`). The build fails on
   a link or `#anchor` that doesn't resolve.
-- Code: fence with the language (`ts` for Velt code, `vlt` works too; `sh`,
-  `powershell`, `rust`, `toml`, `json`). Meta: `title="server.vlt"` puts a file
+- Code: fence with the language (`ts` for Velt code, `velt` works too; `sh`,
+  `powershell`, `rust`, `toml`, `json`). Meta: `title="server.velt"` puts a file
   name in the bar; `error` adds a "does not compile" badge. Highlighting is the
   Velt palette from `src/lib/rehype-code.ts`.
 - Diagrams: a ` ```mermaid ` fence renders as a diagram (`@sigx/mermaid`; the
@@ -208,7 +210,7 @@ pnpm typecheck    # tsgo --noEmit
   pages, give it the same treatment rather than a longer list.
 - Code examples must be valid Velt for the release the docs describe
   (`DOCS_VERSION` in `src/lib/site.ts`). `pnpm check:examples` runs every
-  `ts` / `vlt` / `tsx` fence through the installed `velt check` (CI does it
+  `ts` / `velt` / `tsx` fence through the installed `velt check` (CI does it
   with `DOCS_VERSION`): a plain fence must check, `ts error` must be rejected,
   `ts ignore` (an excerpt, not a program) is skipped. A snippet is checked as
   written, as a program's root file: top-level statements run as in Node, so

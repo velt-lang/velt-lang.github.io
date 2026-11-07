@@ -167,7 +167,56 @@ a stream is read whole before the request is sent (**Planned**: streamed uploads
 
 A [server](/docs/packages/http-server/) hands its handler a `Request` for what
 it received: its `url` is absolute, its headers are immutable, and its body is received while it is
-read.
+read. Its `signal` is the server's: aborted when the client can no longer be answered (over
+HTTP/2 when it resets its stream, over HTTP/1.1 when writing the response fails) and when the
+server closes, as in Deno and Bun. Pass it on, so work done for a client that went away stops
+too: `fetch(url, { signal: req.signal })`.
+
+## Cookies
+
+`getCookies`, `setCookie`, `deleteCookie` and `getSetCookies` read and write cookies on plain
+`Headers`, with the shapes of Deno's standard library:
+
+- `getCookies(headers): Record<string, string>`: the request's `Cookie` header, by name. A name
+  sent twice keeps its first value (browsers send the most specific cookie first). A pair that
+  doesn't parse is skipped, and so is one whose value has non-ASCII characters. A quoted value
+  keeps its quotes, and values are not URL-decoded.
+- `setCookie(headers, cookie: Cookie)`: appends a `Set-Cookie` header. The attributes come in
+  this order: `Secure`, `HttpOnly`, `Partitioned`, `Max-Age`, `Domain`, `SameSite`, `Path`,
+  `Expires`, then `unparsed`.
+- `deleteCookie(headers, name, path?, domain?)`: a `Set-Cookie` that removes the cookie: an
+  empty value that expired at the epoch, with the path and domain it was set with (a browser
+  removes a cookie only with those).
+- `getSetCookies(headers): Cookie[]`: the cookies a response's `Set-Cookie` headers set, in
+  order, with attributes it doesn't know kept in `unparsed`.
+- `interface Cookie { name; value; expires?: Date | number; maxAge?: number; domain?; path?;
+  secure?: bool; httpOnly?: bool; partitioned?: bool; sameSite?: "Strict" | "Lax" | "None";
+  unparsed?: string[] }`. `expires` is a `Date` or milliseconds since the epoch.
+
+`setCookie` throws `TypeError` for what browsers would drop or misread: a name that isn't a
+token; a value with characters a cookie can't carry (spaces, `,`, `;`, `\`, a `"` other than
+around the whole value, control characters, non-ASCII); `;`, a control character or non-ASCII
+in `domain`, `path` or `unparsed`; a domain that starts with `-` or ends with `.` or `-`; a
+`maxAge` that isn't a whole number from 0 to `Number.MAX_SAFE_INTEGER`; an `expires` that isn't
+a valid date; and `partitioned`, `sameSite: "None"`, a `__Secure-` or a `__Host-` name without
+`secure` (`__Host-` also needs path `/` and no domain).
+
+```ts
+import { deleteCookie, getCookies, setCookie } from "velt/net/http";
+
+const req = new Request("https://example.com/", { headers: { cookie: "theme=dark; id=a3fWa" } });
+console.log(getCookies(req.headers)["theme"]); // dark
+
+const h = new Headers();
+setCookie(h, { name: "id", value: "b7kQ2", httpOnly: true, secure: true, sameSite: "Lax", path: "/" });
+deleteCookie(h, "theme", "/");
+for (const c of h.getSetCookie()) {
+  console.log(c);
+}
+// id=b7kQ2; Secure; HttpOnly; SameSite=Lax; Path=/
+// theme=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT
+// A handler answers with them: new Response(body, { headers: h })
+```
 
 ## `Blob`, `File` and `FormData`
 
@@ -310,7 +359,9 @@ one): it accepts connections with [`velt/net`](/docs/std/net/), speaks HTTP/2 wi
 - `RequestSource`, an interface the server implements: what a received request's `Request`
   reads (`method()`, `url()`, `header(name)`, `hasHeader(name)`, `headers()`, `hasBody()`,
   `read()`, `body()`), each called when the handler first asks for that part, so the server can
-  keep the request where it read it until then. `serverRequest(source): Request` makes the
+  keep the request where it read it until then. `signal(): AbortSignal | null` is the request's
+  `signal`, which the server aborts when the client can no longer be answered or the server
+  closes; `null` when the server can't tell, and the request's signal then never aborts. `serverRequest(source): Request` makes the
   `Request` a handler reads; `requestSource(req)` gives the source back (null for a request made
   with `new Request`), for what is the server's own (a connection to upgrade, the client's
   address).
@@ -343,6 +394,50 @@ console.log(head);
 console.log(parts.kind == BodyKind.Text ? parts.text : "(not text)"); // {"ok":true}
 ```
 
+## On JavaScript hosts
+
+In a program built with `--target wasm32-unknown-unknown` (a browser, Node, Deno, Cloudflare
+Workers), `fetch` sends the request with the host's own `fetch`. The program and the API are the
+same as natively, and the embedder passes nothing for it: the glue provides it
+([WebAssembly](/docs/tooling/webassembly/)).
+
+```ts
+async function main() {
+  const res = await fetch("https://api.example.com/items", {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(5000),
+  });
+  console.log(res.status, res.headers.get("content-type"));
+  const body = res.body;
+  if (body != null) {
+    for await (const chunk of body) {
+      console.log(chunk.length); // pieces as the host receives them
+    }
+  }
+}
+```
+
+- The response's body arrives piece by piece as the host receives it; `res.body`, `text()`,
+  `bytes()` and `json()` work as natively.
+- An `AbortSignal` aborts the host's request: a pending `fetch`, and a body read in progress,
+  reject with the signal's `AbortError` (`TimeoutError` for `AbortSignal.timeout`).
+- Errors are the ones native `fetch` throws: an `IoError` with the same `code` (`ECONNREFUSED`,
+  `ECONNRESET`, `ETIMEDOUT`, `EINVAL` for an invalid URL or header, `ENOTSUP` for a URL that
+  isn't `http:` or `https:`, `EILSEQ` for a broken compressed body or a TLS failure, `EPROTO`
+  for a response that isn't HTTP, `UNKNOWN` for a redirect with `redirect: "error"`), with the
+  host's message. A DNS failure is `ENOTFOUND`.
+- The host follows redirects as `redirect` says, decodes compressed bodies, sends its own
+  default headers (`user-agent`, `accept-encoding`) and applies its own rules: a browser's CORS
+  and forbidden request headers, and its opaque response for `redirect: "manual"`. Node refuses
+  the `keep-alive`, `upgrade` and `expect` headers, the `CONNECT` and `TRACE` methods,
+  credentials in the URL and the ports the Fetch standard blocks.
+- `ca` is not supported, since the host verifies certificates itself: such a request rejects
+  with `IoError` `ENOTSUP`.
+- `res.statusText` is the host's (Node gives none over HTTP/2; it is then the standard text for
+  the status), and repeated response headers other than `set-cookie` arrive joined with `", "`.
+
+On `wasm32-wasip1` there is no network, and `fetch` rejects with `IoError` `ENOTSUP`.
+
 ## Differences from Node
 
 - Errors are typed: an `IoError` with a `code` where Node throws `TypeError: fetch failed`
@@ -363,7 +458,8 @@ console.log(parts.kind == BodyKind.Text ? parts.text : "(not text)"); // {"ok":t
   the part that decoded. Silently truncated data is a bug source Velt does not copy.
 - Response heads are accepted where Node is stricter in two ways: lines may end with a bare LF,
   and a head may be up to 400 KiB (Node: 16 KiB).
-- WebAssembly programs have no network: `fetch` rejects with `IoError` `ENOTSUP`.
+- On `wasm32-wasip1`, `fetch` rejects with `IoError` `ENOTSUP` (no network); on JavaScript
+  hosts it goes through the host's `fetch` ([above](#on-javascript-hosts)).
 - `console.log` shows header names in lowercase, where Node keeps the case a name was first
   added with (`Headers { 'content-type': … }` for `"Content-Type"`). A printed `Request` shows
   Node's values for the options Velt does not have (`mode: 'cors'`, `cache: 'default'`, …), and

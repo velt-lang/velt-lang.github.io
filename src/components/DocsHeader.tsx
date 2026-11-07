@@ -1,16 +1,17 @@
 /**
- * The docs header (design/Api.dc.html): logo, the area switcher, Guide | API
- * tabs on std module pages, search, the version pill. Docs pages and the std
- * catalog share it.
+ * The docs header (design/Api.dc.html): logo, the area switcher, the Guide |
+ * API reference switch on std module pages (design/ApiSwitch.dc.html), search,
+ * the version pill. Docs pages and the std catalog share it.
  */
 import { component } from 'sigx';
 import { Logo } from './SiteChrome';
 import { GitHubIcon } from './Icons';
+import { ApiSwitch } from './api/ApiSwitch';
 import { AreaMenu } from '../islands/AreaMenu';
 import { DocsSearch } from '../islands/DocsSearch';
 import { docGroups } from '../lib/docs-nav';
 import { API_PATH, AREAS, areaOf, hasApiTabs, stdModuleOf, tabTargets } from '../lib/docs-areas';
-import { apiModule, apiModuleForGuide, apiPath, guidePath } from '../lib/std-api';
+import { apiModule, apiModuleForGuide, apiPath, countedExports, guidePath } from '../lib/std-api';
 import { DOCS_VERSION, RELEASES_URL, REPO_URL } from '../lib/site';
 
 /** The std area's one-liner counts its modules. */
@@ -39,24 +40,7 @@ export const DocsHeader = component<{ path: string }>(({ props }) => () => {
                 </a>
                 <span aria-hidden="true" class="hidden h-6 w-px bg-line-2 min-[480px]:block" />
                 <AreaMenu client:idle areas={areaItems()} current={area.id} />
-                {tabs && (
-                    <nav aria-label="Guide or API" class="flex gap-1 text-sm">
-                        <a
-                            href={tab.guide}
-                            aria-current={!tab.onApi ? 'page' : undefined}
-                            class={`inline-flex min-h-10 items-center px-3 ${!tab.onApi ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
-                        >
-                            Guide
-                        </a>
-                        <a
-                            href={tab.api}
-                            aria-current={tab.onApi ? 'page' : undefined}
-                            class={`inline-flex min-h-10 items-center px-3 ${tab.onApi ? 'font-semibold text-fg shadow-[inset_0_-2px_0_var(--color-orange)]' : 'text-fg-3 hover:text-cyan'}`}
-                        >
-                            API
-                        </a>
-                    </nav>
-                )}
+                {tabs && <ApiSwitch guide={tab.guide} api={tab.api} onApi={tab.onApi} count={api ? countedExports(api).length : undefined} />}
                 <div class="order-last flex w-full min-[900px]:order-none min-[900px]:ml-auto min-[900px]:w-auto min-[900px]:max-w-[360px] min-[900px]:flex-[0_1_360px]">
                     <DocsSearch client:idle />
                 </div>

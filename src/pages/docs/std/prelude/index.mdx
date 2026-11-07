@@ -9,7 +9,7 @@ order: 20
 # The prelude
 
 The prelude is the part of the standard library that every module sees without an import. It
-lives in `std/prelude/*.vlt`; some of it (arrays' `push`/`pop`, `length`, `clone`, `spawn`,
+lives in `std/prelude/*.velt`; some of it (arrays' `push`/`pop`, `length`, `clone`, `spawn`,
 `shared`) is implemented by the compiler.
 
 Node's web globals need no import either: `fetch`, `Request`, `Response`, `Headers`, `Blob`,
@@ -73,7 +73,8 @@ each; a code point that is not an integer from 0 to 0x10FFFF panics with JS's Ra
 ## Numbers
 
 - `NaN`, `Infinity`, `isNaN(x)`, `isFinite(x)`.
-- `Number(x)` converts a string, a number or a boolean (`Number(true)` is `1`), and
+- `Number(x)` converts any value as JS's `ToNumber` does: a string, a number, a boolean
+  (`Number(true)` is `1`), `null`, `undefined`, an object, an `any` or `unknown`, and
   `Boolean(x)` tests a value's truthiness, as in JS; `Number.isInteger(x)`, `Number.isNaN(x)`,
   `Number.isFinite(x)`, `Number.isSafeInteger(x)`, `Number.parseInt(s, radix = 0)`,
   `Number.parseFloat(s)` and the constants `Number.MAX_SAFE_INTEGER`, `MIN_SAFE_INTEGER`,
@@ -105,18 +106,24 @@ each; a code point that is not an integer from 0 to 0x10FFFF panics with JS's Ra
   32-bit wrapping product, one multiply instruction) and `clz32` (leading zero bits) take the low
   32 bits of their operands like JS. `umulh(a, b)` (not in JS) is the high 64 bits of the
   128-bit product of two `u64`s, one multiply instruction as well.
-- Bit casts (not in JS): `x.toBits()` is the IEEE 754 bits of an `f64` as a `u64` (sign,
-  exponent, fraction), and `f64.fromBits(b)` the `f64` with the bits of a `u64` (Rust's
-  `to_bits` / `from_bits`); each is one move between registers. They keep every bit pattern,
-  NaN payloads and signalling NaNs included, so `f64.fromBits(b).toBits() == b` for every `b`.
+- Bit casts (not in JS): `x.toBits()` is the IEEE 754 bits of an `f64` as a `u64`, or of an
+  `f32` as a `u32` (sign, exponent, fraction), and `f64.fromBits(b)` / `f32.fromBits(b)` the
+  float with those bits (Rust's `to_bits` / `from_bits`); each is one move between registers.
+  They keep every bit pattern, NaN payloads and signalling NaNs included, so
+  `f64.fromBits(b).toBits() == b` and `f32.fromBits(b).toBits() == b` for every `b`.
   The bits of a NaN made by arithmetic (`0 / 0`) or of the `NaN` constant are not specified:
   they depend on the processor (`fff8000000000000` on x86-64, `7ff8000000000000` on AArch64), as
-  in Rust. `f32` has no bit casts yet.
+  in Rust. `f16` and `bf16` have them too, on a `u16`
+  ([`f16` and `bf16`](/docs/reference/types/#f16-and-bf16)).
 
   ```ts
   const x: f64 = -1.5;
   console.log(x.toBits().toString(16)); // bff8000000000000
   console.log(f64.fromBits(0x7ff0000000000000)); // Infinity
+  console.log((0.1 as f32).toBits().toString(16)); // 3dcccccd
+  const b = (-6.25 as f32).toBits();
+  console.log(b >>> 31, (b >>> 23) & 0xff, (b & 0x7fffff).toString(16)); // 1 129 480000
+  console.log(f32.fromBits(0x40490fdb)); // 3.1415927410125732
   ```
 
 - Integers (not in JS): `x.leadingZeros()`, `x.trailingZeros()` and `x.countOnes()`, counted
@@ -127,6 +134,28 @@ each; a code point that is not an integer from 0 to 0x10FFFF panics with JS's Ra
   ```ts
   const bits: u64 = 40;
   console.log(bits.leadingZeros(), bits.trailingZeros(), bits.countOnes()); // 58 3 2
+  ```
+- Rotations and byte order (not in JS), on every integer type, as Rust's `rotate_left`,
+  `rotate_right` and `swap_bytes`: `x.rotateLeft(n: u32)` and `x.rotateRight(n: u32)` are the
+  bits rotated by `n` places, modulo the type's width (signed types rotate their two's-complement
+  bits), and `x.swapBytes()` is the bytes in reverse order (big-endian to little-endian and
+  back). Each is one instruction in release builds:
+
+  ```ts
+  const x: u32 = 0x80000001;
+  console.log(x.rotateLeft(1), x.rotateRight(1).toString(16), x.swapBytes().toString(16)); // 3 c0000000 1000080
+  ```
+- Checked, saturating and wrapping arithmetic (not in JS), on every integer type, as Rust's:
+  `checkedAdd`, `checkedSub` and `checkedMul` give the result, or `null` when it leaves the
+  type's range; `saturatingAdd`, `saturatingSub` and `saturatingMul` clamp it to the range; and
+  `wrappingAdd`, `wrappingSub` and `wrappingMul` wrap it, which is what `+`, `-` and `*` on a
+  declared integer type already do (the methods name the intent):
+
+  ```ts
+  const a: u8 = 250;
+  console.log(a.checkedAdd(10), a.saturatingAdd(10), a.wrappingAdd(10)); // null 255 4
+  const b: i32 = -2147483648;
+  console.log(b.checkedSub(1), b.saturatingMul(2)); // null -2147483648
   ```
 - Every number type implements `Comparable` ([Comparable](/docs/reference/classes/#comparable)).
 
@@ -148,7 +177,8 @@ so elements pushed meanwhile are not visited. Elements removed meanwhile:
 |---|---|
 | `length`, `push(x)`, `pop(): T \| undefined` | built in; `undefined` when empty |
 | `at(i): T \| undefined` | a negative `i` counts from the end; `undefined` out of range |
-| `forEach`, `map`, `filter`, `reduce(f, init)` | callbacks get `(x, i)` (`reduce`: `(acc, x, i)`) and may take fewer |
+| `forEach`, `map`, `filter`, `reduce(f, init?)`, `reduceRight(f, init?)` | callbacks get `(x, i)` (`reduce`: `(acc, x, i)`) and may take fewer; without `init`, `reduce` starts from the first element (`reduceRight` from the last) and an empty array throws JS's `TypeError` |
+| `flatMap(f)` | `map`, then one level of `flat()`: the callback returns an array or a single value |
 | `find`, `findIndex`, `findLast`, `findLastIndex`, `some`, `every` | likewise |
 | `indexOf`, `lastIndexOf`, `includes` | compare with `==` (objects by identity, like JS's `===`), so `indexOf` never finds `NaN`; `includes` also finds the number `NaN`, as in JS (SameValueZero; tuples still compare part by part) |
 | `slice(start = 0, end?)`, `concat(other)` | |
@@ -183,6 +213,32 @@ string. Their ranges are clamped as `toString` clamps them: a negative `start` i
 past the array is its end (Node's `buf.utf8Slice` throws for both instead). `write` and the comparisons are Velt
 code in the prelude: they read the string's bytes where it keeps them, sixteen at a time with
 SIMD vectors, and are compiled into their caller.
+
+`write`, `set` and `copy` take their positions as `number`s, read as Node reads them, and an
+out-of-range position throws a catchable `RangeError` with Node's message (their error type
+includes `RangeError`), since such offsets usually come from outside the program; pass an
+integer-typed position `as number`:
+
+- `set(src, offset = 0)` truncates a fraction and takes `NaN` as 0. When `src` doesn't fit, or
+  the offset is negative or infinite, it throws `RangeError: offset is out of bounds`.
+- `copy(target, targetStart = 0, sourceStart = 0, sourceEnd?)` rounds a fraction down and takes
+  `NaN` and non-safe integers as 0. It throws Node's message for whichever of `targetStart`
+  (`It must be >= 0. Received -1`), `sourceStart` (`It must be >= 0 && <= 4. Received 9`) and
+  `sourceEnd` (`It must be >= 0`) Node checks first.
+- `write(s, offset = 0)` takes a whole number from 0 to the length; otherwise it throws
+  `The value of "offset" is out of range. It must be >= 0 && <= 4. Received 9` (for
+  `write("ab", 9)` on four bytes), or `It must be an integer. Received 1.5` for a fraction, `NaN`
+  or `Infinity`. `Received` writes integers beyond 2^32 in `_` groups, as Node does
+  (`12_345_678_901`).
+
+```ts
+const buf: u8[] = Buffer.alloc(16);
+try {
+  buf.set([1, 2], 15);
+} catch (e) {
+  console.log(e instanceof RangeError, e.message); // true offset is out of bounds
+}
+```
 
 `subarray(begin?, end?)` of a `u8[]` (Node's `buf.subarray`) is a
 [`Uint8Array`](/docs/std/prelude/typed_array/) over the array's bytes, sharing them: writes through either are

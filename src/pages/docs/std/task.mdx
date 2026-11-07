@@ -1,6 +1,6 @@
 ---
 title: "velt/task"
-description: "import { timeout, taskScope } from \"velt/task\". Cancellation with AbortController and AbortSignal, timeouts, task scopes and task placement."
+description: "import { timeout, taskScope } from \"velt/task\". Cancellation with AbortController and AbortSignal, timeouts, task scopes, caught panics and task placement."
 layout: "docs"
 category: "Standard library"
 order: 480
@@ -10,7 +10,8 @@ order: 480
 
 `import { AbortError, TimeoutError, timeout, taskScope } from "velt/task"`. Cancellation with
 TypeScript's `AbortController` / `AbortSignal` (global, as in Node; this module exports them
-too), timeouts, task scopes (structured concurrency) and task placement. [`fetch`](/docs/std/net/http/) takes a signal.
+too), timeouts, task scopes (structured concurrency), [caught panics](/docs/std/task/#caught-panics) and task
+placement. [`fetch`](/docs/std/net/http/) takes a signal.
 
 Cancellation is cooperative. `abort()` marks the signal and wakes the tasks waiting for it;
 code that takes a signal checks it with `throwIfAborted()`, or races its work against
@@ -22,7 +23,7 @@ disposal run as usual.
     anywhere, `spawn`ed tasks included.
   - `abort(reason = "This operation was aborted")` aborts it. Aborting twice does nothing.
 - `AbortSignal`:
-  - `aborted: bool` and `reason: string` (`""` while not aborted).
+  - `aborted: bool` and `reason: any`: what `abort` was given (`""` while not aborted).
   - `throwIfAborted()` throws if aborted: a `TimeoutError` if an `AbortSignal.timeout` aborted
     it, otherwise an `AbortError` with the reason as its message. `TimeoutError` extends
     `AbortError`, so `throws AbortError` covers both.
@@ -124,17 +125,66 @@ const total = await taskScope(
 console.log(total); // 80
 ```
 
+## Caught panics
+
+A panic (an index out of bounds, `panic(msg)`) ends the process, and `try`/`catch` does not
+catch it. `catchPanic` does, for the code one promise runs, at a boundary where that work can be
+thrown away: one request of a server, one job of a queue. The
+[http-server](/docs/packages/http-server/) package answers a handler that panics with a 500 this
+way, and keeps serving.
+
+- `catchPanic<T, E>(body: () => Promise<T, E>): Promise<T> throws E | PanicError` calls `body`
+  and awaits the promise it returns. A panic in the code that promise runs, also in promises it
+  starts and awaits, throws `PanicError` there instead of ending the process. The panic's
+  message is printed to stderr when it happens, as an uncaught one is.
+- `PanicError extends Error`: its `message` is the panic's message.
+- The guarded promise is the first one started after `body` is called, so `body` should be the
+  async call itself: `() => handle(req)`. A body that returns a promise it didn't make
+  (`() => p`) catches nothing, and a non-async body that starts another promise before the one
+  it returns guards that other one.
+- A promise started inside it that panics and that nobody awaits is printed and dropped with its
+  panic; it doesn't end the process. A panic in a task the body `spawn`s still ends the process.
+
+The panicked code's work is abandoned, not undone: its memory is leaked (nothing it held is
+dropped), a `Mutex` it held stays locked, and an object it was changing keeps the change half
+made. `velt test` skips the leak check of a test file in which a panic was caught. On
+WebAssembly a panic always ends the program, and `catchPanic` only awaits the body.
+
+```ts
+import { catchPanic, PanicError } from "velt/task";
+
+async function at(i: i64): Promise<i64> {
+  const xs: i64[] = [10, 20];
+  await yieldNow();
+  return xs[i]!;
+}
+
+console.log(await catchPanic(() => at(1))); // 20
+try {
+  await catchPanic(() => at(5));
+} catch (e) {
+  console.log(e instanceof PanicError, e.message.split(" at ")[0]);
+  // true index out of bounds: the len is 2 but the index is 5
+}
+console.log("still running");
+```
+
 ## Task placement
 
 `workerCount()` and `currentWorker()`, with `spawn(p, { worker })` (a built-in), place tasks on
-workers: the threads that run tasks (`VELT_THREADS`, else the number of cores; 1 on
-WebAssembly), plus the spare ones started while tasks compute without pausing (below). A sharded program (one task per worker owning a slice of the data,
-Seastar or Orleans style) pins each shard to a worker and its callers next to it, so a call
-never wakes another thread.
+workers: the threads that run tasks. A sharded program (one task per worker owning a slice of
+the data, Seastar or Orleans style) pins each shard to a worker and its callers next to it, so a
+call never wakes another thread.
 
-- `workerCount(): i64`: how many workers there are.
-- `currentWorker(): i64`: the worker running this task (`0` to `workerCount() - 1`); `0`
-  outside a task.
+- `workerCount(): i64`: how many workers run tasks: `VELT_THREADS`, else the number of cores (1
+  on WebAssembly), fixed for the process. The spare workers the runtime adds while every worker
+  is busy (below) are not counted, so an array sized by `workerCount()` at start-up has a slot
+  for every `currentWorker()`.
+- `currentWorker(): i64`: the worker running this task, always `0` to `workerCount() - 1`; `0`
+  outside a task. A task pinned with `spawn(p, { worker })` stays on its worker; any other task
+  may move at any `await`. A spare worker reports one of these indices too, so two tasks running
+  at the same moment may see the same one: per-worker data needs an atomic or a lock, as it does
+  for a task that moves.
 - `spawn(p, { worker: i })`: starts `p` on worker `i`, where it stays (`SpawnOptions` is
   `{ worker?: i64 }`; `{}` pins nothing). `p` must be a call or a task body: a promise that
   already started stays on its task (`a started promise stays on its task; pass the call`).
@@ -147,8 +197,7 @@ never wakes another thread.
   A pinned task never moves. A task that computes without pausing for more than a few milliseconds
   doesn't hold up the rest of its worker: its timers, sockets and woken tasks go to another worker
   meanwhile, except tasks pinned to that worker. When no other worker can take them (one worker, or
-  every other one computing too), a spare worker starts and does, up to four in all; `workerCount()`
-  counts each from then on. Past those, they wait for a worker to finish its computation.
+  every other one computing too), a spare worker starts and does, up to four in all. Past those, they wait for a worker to finish its computation.
   `VELT_RESCUE=0` turns this rescue off (for a worker that computes, nothing serves its timers and
   sockets, no task moves away from it and no spare starts), for deterministic measurement only:
   together with `VELT_THREADS=1` a program's instruction count does not depend on how its threads

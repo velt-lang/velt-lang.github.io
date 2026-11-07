@@ -1,0 +1,109 @@
+---
+title: "Lint and fixes"
+description: "velt check --perf finds TypeScript habits that cost speed in Velt, --fix applies fixes, and lint in package.velt and velt-allow comments set what is reported."
+layout: "docs"
+category: "Tooling"
+order: 65
+navTitle: "Lint"
+---
+
+# Lint and fixes
+
+Code written the TypeScript way compiles in Velt, but some habits cost speed that a Velt form
+doesn't. `velt check --perf` reports them, each with a fix, and `velt check --fix` applies the
+fixes. Code shared with TypeScript has its own lint,
+[`--ts-compat`](/docs/tooling/cli/#code-shared-with-typescript---ts-compat), which works the same
+way: its findings have codes, levels and fixes too.
+
+```sh
+velt check --perf               # report what costs speed, with fixes
+velt check --perf --fix         # apply the fixes that keep the behaviour
+velt check --perf --fix=review  # also those that may change it
+velt check --perf --deps        # also list the optimizer's findings inside dependencies
+```
+
+## What `--perf` reports
+
+`velt check --perf` reports TypeScript habits that have a faster Velt form, and the `number`
+variables the optimizer keeps as doubles. To find the latter it optimizes the program as a
+release build would, without generating code. Each finding has a code, notes and fixes. By
+default the findings are hints: a `note:` in the text output, a hint in the editor; plain
+`velt check` doesn't print them.
+
+| Code | Finds | Fix | Measured |
+|---|---|---|---|
+| `perf/dynamic-record` | a `Record<string, any>` (or `any`) parameter read with constant keys | type it as an object type of the keys read | 1,894M → 7M instructions |
+| `perf/class-as-data` | a class that only holds data (fields, and a constructor that stores its parameters) whose instances nothing tells from copies | make it an object type, and rewrite every `new C(…)` as `{ … } as C` | 259M → 79M |
+| `perf/foreach-capture` | a `forEach` callback that assigns a variable of the enclosing function | rewrite it as `for…of` | 111M → 33M |
+| `perf/number-double` | a `number` in a loop that the optimizer keeps as a double, with the reason | declare it `i64` when every value is a whole number nothing bounds | 1,101M → 621M |
+
+The measurements are instructions retired by the TypeScript form and by the form the fix writes,
+same output, in release builds on Linux x86-64
+([bench/perf_lint](https://github.com/velt-lang/velt/blob/v0.6.0/bench/perf_lint/README.md)).
+Patterns that Velt already makes as fast got no rule: `JSON.parse(s) as T`, string appends in
+a loop, a `forEach` whose callback assigns nothing outside it, and `reduce`.
+[`velt build --report numbers`](/docs/tooling/cli/#velt-build-and-velt-run) lists the same
+`number` variables as `perf/number-double`.
+
+A file's place in the package decides what it gets:
+
+- Files in the [`tsCompat`](/docs/tooling/manifest/#tscompat) folders, shared with TypeScript,
+  only get fixes that stay TypeScript; a finding without such a fix is a note.
+- Dependencies' files are never reported or fixed. `--deps` lists the optimizer's findings
+  inside them as notes, to report upstream.
+- Every other file of the package gets the Velt fixes.
+
+## Fixes
+
+A fix is **safe** when it keeps the program's behaviour, and **review** when it may change it
+(`perf/class-as-data` copies values that were shared, an `i64` may meet a `number`, and
+`for…of` visits elements a `forEach` body adds, which a call, a getter, `toString`/`valueOf`,
+an iterator or a destructuring can do).
+
+- `velt check --fix` (or `--fix=safe`) applies the safe fixes of every finding, `--ts-compat`
+  findings included; `--fix=review` applies the review ones too. The `perf/foreach-capture`
+  rewrite is always a review fix.
+- It checks the program again and undoes any fix after which the program no longer checks, then
+  prints what it fixed and what is left. It writes every changed file or none.
+- `perf/class-as-data`'s fix rewrites every `new` in the package. In the editor, which loads a
+  file's imports and not the files that import it, an exported data class is reported without
+  the fix; `velt check --perf --fix=review` in the package applies it.
+
+## Levels: `lint` in `package.velt`
+
+```ts ignore title="package.velt"
+lint: {
+  perf: "warn",
+  rules: { "perf/number-double": "off", "ts-compat/velt-number-type": "deny" },
+},
+```
+
+- `perf` sets the level of every `perf/…` finding: `"hint"` (the default), `"warn"`, `"deny"`
+  (an error, so the check fails) or `"off"`.
+- `rules` sets one rule's level by its code, and wins over `perf`. `ts-compat/<rule>` codes
+  work there too.
+
+## Allowing a finding in the code
+
+```ts ignore
+// velt-allow(perf/dynamic-record): the keys come from user configuration
+function read(opts: Record<string, any>): string {
+  return `${opts["name"]}`;
+}
+```
+
+- `// velt-allow(<code>[, <code>]): <reason>` covers the next line with code, or its own line
+  when it follows code.
+- `// velt-allow-file(<code>): <reason>` covers the whole file.
+- `perf/*` covers the family.
+- A missing reason, an unknown code, and an allow that suppresses nothing are warnings.
+
+## Output and the editor
+
+- `velt check --json` gives each finding its `code` (`perf/<rule>`, `ts-compat/<rule>`) and its
+  `fixes`, each with a `title`, its `applicability` (`"safe"` or `"review"`) and its `edits`
+  ([`velt check`](/docs/tooling/cli/#velt-check)).
+- In the editor, `perf/…` findings show as hints with quick fixes; the fixes that keep the
+  behaviour are preferred and included in **Fix all**. The `perf/number-double` findings, which
+  need the optimizer, come only from `velt check --perf`
+  ([Editors](/docs/tooling/editors/)).

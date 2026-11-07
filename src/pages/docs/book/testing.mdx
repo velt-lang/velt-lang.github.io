@@ -1,6 +1,6 @@
 ---
 title: "Testing"
-description: "velt test finds every *.test.vlt file (and *.test.ts, *.test.tsx) and runs every exported function whose name starts with test_."
+description: "velt test finds every *.test.velt file (and *.test.ts, *.test.tsx) and runs every exported function whose name starts with test_."
 layout: "docs"
 category: "The book"
 order: 120
@@ -8,12 +8,12 @@ order: 120
 
 # Testing
 
-`velt test` finds every `*.test.vlt` file (and `*.test.ts`, `*.test.tsx`) and runs every exported function whose name starts
+`velt test` finds every `*.test.velt` file (and `*.test.ts`, `*.test.tsx`) and runs every exported function whose name starts
 with `test_`, and the tests registered with `describe` and `it`
 ([below](#describe-it-and-expect)). There is no framework to install and no configuration.
 
 ```ts ignore
-// tests/greet.test.vlt
+// tests/greet.test.velt
 import { greet } from "../src/greet";
 
 export function test_greets_by_name() {
@@ -27,7 +27,7 @@ export function test_blank_name_greets_the_world() {
 
 ```
 $ velt test
-running tests/greet.test.vlt
+running tests/greet.test.velt
 ok test_greets_by_name
 ok test_blank_name_greets_the_world
 
@@ -75,11 +75,11 @@ several lines, as Vitest shows the location after the message):
 FAILED test_parses_twice
     AssertionError: assertEq failed
       left: 2
-     right: 3 at tests/port.test.vlt:14:3
+     right: 3 at tests/port.test.velt:14:3
 FAILED test_uncaught
-    ParseError: bad port: x at tests/port.test.vlt:5:15
+    ParseError: bad port: x at tests/port.test.velt:5:15
 FAILED test_out_of_range (exit code 101)
-    panic: index out of bounds: the len is 1 but the index is 3 at tests/port.test.vlt:20:15
+    panic: index out of bounds: the len is 1 but the index is 3 at tests/port.test.velt:20:15
 ```
 
 ## `describe`, `it` and `expect`
@@ -123,7 +123,7 @@ describe("cart", () => {
 ```
 
 ```
-running tests/cart.test.vlt
+running tests/cart.test.velt
 ok cart > starts empty
 ok cart > adds items
 ok cart > async > waits
@@ -208,8 +208,8 @@ the built-in matchers' at the `expect` in the test.
 ## Running tests
 
 ```sh
-velt test                       # every *.test.vlt (.ts, .tsx) of the package (or under the current directory)
-velt test tests/api.test.vlt    # one file
+velt test                       # every *.test.velt (.ts, .tsx) of the package (or under the current directory)
+velt test tests/api.test.velt    # one file
 velt test --filter parse        # the tests whose name contains `parse`
 velt test --filter test_parse --exact  # just `test_parse`
 velt test --release             # optimized build
@@ -244,9 +244,9 @@ threads, channels, atomics and printing. A file whose tests reach anything else 
 and says what it reaches:
 
 ```text
-running tests/pure.test.vlt (cached)
+running tests/pure.test.velt (cached)
 ok test_add
-running tests/clock.test.vlt (ran: not cacheable, it uses the clock)
+running tests/clock.test.velt (ran: not cacheable, it uses the clock)
 ok test_clock
 ```
 
@@ -271,7 +271,9 @@ something allocated fails with `FAILED <file> (N blocks not freed)`, and one who
 reported no counts (a runtime without the debug counters) with `no block counts on its stderr`.
 Close every server and
 connection a test opens: one still running 120 s after the file's tests fails the file as
-`still running … after its tests`.
+`still running … after its tests`. A file in which a panic was caught (by
+[`catchPanic`](/docs/std/task/), or by `http-server` answering a handler's panic with a 500)
+skips the leak check, since a caught panic leaks on purpose.
 
 ## How tests are built
 

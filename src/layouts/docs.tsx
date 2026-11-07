@@ -1,9 +1,12 @@
 /**
  * Docs pages (design/Api.dc.html header, design/Docs.dc.html body): the area
- * switcher with Guide | API tabs on std modules, search, the version pill;
- * the current area's pages on the left; the article with breadcrumb, page
- * actions and pager; "On this page" on the right. From 1100px both side
- * columns stick and scroll on their own. Static except the islands.
+ * switcher with the Guide | API reference switch on std modules, search, the
+ * version pill; the current area's pages on the left; the article with
+ * breadcrumb, page actions and pager; "On this page" on the right. From 1100px
+ * both side columns stick and scroll on their own. A std guide points at its
+ * API reference three ways (design/ApiSwitch.dc.html): "API at a glance"
+ * after its lead, a card above "On this page", and an "API" link by each
+ * module in the sidebar. Static except the islands.
  */
 import { component } from 'sigx';
 import type { LayoutProps, LayoutSlots } from '@sigx/ssg';
@@ -12,29 +15,49 @@ import { ChevronDown, ChevronRight, GridIcon, MenuIcon } from '../components/Ico
 import { OnThisPage, type TocHeading } from '../islands/OnThisPage';
 import { PageActions } from '../islands/PageActions';
 import { docGroups, docSequence, type DocGroup, type DocLink } from '../lib/docs-nav';
-import { API_PATH, CATALOG_PATH, DIAGNOSTICS_PATH, areaOf, stdModuleOf, type Area } from '../lib/docs-areas';
+import { API_PATH, CATALOG_PATH, DIAGNOSTICS_PATH, areaOf, hasApiTabs, stdModuleOf, type Area } from '../lib/docs-areas';
 import { ApiSidebar } from '../components/api/ApiSidebar';
-import { anchorOf, apiModule, guidePath, sourceUrl, specifierOf, visibleExports } from '../lib/std-api';
+import { ApiAsideCard, ApiGlance, insertAfterLead } from '../components/api/ApiGlance';
+import { anchorOf, apiModule, apiModuleForGuide, apiPath, countedExports, guidePath, sourceUrl, specifierOf, visibleExports, type ApiModule } from '../lib/std-api';
 import { DOCS_VERSION, EDIT_BASE, RELEASES_URL, REPO_URL } from '../lib/site';
 
 const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
 
 const label = 'font-mono text-xs uppercase tracking-[0.08em] text-muted';
 
-const NavLink = component<{ item: DocLink; current: string }>(({ props }) => () => {
+const ACTIVE = 'bg-[#17172A] shadow-[inset_0_0_0_1px_var(--color-violet-line)]';
+
+/** A sidebar entry; a std module with an API page gets a small "API" link beside it. */
+const NavLink = component<{ item: DocLink; current: string; api?: ApiModule }>(({ props }) => () => {
     const active = props.item.href === props.current;
-    return (
-        <a
-            href={props.item.href}
-            aria-current={active ? 'page' : undefined}
-            class={`rounded-lg px-3 py-1.5 ${props.item.mono ? 'font-mono text-[13px]' : ''} ${
-                active ? 'bg-[#17172A] font-semibold text-fg shadow-[inset_0_0_0_1px_#2E2A5C]' : 'text-fg-3 hover:text-cyan'
-            }`}
-        >
+    const text = `${props.item.mono ? 'font-mono text-[13px]' : ''} ${active ? 'font-semibold text-fg' : 'text-fg-3 hover:text-cyan'}`;
+    const link = (cls: string) => (
+        <a href={props.item.href} aria-current={active ? 'page' : undefined} class={`${cls} ${text}`}>
             {props.item.title}
         </a>
     );
+    if (!props.api) return link(`rounded-lg px-3 py-1.5 ${active ? ACTIVE : ''}`);
+    return (
+        <div class={`flex items-stretch rounded-lg ${active ? ACTIVE : ''}`}>
+            {link('min-w-0 flex-auto py-1.5 pl-3')}
+            <a
+                href={apiPath(props.api.module)}
+                aria-label={`${specifierOf(props.api)} API reference`}
+                class="group flex flex-none items-center px-2"
+            >
+                <span class="rounded-[5px] border border-violet-line px-1.5 text-[10px] font-semibold leading-[1.6] tracking-[0.04em] text-violet group-hover:border-violet group-hover:text-fg">
+                    API
+                </span>
+            </a>
+        </div>
+    );
 }, { name: 'NavLink' });
+
+/** The API page of a std sidebar entry (`/docs/std/fs/` → velt/fs), when the module has its own with exports on it. */
+function apiOfEntry(href: string): ApiModule | undefined {
+    const m = href.startsWith('/docs/std/') ? apiModule(href.slice('/docs/std/'.length)) : undefined;
+    return m && countedExports(m).length > 0 ? m : undefined;
+}
 
 /** One area's pages. Compact groups (std) show their featured pages and fold the rest. */
 const NavGroup = component<{ group: DocGroup; title: string; current: string; all?: DocLink }>(({ props }) => () => {
@@ -49,7 +72,7 @@ const NavGroup = component<{ group: DocGroup; title: string; current: string; al
     return (
         <div class="flex flex-col gap-0.5">
             <span class={`${label} px-3 pb-2`}>{props.title}</span>
-            {shown.map((i) => <NavLink key={i.href} item={i} current={props.current} />)}
+            {shown.map((i) => <NavLink key={i.href} item={i} current={props.current} api={apiOfEntry(i.href)} />)}
             {rest.length > 0 && (
                 <details class="nav-group" open={inGroup && !shown.some((i) => i.href === props.current) ? true : undefined}>
                     <summary class="flex items-center gap-1 rounded-lg px-3 py-1.5 text-muted hover:text-cyan">
@@ -57,7 +80,7 @@ const NavGroup = component<{ group: DocGroup; title: string; current: string; al
                         <ChevronRight size={14} cls="chev" />
                     </summary>
                     <div class="flex flex-col gap-0.5 pl-2">
-                        {rest.map((i) => <NavLink key={i.href} item={i} current={props.current} />)}
+                        {rest.map((i) => <NavLink key={i.href} item={i} current={props.current} api={apiOfEntry(i.href)} />)}
                     </div>
                 </details>
             )}
@@ -119,6 +142,13 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
         headings.splice(0, headings.length, { id: 'exports', text: 'Exports', level: 2 },
             ...visibleExports(api).map((e) => ({ id: anchorOf(e), text: e.name, level: 3 as const, code: true })));
     }
+    // A std guide's API reference (`collections/deque` → velt/collections), when it has exports.
+    const guideApi = !api && hasApiTabs(path) && stdModule ? apiModuleForGuide(stdModule) : undefined;
+    const glanceApi = guideApi && countedExports(guideApi).length > 0 ? guideApi : undefined;
+    const content = slots.default?.();
+    const body = glanceApi
+        ? insertAfterLead(content, <ApiGlance module={glanceApi} slug={stdModule!} />) ?? [content, <ApiGlance module={glanceApi} slug={stdModule!} late />]
+        : content;
     const crumbGroup = area.id === 'errors' ? { title: 'Errors', href: DIAGNOSTICS_PATH } : { title: nav.group.title, href: nav.group.href };
 
     return (
@@ -182,7 +212,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                                 <PageActions client:idle md={md} />
                             </div>
                         )}
-                        <div class={api ? 'api-page' : `prose ${hasMd ? 'has-page-actions' : ''}`}>{slots.default?.()}</div>
+                        <div class={api ? 'api-page' : `prose ${hasMd ? 'has-page-actions' : ''}`}>{body}</div>
 
                         {(prev || next) && (
                             <nav aria-label="Pager" class="mt-8 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3.5">
@@ -223,6 +253,7 @@ export default component<LayoutProps, unknown, LayoutSlots>(({ props, slots }) =
                     )}
                     {hasMd && (
                         <aside data-toc-scroll class="sticky-col max-w-[260px] flex-[1_1_220px] pb-8 pt-2">
+                            {glanceApi && <ApiAsideCard module={glanceApi} />}
                             <OnThisPage client:idle headings={headings} md={md} edit={source ? `${EDIT_BASE}${source}` : undefined} />
                         </aside>
                     )}

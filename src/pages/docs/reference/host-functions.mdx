@@ -1,0 +1,219 @@
+---
+title: "Host functions"
+description: "declare host(\"module\") function: functions the JavaScript host provides to a program built for wasm32-unknown-unknown, what crosses, async host functions and HostRef."
+layout: "docs"
+category: "Language reference"
+order: 158
+---
+
+# Host functions
+
+`declare host("<module>") function` declares a function that the JavaScript host provides, for a
+program built as a WebAssembly module for a JS host (`--target wasm32-unknown-unknown`: a
+browser, Node, Deno, Cloudflare Workers). Each declaration is the WebAssembly import
+`(import "<module>" "<name>")`, and the JS glue `velt_web.mjs` passes the function the embedder
+gives for it ([WebAssembly](/docs/tooling/webassembly/)). Any module may declare one: the
+standard library, a package or a program.
+
+```ts ignore
+import { HostRef } from "velt/host";
+
+declare host("app") function greet(name: string): string;
+declare host("app") function fill(buf: u8[]): u32;
+declare host("app") function lookup(key: string): HostRef | null;
+declare host("app") function size(value: HostRef): f64;
+
+export function describe(key: string): string {
+  const value = lookup(key);
+  if (value == null) {
+    return greet(key);
+  }
+  return `${key}: ${size(value)}`;
+}
+```
+
+The embedder passes the functions to `runVelt` by import module:
+
+```js
+import { runVelt } from "./velt_web.mjs";
+
+const store = new Map([["config", new Blob(["{}"])]]);
+const code = await runVelt(fetch("app.wasm"), {
+  imports: {
+    app: {
+      greet: (name) => `hello, ${name}`,
+      fill: (buf) => {
+        buf.fill(7);
+        return buf.length;
+      },
+      lookup: (key) => store.get(key) ?? null,
+      size: (value) => value.size,
+    },
+  },
+});
+```
+
+The glue lists every host function the module imports, and one that `imports` lacks stops
+`runVelt` before `main` runs, with an error naming it. `velt run` passes none, so a program that
+calls host functions needs an embedder.
+
+## What crosses
+
+The declaration's types say what crosses, and the glue converts each value:
+
+| Velt | the host function gets | it returns |
+|---|---|---|
+| `i8`, `i16`, `i32`, `u8`, `u16`, `u32` | a number | an integral number in the type's range |
+| `i64`, `u64`, `isize`, `usize` | a `bigint` | a `bigint` or an integral number, in the type's range |
+| `f64` | a number | a number |
+| `bool` | a boolean | a boolean |
+| `string` | a string | a string |
+| `u8[]` | a `Uint8Array` over the array's bytes: what the host writes changes the array | a `Uint8Array` or an `ArrayBuffer`, copied into a new array |
+| `readonly u8[]` | a `Uint8Array` copy of the bytes | (as `u8[]`) |
+| `HostRef` | the JS value | any value but `null` and `undefined` (a `TypeError`) |
+| `HostRef \| null` | the JS value, or `null` | any value; `null` and `undefined` are `null` |
+| `void` | | (ignored) |
+
+A result that doesn't fit the declared type (`300` or `1.5` for a `u8`, `"7"` for a number,
+`2n ** 70n` for an `i64`, `undefined` for a `string`) is never converted or wrapped: the glue
+throws a `TypeError` naming the host function and the value
+(`velt: host function app.small returned 300, which is not a u8`), which stops the program.
+
+Strings cross as UTF-8: a string holding a lone surrogate reaches the host with U+FFFD in its
+place, as `TextEncoder` writes it. The `Uint8Array` of a `u8[]` argument is valid only during the
+call: keep a copy (`buf.slice()`) for later, since writing it after the call corrupts the
+program. A buffer parameter also takes a view of bytes (a typed array, a `DataView`,
+`xs.subarray(begin, end)`) with no copy, as a system function's does
+([System functions](/docs/reference/system-functions/)).
+
+Anything else is a compile error that names the parameter and lists what crosses:
+
+```ts error
+declare host("app") function each(xs: i32[]): void;
+```
+
+```text
+error: parameter `xs` of host function `each` has type `i32[]`, which cannot cross to the host
+  = note: a host function takes integers, `f64`, `bool`, `string`, `u8[]`, `readonly u8[]` (a view of bytes at the call), `HostRef` and `HostRef | null`
+```
+
+So are type parameters, optional, rest and destructured parameters, and a `this` parameter. A
+`Promise` result needs `async` (below): without it, the declaration is an error
+(``host function `f` returns a `Promise` but is not `async` ``). The import module is any
+string without control characters but `velt` and the names starting with `velt:`, which belong
+to the runtime (`declare host("velt:…")` outside the standard library is an error). Every
+declaration of one import (the same module and name, in any modules) has the same types,
+`async` included.
+
+## Async host functions
+
+An `async` host function returns a promise of a result that crosses. The host function returns
+a JS promise (or any other value, which counts as fulfilled), and `await` waits for it without
+blocking the host's thread:
+
+```ts ignore
+import { IoError } from "velt/io";
+
+declare host("app") async function load(key: string): Promise<string>;
+declare host("app") async function pause(ms: u32): Promise<void>;
+
+export async function config(): Promise<string> {
+  await pause(10);
+  try {
+    return await load("config");
+  } catch (e) {
+    const err: IoError = e;
+    return `${err.code}: ${err.message}`; // e.g. "NotFoundError: no config"
+  }
+}
+```
+
+```js
+const code = await runVelt(fetch("app.wasm"), {
+  imports: {
+    app: {
+      load: async (key) => {
+        const res = await fetch(`/data/${key}`);
+        if (!res.ok) throw new DOMException(`no ${key}`, "NotFoundError");
+        return res.text();
+      },
+      pause: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    },
+  },
+});
+```
+
+- The call runs the JS function at once, with the arguments converted as for any host function.
+  An async host function takes `readonly u8[]` (the host gets a copy) but not `u8[]`, which the
+  host could write after the call, when the program may have freed the bytes.
+- The promise fulfills with the value converted as a result of that type (the table above). It
+  rejects with an [`IoError`](/docs/std/io/) whose `code` is the `name` of what the JS promise
+  rejected with (`"Error"` when that is not an object with a name) and whose `message` is its
+  `message` (or the value as a string). So does a fulfilled value that doesn't fit the result
+  type.
+- The promise of the call is a promise like any other: kept, it runs on, and a rejection nobody
+  handles is reported; dropped before it settles, the program ignores the outcome.
+
+While its tasks wait for host promises or timers, the program returns to the host: `sleep` and
+timers use the host's `setTimeout`, and `runVelt` resolves once `main` and the tasks it waits for
+are done. Velt's own promises and timers run in the same order as on native targets; a host
+promise settles in a later turn, as an I/O operation does natively.
+
+## `HostRef`
+
+[`velt/host`](/docs/std/host/)'s `HostRef` is a JS value the host keeps for the program: the glue
+holds it in a table, and the program holds the slot. Host functions make them (a `HostRef`
+result) and take them back (a `HostRef` parameter gets the value itself). Dropping a `HostRef`,
+or `[Symbol.dispose]()`, frees the slot, so the host can collect the value; `clone()` gives a
+second `HostRef` to the same value, with a slot of its own. Passing a disposed `HostRef` to a
+host function makes the glue throw.
+
+## Targets
+
+Only a JS host provides host functions. A declaration is allowed for any target, and a call that
+a build for another target reaches (native, `wasm32-wasip1`) is the error, so portable code can
+choose by platform, for example with [conditional imports](/docs/reference/modules/#conditional-imports):
+
+```text
+error: host function `greet` is not available on x86_64-unknown-linux-gnu
+  = note: `main` calls it
+  = note: only a JS host (wasm32-unknown-unknown) provides host functions
+```
+
+A standard-library function that calls one is reported at the program's call, as for
+[system functions](/docs/reference/system-functions/).
+
+## The glue's own modules
+
+The standard library declares host functions too. `velt_web.mjs` provides the import module
+`velt:fetch` itself, through which [`fetch`](/docs/std/net/http/#on-javascript-hosts) uses the
+host's own `fetch`; an embedder doesn't pass it. `imports: { "velt:fetch": … }` replaces it, and
+`fetchHost(fetch)`, exported by the glue, makes one over another `fetch` (a host that routes
+requests itself).
+
+## Packages and platforms
+
+A package for a JavaScript platform ships the JavaScript of the host modules its
+`declare host("m")` functions call, in `hostModules` of its `package.velt`. `velt build --host
+<package>` writes the glue, the platform's entry and those modules next to the program
+([JavaScript platforms](/docs/tooling/webassembly/)). The [`cloudflare`](/docs/packages/cloudflare/#host-modules)
+package's bindings to R2, D1, KV and the cache are such host functions:
+
+```ts ignore
+import { HostRef } from "velt/host";
+
+/** `bucket.get(key)`: the R2 object with its body, or null. */
+export declare host("cloudflare") async function r2Get(
+  bucket: string,
+  key: string,
+): Promise<HostRef | null>;
+
+/** The bytes of a JavaScript `ArrayBuffer` or `Uint8Array`. */
+export declare host("cloudflare") function takeBytes(v: HostRef): u8[];
+```
+
+## Errors in the host
+
+A host function that throws stops the program: the exception leaves `runVelt` (no Velt code runs
+after it, nothing is dropped), as a trap would. An async host function that throws rejects its
+promise instead, as a JS `async` function does.

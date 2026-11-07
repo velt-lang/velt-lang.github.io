@@ -20,24 +20,24 @@ modules, with tests.
 ## Setting up
 
 The HTTP server is a package, not part of the standard library. Start a project and add it to
-`package.vlt`'s `dependencies`:
+`package.velt`'s `dependencies`:
 
 ```sh
 velt new todo
 cd todo
 ```
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
   name: "todo",
   version: "0.1.0",
-  velt: "0.5",
+  velt: "0.6",
   dependencies: {
     "http-server": {
       git: "https://github.com/velt-lang/velt",
-      tag: "v0.5.0", // the release of your velt (`velt --version`)
+      tag: "v0.6.0", // the release of your velt (`velt --version`)
       path: "packages/http-server",
     },
   },
@@ -52,9 +52,9 @@ instead. `velt new todo --template api` writes the git dependency for you.
 
 ## Hello, HTTP
 
-Replace `src/main.vlt` with:
+Replace `src/main.velt` with:
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { serve } from "http-server";
 
 const server = await serve({ port: 8080 }, (req: Request) => {
@@ -81,10 +81,10 @@ serializes any value with `JSON.stringify`, which is generated at compile time f
 
 ## A JSON API
 
-The API goes into its own module, `src/server.vlt`, with a `startServer(port)` function, so tests
+The API goes into its own module, `src/server.velt`, with a `startServer(port)` function, so tests
 can start it too:
 
-```ts ignore title="src/server.vlt"
+```ts ignore title="src/server.velt"
 import { serve, HttpServer } from "http-server";
 
 class ApiError extends Error {
@@ -182,9 +182,9 @@ export async function startServer(port: number): Promise<HttpServer> {
 }
 ```
 
-`src/main.vlt` starts it:
+`src/main.velt` starts it:
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { startServer } from "./server";
 
 const server = await startServer(8080);
@@ -240,15 +240,22 @@ What to notice:
 - The handler's second argument, `info: ServeInfo`, says who connected:
   `info.remoteAddr.hostname` and `info.remoteAddr.port`.
 - A handler that throws gets a `500 Internal Server Error`, and its error is printed to stderr.
+  So does a handler that panics (an index out of bounds, say): the server keeps serving the
+  other requests.
+- `serveFile(req, path)` answers with a file, with `ETag`, 304, `Range` and HEAD handled, and
+  `resolveUnder(root, urlPath)` maps a URL path to a file under a directory without letting it
+  out ([Files](/docs/packages/http-server/#files-servefile-and-resolveunder)).
 
 The [http-server reference](/docs/packages/http-server/) has every option, limit and timeout.
+For routes with parameters, middleware (CORS, logging, rate limits, compression) and static
+files, the [`web`](/docs/packages/web/) reference package builds on the same handlers.
 
 ## Testing it
 
 Start the server on port 0 (any free port), read the port from `server.port`, and call it with
-the global [`fetch`](/docs/std/net/http/). In `tests/api.test.vlt`:
+the global [`fetch`](/docs/std/net/http/). In `tests/api.test.velt`:
 
-```ts ignore title="tests/api.test.vlt"
+```ts ignore title="tests/api.test.velt"
 import { startServer } from "../src/server";
 
 export async function test_create_and_validate() {
@@ -265,14 +272,14 @@ export async function test_create_and_validate() {
 
 ```sh
 $ velt test
-running tests/api.test.vlt (ran: not cacheable, it uses … the clock, the network)
+running tests/api.test.velt (ran: not cacheable, it uses … the clock, the network)
 ok test_create_and_validate
 
 test result: ok. 1 passed; 0 failed
 ```
 
-The test imports `src/server.vlt`, not `src/main.vlt`: importing a module runs its top-level
-statements, and `main.vlt`'s would start a server on port 8080. See [Testing](/docs/book/testing/).
+The test imports `src/server.velt`, not `src/main.velt`: importing a module runs its top-level
+statements, and `main.velt`'s would start a server on port 8080. See [Testing](/docs/book/testing/).
 
 ## HTTPS and HTTP/2
 
@@ -337,6 +344,22 @@ ones; `await server.shutdown()` also waits for them. Under
 [`velt dev`](/docs/book/hot-reload/), a change to a handler's code is swapped into the running
 server, and a change that needs a restart lets in-flight requests finish first; the listening
 socket stays open, so no request is refused.
+
+## Deploying to Cloudflare Workers
+
+The same program runs on Cloudflare Workers, with no change to its code. Add the
+`host-cloudflare` package to the dependencies and build for it:
+
+```sh
+velt build --release --host host-cloudflare
+cd target/velt/todo-workers && npx wrangler deploy
+```
+
+There `serve` takes its requests from the Worker instead of a port, and the
+[`cloudflare`](/docs/packages/cloudflare/) package gives the program KV, D1, R2 and the cache in
+place of local files. A Worker starts a fresh instance when it needs one, so keep state that
+must last in one of those rather than in module state
+([On a JS host](/docs/packages/http-server/#on-a-js-host-velt-build---host)).
 
 ## Databases
 

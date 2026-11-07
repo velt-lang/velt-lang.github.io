@@ -10,12 +10,12 @@ order: 80
 
 Velt executables are native programs with standard debug info, so any native debugger works:
 LLDB or CodeLLDB on macOS and Linux, GDB on Linux, the Visual Studio debugger on Windows.
-Breakpoints go on `.vlt` lines, and the call stack shows Velt function names. In VS Code, F5
+Breakpoints go on `.velt` lines, and the call stack shows Velt function names. In VS Code, F5
 builds and debugs with nothing to configure ([VS Code](#vs-code)).
 
 ## Which build has line information
 
-| Build | Line info (`.vlt` file:line) | Variables | Use it for |
+| Build | Line info (`.velt` file:line) | Variables | Use it for |
 |---|---|---|---|
 | `velt build` (Cranelift, the debug default) | yes; on Windows when the bundled linker links it (the default of a released toolchain), else function symbols only | as line info | stepping, breakpoints, backtraces, inspecting values |
 | `velt run`, `velt test` | as `velt build` | no (values stay in registers, which is faster) | running and testing |
@@ -52,10 +52,10 @@ code 101 (there is no unwinding, so `RUST_BACKTRACE` does not apply).
 ## Command line
 
 ```sh
-velt build app.vlt
+velt build app.velt
 lldb target/velt/app
 (lldb) command script import <velt>/share/velt/lldb/velt_lldb.py
-(lldb) breakpoint set -f app.vlt -l 12
+(lldb) breakpoint set -f app.velt -l 12
 (lldb) run
 (lldb) frame variable
 ```
@@ -64,7 +64,7 @@ The `command script import` loads the formatters; `velt doctor` prints the scrip
 *debugger scripts* line), and `velt build --json` reports it as `lldbScript`. To load them in
 every session, put the line in `~/.lldbinit`.
 
-GDB: `gdb target/velt/app`, then `break app.vlt:12` and `run`.
+GDB: `gdb target/velt/app`, then `break app.velt:12` and `run`.
 
 ## VS Code
 
@@ -72,7 +72,7 @@ GDB: `gdb target/velt/app`, then `break app.vlt:12` and `run`.
    **CodeLLDB** (`vadimcn.vscode-lldb`, recommended: it includes LLDB), **LLDB DAP**
    (`llvm-vs-code-extensions.lldb-dap`) or **C/C++** (`ms-vscode.cpptools`). Without one, F5
    offers to install CodeLLDB.
-2. Press **F5** in a package (a folder with `package.vlt`), or with a `.vlt` file open outside
+2. Press **F5** in a package (a folder with `package.velt`), or with a `.velt` file open outside
    one. Or use **▶ Run | Debug** above `main`, or the run and debug buttons of the editor title.
    In a test file, **▶ Run test | Debug test** above each test runs it, or debugs its test
    program (`velt test <file> --filter <test> --exact --no-run --json` builds it).
@@ -118,7 +118,7 @@ picker lists Velt programs (built into `target/velt/`) first.
 
 By default `velt dev` runs JIT-compiled code inside a `velt` process (`velt dev --host`, started
 by the `velt dev` you typed). On Linux each version announces its line tables to GDB and LLDB
-(the GDB JIT interface), so a debugger attached to that process stops on breakpoints in `.vlt`
+(the GDB JIT interface), so a debugger attached to that process stops on breakpoints in `.velt`
 files and steps by line. macOS is untested; LLDB on Apple platforms reads JIT line tables only
 after `settings set plugin.jit-loader.gdb.enable on`.
 
@@ -127,15 +127,15 @@ a 22,000-function one, under 2% of the time to the first run
 ([measurements](https://github.com/velt-lang/velt/blob/main/bench/RESULTS.md)). To turn it off, set `VELT_DEV_DEBUG_INFO=0`.
 
 ```sh
-gdb -p "$(pgrep -f 'velt dev --host')"      # then: break app.vlt:12, continue
-lldb -p "$(pgrep -f 'velt dev --host')"     # then: breakpoint set -f app.vlt -l 12, continue
+gdb -p "$(pgrep -f 'velt dev --host')"      # then: break app.velt:12, continue
+lldb -p "$(pgrep -f 'velt dev --host')"     # then: breakpoint set -f app.velt -l 12, continue
 ```
 
 To stop at the very start, run the host under the debugger instead (it runs the program once,
-without watching for changes): `gdb -ex 'set breakpoint pending on' -ex 'break app.vlt:12' -ex run --args velt dev --host app.vlt`. Hot-swapped functions are announced too. On Windows, or to attach
+without watching for changes): `gdb -ex 'set breakpoint pending on' -ex 'break app.velt:12' -ex run --args velt dev --host app.velt`. Hot-swapped functions are announced too. On Windows, or to attach
 from VS Code:
 
-- run `velt dev --exe app.vlt` (or the task *velt: dev --exe (current file)* of
+- run `velt dev --exe app.velt` (or the task *velt: dev --exe (current file)* of
   `editors/vscode/templates/tasks.json`): each version is a linked executable, and an attach
   configuration (`"request": "attach"`) attaches to the current one (after a reload, attach again
   to the new process);
@@ -146,11 +146,11 @@ from VS Code:
 `velt build --target wasm32-wasip1` debug builds carry DWARF: `wasmtime run -D debug-info target/velt/app.wasm` exposes it to LLDB or GDB attached to wasmtime:
 
 ```sh
-gdb -ex 'set breakpoint pending on' -ex 'break app.vlt:12' -ex run \
+gdb -ex 'set breakpoint pending on' -ex 'break app.velt:12' -ex run \
     --args wasmtime run -D debug-info -O opt-level=0 target/velt/app.wasm
 ```
 
-With wasmtime 49 and GDB 15, breakpoints, stepping and backtraces work by `.vlt` line. LLDB 18
+With wasmtime 49 and GDB 15, breakpoints, stepping and backtraces work by `.velt` line. LLDB 18
 stops on breakpoints and shows the backtrace, but stepping in wasm code aborts wasmtime; use GDB
 to step. Browser builds
 (`wasm32-unknown-unknown`) can be stepped in Chrome DevTools with the *C/C++ DevTools Support

@@ -151,7 +151,7 @@ error: system function `pread` is not available on wasm32-wasip1
 A standard-library function that calls one is reported at the program's call of it:
 
 ```text
-app.vlt:4:14: error: `openSync` (velt/fs) is not available on x86_64-pc-windows-msvc
+app.velt:4:14: error: `openSync` (velt/fs) is not available on x86_64-pc-windows-msvc
   = note: it calls the system function `open`, which x86_64-pc-windows-msvc lacks
 ```
 
@@ -176,6 +176,10 @@ No raw pointers, no callbacks into Velt, and no function that keeps a buffer aft
 (`aio_read`, `mmap`). Memory-mapped files are planned as a std type whose pages are byte views.
 File descriptors and handles are plain integers: closing one the runtime owns is not a memory
 error, but it breaks what the runtime does with it, as it would in C.
+
+Other C libraries, and C functions outside the table, are for packages with native code: they
+declare them with `declare c` and call them in `unsafe` code, checked against the library's C
+headers ([C functions and unsafe code](/docs/reference/c-interop/)).
 
 ## The table
 

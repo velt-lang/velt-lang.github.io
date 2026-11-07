@@ -1,6 +1,6 @@
 ---
 title: "Modules and packages"
-description: "Split a program into modules with ES module syntax, and share code as packages declared in package.vlt."
+description: "Split a program into modules with ES module syntax, and share code as packages declared in package.velt."
 layout: "docs"
 category: "The book"
 order: 110
@@ -11,10 +11,11 @@ navTitle: "Packages"
 
 ## Modules
 
-Every `.vlt` file is a module, with ES module syntax and named exports only:
+Every `.velt` file is a module, with ES module syntax: named exports, and a
+[default export](/docs/reference/modules/#default-exports) as in TypeScript:
 
 ```ts ignore
-// src/geometry.vlt
+// src/geometry.velt
 export type Point = { x: f64; y: f64 };
 
 export function distance(a: Point, b: Point): f64 {
@@ -25,15 +26,15 @@ const EPSILON = 1e-9;                // not exported: private to the file
 ```
 
 ```ts ignore
-// src/main.vlt
+// src/main.velt
 import { distance, type Point } from "./geometry";
 import * as path from "velt/path";
 
 const a: Point = { x: 0.0, y: 0.0 };
-console.log(distance(a, { x: 3.0, y: 4.0 }), path.basename("/srv/app.vlt")); // 5 app.vlt
+console.log(distance(a, { x: 3.0, y: 4.0 }), path.basename("/srv/app.velt")); // 5 app.velt
 ```
 
-- Relative imports drop the extension. A folder is a module through its `index.vlt`, which
+- Relative imports drop the extension. A folder is a module through its `index.velt`, which
   usually re-exports its parts: `export { Circle } from "./circle";`, `export * from "./square";`.
 - `import * as ns` binds a namespace; `import type` imports names for type positions only.
 - `export default` and default imports don't exist: the compiler's error suggests the named
@@ -48,7 +49,7 @@ All rules are in [Modules and packages](/docs/reference/modules/) in the Referen
 
 ## Path aliases
 
-In a package, `paths` in `package.vlt` replaces long `../../` chains, like TypeScript's
+In a package, `paths` in `package.velt` replaces long `../../` chains, like TypeScript's
 `compilerOptions.paths`:
 
 ```ts ignore
@@ -56,17 +57,17 @@ paths: { "@app/*": "src/*" },
 ```
 
 ```ts ignore
-import { execute } from "@app/commands";        // src/commands.vlt or src/commands/index.vlt
+import { execute } from "@app/commands";        // src/commands.velt or src/commands/index.velt
 ```
 
 ## Packages
 
-A package is a directory with a `package.vlt` ([reference](/docs/tooling/manifest/)). An
-application has `src/main.vlt`; a library has `src/lib.vlt`, whose exports are what other
-packages import. `package.vlt` is written in Velt, as data only: building or installing a
+A package is a directory with a `package.velt` ([reference](/docs/tooling/manifest/)). An
+application has `src/main.velt`; a library has `src/lib.velt`, whose exports are what other
+packages import. `package.velt` is written in Velt, as data only: building or installing a
 package never runs code from it.
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -78,11 +79,11 @@ export const pkg: Package = {
 ```
 
 ```sh
-velt new textkit --template lib     # a library: src/lib.vlt, tests, doc comments
+velt new textkit --template lib     # a library: src/lib.velt, tests, doc comments
 cd textkit
 velt test
 velt doc                            # HTML docs in target/doc from the doc comments
-velt publish                        # to the local registry, or the one in package.vlt
+velt publish                        # to the local registry, or the one in package.velt
 ```
 
 The names `velt` and `std` are reserved for the standard library, whose modules are `velt/…`:
@@ -91,7 +92,7 @@ library``), so an import of `velt/…` always means the standard library.
 
 ## Dependencies
 
-A package's `dependencies` in `package.vlt` say where each one comes from:
+A package's `dependencies` in `package.velt` say where each one comes from:
 
 ```ts ignore
 dependencies: {
@@ -99,23 +100,23 @@ dependencies: {
   util: { path: "../util" },                         // a local directory
   "http-server": {                                   // a git repository
     git: "https://github.com/velt-lang/velt",
-    tag: "v0.5.0",
+    tag: "v0.6.0",
     path: "packages/http-server",                    // the package's directory in it
   },
 },
 ```
 
-`velt add` writes the first two forms, and keeps your comments in `package.vlt`:
+`velt add` writes the first two forms, and keeps your comments in `package.velt`:
 
 ```sh
 cd ../app
-velt add textkit                    # the latest version, into package.vlt and velt.lock.json
+velt add textkit                    # the latest version, into package.velt and velt.lock.json
 velt add util --path ../util        # or a package from a local directory
 ```
 
 ```ts ignore
-import { slugify } from "textkit";             // the package's src/lib.vlt
-import { wrap } from "textkit/format";         // its src/format.vlt
+import { slugify } from "textkit";             // the package's src/lib.velt
+import { wrap } from "textkit/format";         // its src/format.velt
 ```
 
 A git dependency names a `branch`, a `tag` or a `rev` (a commit); the first install resolves it
@@ -128,20 +129,21 @@ the lockfile, for reproducible builds. Commit `velt.lock.json` for applications.
 
 The HTTP server and the database drivers are packages in the Velt repository's `packages/`
 directory, not part of the standard library: [`http-server`](/docs/packages/http-server/),
-[`sqlite`](/docs/packages/sqlite/), [`postgres`](/docs/packages/postgres/) and
-[`redis`](/docs/packages/redis/). Until there is a public registry, depend on one with a git
+[`web`](/docs/packages/web/), [`sqlite`](/docs/packages/sqlite/), [`postgres`](/docs/packages/postgres/),
+[`redis`](/docs/packages/redis/) and [`cloudflare`](/docs/packages/cloudflare/). Until there is a public registry, depend on one with a git
 dependency as above, or with a `path` into a checkout of the repository. `velt new --template api`
-starts a project that depends on `http-server`. The database drivers include native code, built
-with cargo from a git or path dependency ([native code](/docs/tooling/packages/#packages-with-native-code)).
+starts a project that depends on `http-server`. `sqlite` calls SQLite through `declare c` and `postgres` includes a Rust crate, so a program
+lists them in [`allowNative`](/docs/tooling/manifest/#allownative); `redis` is plain Velt
+([native code](/docs/tooling/packages/#packages-with-native-code)).
 [Official packages](/docs/tooling/packages/#official-packages) has the details.
 
 ## Workspaces
 
 A repository with several packages (a server, a CLI and the library they share) is a workspace:
-a `velt.workspace.vlt` at its root lists the members, which share one `velt.lock.json` and one
+a `velt.workspace.velt` at its root lists the members, which share one `velt.lock.json` and one
 `velt` version, and depend on each other with `"workspace"`:
 
-```ts ignore title="velt.workspace.vlt"
+```ts ignore title="velt.workspace.velt"
 import type { Workspace } from "velt/package";
 
 export const workspace: Workspace = {
@@ -150,7 +152,7 @@ export const workspace: Workspace = {
 };
 ```
 
-```ts ignore title="apps/server/package.vlt"
+```ts ignore title="apps/server/package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {

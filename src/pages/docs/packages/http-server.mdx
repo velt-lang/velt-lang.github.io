@@ -1,21 +1,20 @@
 ---
 title: "http-server"
-description: "An HTTP/1.1 and HTTP/2 server written in Velt: web-standard Request/Response handlers, HTTPS, streaming, WebSockets and graceful stops."
+description: "An HTTP/1.1 and HTTP/2 server written in Velt: web-standard Request/Response handlers, HTTPS, streaming, files, WebSockets, graceful stops, and Cloudflare Workers."
 layout: "docs"
 category: "Packages"
 order: 10
 ---
 
-import { Callout } from '@/components/mdx';
-
 # http-server
 
 An HTTP server written in Velt on [velt/net](/docs/std/net/)'s TCP and TLS streams: HTTP/1.1
 keep-alive and pipelining, HTTP/2 (h2c with prior knowledge, or ALPN over TLS), HTTPS, response
-streaming with backpressure, graceful stops (also under `velt dev`) and WebSockets. Handlers take
-the global [`Request`](/docs/std/net/http/) and return the global
-[`Response`](/docs/std/net/http/), the classes `fetch` uses, as in Deno and Bun. They run
-concurrently on every core.
+streaming with backpressure, files with conditional and `Range` requests, graceful stops (also
+under `velt dev`) and WebSockets. Handlers take the global [`Request`](/docs/std/net/http/) and
+return the global [`Response`](/docs/std/net/http/), the classes `fetch` uses, as in Deno and
+Bun. They run concurrently on every core. The same program also serves on a JavaScript
+platform such as Cloudflare Workers ([On a JS host](#on-a-js-host-velt-build---host)).
 
 ```ts
 import { serve, ServeInfo, HttpServer } from "http-server";
@@ -28,16 +27,17 @@ any server (`RequestSource`, `responseParts` and `statusText` of
 [velt/net/http/h2](/docs/std/net/http/h2/), [velt/dev](/docs/std/dev/), and `webSocketOver` of
 [velt/net/websocket](/docs/std/net/websocket/)). std keeps the client side: `fetch`, the web types
 and the WebSocket client. For a walkthrough, see
-[Building an HTTP server](/docs/book/http-server/).
+[Building an HTTP server](/docs/book/http-server/). For routes, middleware and the like on top
+of it, see the [`web`](/docs/packages/web/) reference package.
 
 ## Adding it to a program
 
 There is no public package registry yet. `velt new --template api` (or `--template websocket`)
 starts a project that depends on `http-server` from the Velt repository on GitHub, pinned to the
 release tag of the `velt` that made it. In an existing project, add the same dependency to
-`package.vlt`:
+`package.velt`:
 
-```ts ignore title="package.vlt"
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
@@ -62,7 +62,7 @@ so it needs no Rust toolchain. Import it as `"http-server"`, and its WebSocket h
 
 ## A first server
 
-```ts title="src/main.vlt"
+```ts title="src/main.velt"
 import { serve } from "http-server";
 
 const server = await serve({ port: 0 }, async (req: Request): Promise<Response> => {
@@ -118,6 +118,15 @@ A `serve` that fails (an address in use, a TLS certificate or key that does not 
 - A handler that throws, or whose promise rejects, gets a 500 response (`Internal Server
   Error`) and its error is printed to stderr, as in Deno and Bun. So does a response with an
   invalid header name or value.
+- A handler that panics (an index out of bounds, `panic(msg)`) gets a 500 too, and the server
+  keeps serving; the panic's message is printed to stderr. Over HTTP/2 only that request's
+  stream fails. The handler's work is abandoned, not undone, as with
+  [`catchPanic`](/docs/std/task/): what it held is leaked, a `Mutex` it held stays locked, and
+  an object it was changing keeps the change half made. A panic in a task the handler `spawn`s
+  still ends the process.
+- A response that is already streaming when its handler panics or throws can't become a 500:
+  it is cut off (HTTP/1.1 closes the connection, HTTP/2 resets the stream with
+  `INTERNAL_ERROR`), so the client sees a failed body rather than a short complete one.
 - `info: ServeInfo` holds what the server knows beyond the request (Deno's
   `ServeHandlerInfo`): `info.remoteAddr` is the client's `NetAddr { transport: "tcp", hostname,
   port: number }`.
@@ -205,7 +214,12 @@ lazily: a handler pays only for what it reads.
 
 The handler returns any [`Response`](/docs/std/net/http/): `new Response(body, { status,
 statusText, headers })`, `Response.json(value, init)`, `Response.redirect(url, status)`, or a
-response `fetch` returned (a proxy: its body is passed on as it arrives).
+response `fetch` returned (a proxy: its body is passed on as it arrives). A passed-on fetched
+response goes out without the hop-by-hop fields (`connection`, the fields `connection` names,
+`keep-alive`, `proxy-connection`, `te`, `trailer`, `upgrade`) and without its `date`; a body
+that arrived decoded also goes out without `content-encoding` and `content-length`, chunked. To
+wrap a fetched body in a new response, leave out `content-encoding` and `content-length`: the
+body is already decoded, and with the fetched values the response is cut off.
 
 - A string body is sent without a copy, with `content-type: text/plain;charset=UTF-8` unless the
   headers set one; `Response.json` sends `application/json`; bytes (a typed array, an
@@ -214,8 +228,10 @@ response `fetch` returned (a proxy: its body is passed on as it arrives).
 - A body made while it is sent (server-side rendering, large exports) is a `BodyStream`:
   `new Response(BodyStream.from(chunks))`, where `chunks` is an async generator of `u8[]` (JS:
   `ReadableStream.from`). The status and headers go out when the handler returns; each chunk is
-  sent as the generator yields it (HTTP/1.1 chunked transfer, no `content-length`), and the
-  generator is not asked for the next one before the client took the previous one
+  sent as the generator yields it (HTTP/1.1 chunked transfer, no `content-length`, unless the
+  headers set one: then the body goes out with that length, as in Deno and Bun, and a generator
+  that yields fewer or more bytes cuts the response off), and the generator is not asked for
+  the next one before the client took the previous one
   (backpressure). If the client goes away, the generator is closed (its `finally` blocks run); if
   it throws, the error is printed to stderr and the response is cut off, so the client sees a
   failed body rather than a complete one.
@@ -249,6 +265,59 @@ await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
 `renderToStream` of [velt/jsx](/docs/std/jsx/) returns a `BodyStream` too:
 `new Response(renderToStream(<Page />), init)` sends a page while its async components load
 ([Server-rendered pages](/docs/book/ssr-pages/)).
+
+## Files: `serveFile` and `resolveUnder`
+
+`serveFile(req, path, options?)` answers a request with a file, as Deno's `serveFile` does:
+
+- a weak `ETag` (from the size and modification time, as Express makes it) and `Last-Modified`;
+- 304 for a matching `If-None-Match` / `If-Modified-Since`, 412 for a failed `If-Match` /
+  `If-Unmodified-Since` (a date that isn't an HTTP-date is ignored);
+- for one `Range` of a GET, 206 with `Content-Range` (when an `If-Range` matches, or there is
+  none), and 416 for a range past the end; several ranges or a malformed one get the whole file;
+- HEAD; 404 for no file or a directory, 405 for other methods, and 500 only when looking at the
+  file (`stat`) fails;
+- the body read as the client takes it, with its `Content-Length`.
+
+`options.contentType` sets the type (default: from the extension, `contentType(path)`), and
+`options.headers` adds headers to a 200, 206 or 304 (`Cache-Control`, say), not to a 412 or 416,
+which a cache mustn't keep.
+
+The file is opened when the body is first read, so a response that is never sent holds
+nothing. The head describes the file as it was looked at, and goes out before the open, so the
+response is cut off, and the client sees a failed one, when the file can't be opened (no
+permission: a 200 head, then no bytes), is gone, has another size or modification time when it
+is opened, or is cut short while it is sent. Two changes aren't detected, as with Express's
+`send`: a rewrite in place during the body that keeps the size gives a complete response of old
+and new bytes, and a swap that keeps the size and modification time (`cp -p`, `rsync -t`) gives
+the new file, complete.
+
+`resolveUnder(root, urlPath, options?)` maps a URL path to a file under `root`, and gives
+`null` for a missing file and for what it refuses:
+
+- `..`, encoded separators, NUL, and symlinks that lead out of `root`;
+- dotfiles (`/.env`, `/.git/config`, a symlink to one), as Express's `send` does. To serve
+  `/.well-known/`, give it a root of its own, which the defaults allow:
+  ``resolveUnder(`${root}/.well-known`, rest)``. `{ dotfiles: true }` allows every dotfile
+  under `root`, `/.env` and `/.git/config` too;
+- on Windows, a `:` in a segment (drive letters, alternate data streams), and a segment ending
+  in a dot or a space, which Windows reads as another name (`/f.txt.` is `f.txt`).
+
+```ts
+import { resolveUnder, serve, serveFile } from "http-server";
+
+await serve({ port: 8080 }, async (req: Request): Promise<Response> => {
+  const path = await resolveUnder("./public", new URL(req.url).pathname);
+  if (path == null) {
+    return new Response("Not Found", { status: 404 });
+  }
+  return await serveFile(req, path, { headers: [["cache-control", "max-age=60"]] });
+});
+```
+
+The pieces are exported for other bodies: `parseRange(header, size)`,
+`evaluateConditions(req, validators)`, `ifRangeMatches(req, validators)` and
+`contentType(path)`.
 
 ## HTTPS and HTTP/2
 
@@ -484,8 +553,11 @@ One task serves each connection; requests on one HTTP/1.1 connection are answere
   for up to 2 s, so it gets the response.
 - The handler runs once a request's head has arrived; a body it does not read is skipped before
   the connection's next request.
+- A request whose `Host` holds `/`, `?`, `#`, `\`, `@` or a space gets 400 over HTTP/1.1;
+  over HTTP/2 such a `host` field or `:authority` resets the stream.
 - A handler that throws gets a 500 (the error is printed to stderr); one that returns without
-  sending gets an empty 200.
+  sending gets an empty 200. A handler that panics gets a 500 as well, or, when its response is
+  already streaming, a closed connection (HTTP/2: a reset stream); the server keeps serving.
 - An HTTP/1.1 client that sent `Expect: 100-continue` gets `100 Continue` when the handler first
   reads the body. If the handler answers without reading, the response goes out with
   `Connection: close` and the body is not waited for.
@@ -521,15 +593,19 @@ Valid while the handler runs: the server reads the next request into the same bu
   piece by piece with `await s.write(data)` (a `string`, `u8[]` or `Uint8Array`) and
   `await s.end()`. `write` resolves at once unless more than 64 KiB are still to be sent, so a
   fast producer waits for a slow client. A write to a client that went away throws `IoError`.
-- `sendStream(body: BodyStream, type = "text/html; charset=utf-8")`: streams a `BodyStream`,
-  such as `renderToStream` of [velt/jsx](/docs/std/jsx/) returns.
+- `sendStream(body: BodyStream, type = "text/html; charset=utf-8", length?)`: streams a
+  `BodyStream`, such as `renderToStream` of [velt/jsx](/docs/std/jsx/) returns. With `length` (a
+  file's size) the body goes out with that `Content-Length` instead of chunks; a source that
+  ends short of it or runs past it cuts the response off.
 - `sse(): Promise<EventStream>`: Server-Sent Events. `send(data, event?, id?)` writes an event,
   `comment(text?)` a keep-alive line, `end()` ends the stream.
 - `signal(): AbortSignal`: aborted when the client can no longer be written to or the server
   closes; pass it to the work done for the request (`fetch(url, { signal })`).
 - `addTrailers(trailers: [string, string][])`: fields sent after the body (gRPC's
   `grpc-status`). Over HTTP/2 they are always sent; over HTTP/1.1 they end a chunked body (a
-  streamed one, or any when the request said `TE: trailers`).
+  streamed one, or any when the request said `TE: trailers`). Trailers added before
+  `sendStream` with a `length` make that body chunked; those added while it goes out are not
+  sent.
 - `sent(): bool`, `upgraded(): bool`, and `upgrade(protocol, headers = []): TcpStream`, which
   answers `101 Switching Protocols` and hands the connection over (over HTTP/2: an extended
   CONNECT, answered 200, on one stream).
@@ -561,6 +637,32 @@ every request after that, and the connections then run one at a time. Compare pa
 literals (`req.pathIs("/json")`), build data per request, and keep shared mutable state in a
 `shared(new Mutex(...))` the handler captures.
 
-<Callout kind="info" title="Not available on WebAssembly">
-The server needs TCP sockets, so it does not run in a WebAssembly build.
-</Callout>
+## On a JS host (`velt build --host`)
+
+The same program serves on a JavaScript platform. A program that depends on `http-server` and
+on a host package builds with `velt build --release --host <host package>`
+([WebAssembly](/docs/tooling/webassembly/#javascript-platforms-velt-build---host)); the first host
+package is `host-cloudflare`, for Cloudflare Workers ([cloudflare](/docs/packages/cloudflare/)).
+There `serve` takes its requests from the host's request queue instead of a TCP listener. The
+handler, its `Request`, its `Response` and `ServeInfo` are the same, with no change to the code:
+
+- `serve` returns at once, and `main` may return after it. `main` may also await anything first
+  (a database check, a `fetch`): requests wait in the host's queue until it serves.
+- A request's body streams from the host as the handler reads it, and a streamed `Response` body
+  is written to the host as it is produced.
+- `opts` names no address there (the platform routes the requests), and `server.port` is 0. Of
+  the limits only `maxBodySize` applies: a 413 when the request's `content-length` is larger,
+  before the handler runs, and `IoError` `EMSGSIZE` from the body's readers when the body turns
+  out larger. TLS and the other limits are the platform's.
+- `info.remoteAddr` is what the host package gives (host-cloudflare: `cf-connecting-ip`, with
+  port 0).
+- Headers are checked as natively (a line break in a value answers 500), and a body without a
+  `content-type` gets `text/plain; charset=utf-8` (text) or `application/octet-stream` (bytes,
+  streams).
+- A handler that throws gets a 500, logged, as natively.
+- `close()` stops taking requests at once. Once the handlers in flight finish, the program has
+  nothing left to do and ends, and the host starts it again, with `main` running again, for the
+  next request. `shutdown()` waits for those handlers.
+- `upgradeConnection`, WebSockets and `serveHttp` are native only.
+
+A `wasm32-wasip1` build has no server: it needs TCP sockets.

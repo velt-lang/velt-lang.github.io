@@ -183,7 +183,7 @@ let bySlug: Map<string, ApiModule> | undefined;
 
 /**
  * The modules that get an API page, keyed by module id: the importable ones
- * (a folder's `index.vlt`) that have a guide page under src/pages/docs/std/.
+ * (a folder's `index.velt`) that have a guide page under src/pages/docs/std/.
  * The other files are their internals; a guide about one part of a module
  * (`collections/deque`) shares the module's API page. Sorted by the name the
  * pages show.
@@ -192,7 +192,7 @@ export function apiModules(): Map<string, ApiModule> {
     if (pageModules) return pageModules;
     pageModules = new Map(
         apiDoc()
-            .modules.filter((m) => m.module.startsWith('std/') && /(^|\/)index\.vlt$/.test(m.file) && guideFile(guideSlug(m.module)))
+            .modules.filter((m) => m.module.startsWith('std/') && /(^|\/)index\.velt$/.test(m.file) && guideFile(guideSlug(m.module)))
             .sort((a, b) => specifierOf(a).localeCompare(specifierOf(b)))
             .map((m) => [m.module, m]),
     );
@@ -260,6 +260,51 @@ export function hrefOf(target: Target): string | null {
  * (functions, classes, structs, …), in source order within a kind.
  */
 export const visibleExports = (m: ApiModule): ApiItem[] => groupExports(m.exports).flatMap((g) => g.items);
+
+/**
+ * The exports a module is counted by: what its API page lists, without
+ * `extend` blocks and re-export lines (the API index counts the same way).
+ */
+export const countedExports = (m: ApiModule): ApiItem[] => visibleExports(m).filter((e) => e.kind !== 'extend' && e.kind !== 're-export');
+
+export interface KindCount extends KindInfo {
+    kind: string;
+    count: number;
+    /** What `count` counts: `functions`, or `enum` for one. */
+    noun: string;
+}
+
+/** How many exports of each kind a module has, in sidebar order (functions, classes, …). */
+export function kindCounts(m: ApiModule): KindCount[] {
+    return groupExports(countedExports(m)).map((g) => {
+        const k = kindInfo(g.kind);
+        const one = g.kind === 'const' ? 'constant' : g.kind;
+        return { ...k, kind: g.kind, count: g.items.length, noun: g.items.length === 1 ? one : k.group.toLowerCase() };
+    });
+}
+
+const mainCache = new Map<string, ApiItem[]>();
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * A module's headline exports for a guide page: the ones its code mentions
+ * most (inline code and code blocks of `std/<slug>`'s guide), ties and the
+ * rest in API page order. `collections/deque`'s guide puts `Deque` first.
+ */
+export function mainExports(m: ApiModule, slug: string, limit = 6): ApiItem[] {
+    const key = `${m.module}|${slug}`;
+    let ranked = mainCache.get(key);
+    if (!ranked) {
+        const file = guideFile(slug.replace(/^\/+|\/+$/g, ''));
+        const body = file ? readFileSync(file, 'utf8').replace(/^---[\s\S]*?\n---\n/, '') : '';
+        const code = [...body.matchAll(/```[^\n]*\n([\s\S]*?)```|`([^`\n]+)`/g)].map((x) => x[1] ?? x[2]).join('\n');
+        const items = countedExports(m);
+        const hits = new Map(items.map((e) => [e, (code.match(new RegExp(`(?<![\\w$])${escapeRe(e.name)}(?![\\w$])`, 'g')) ?? []).length]));
+        ranked = [...items].sort((a, b) => hits.get(b)! - hits.get(a)!);
+        mainCache.set(key, ranked);
+    }
+    return ranked.slice(0, limit);
+}
 
 /**
  * The first `count` sentences of Markdown text. A sentence ends at a period

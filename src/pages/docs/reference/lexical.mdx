@@ -6,13 +6,17 @@ category: "Language reference"
 order: 20
 ---
 
+import { Callout } from '@/components/mdx';
+
 # Lexical structure
 
 ## Programs
 
-A program is a set of `.vlt` files. As in Node, it runs its root file's top-level statements in
+A program is a set of `.velt` files. As in Node, it runs its root file's top-level statements in
 order ([Scripts](/docs/reference/modules/#scripts-top-level-statements)); top-level `await`
 works there. Declarations are hoisted: a function can be called above its definition.
+
+<Callout title="Coming from 0.5">Velt files used to end in `.vlt`. Rename them to `.velt`: `.vlt` files still build in this release, with a warning, and stop building in the next one. The manifest is [`package.velt`](/docs/tooling/manifest/) now.</Callout>
 
 ```ts
 console.log(greeting("world"));
@@ -68,7 +72,7 @@ export function larger(a: i64, b: i64): i64 {
 ```
 
 - Semicolons are optional: automatic semicolon insertion follows JavaScript's rules, as
-  TypeScript and Node apply them, in `.vlt`, `.ts` and `.tsx` files alike. A statement, a
+  TypeScript and Node apply them, in `.velt`, `.ts` and `.tsx` files alike. A statement, a
   declaration, or a member of a class, an interface or an object type ends with `;`, or without
   one at a line break, before `}` or at the end of the file, when the next token cannot
   continue it. No `;` is inserted in a `for (;;)` header; one is after `do { … } while (c)`,
@@ -158,8 +162,12 @@ Not part of the language: `var` outside the top level of a function body or a mo
 ([Variables](/docs/reference/variables/)), `protected` (as a
 member modifier; accepted on constructors and constructor parameter properties), `delete` (except
 `delete r[k]` on a [`Record`](/docs/reference/types/#objects-arrays-tuples-and-maps)),
-`export default`, `mut`, `match`. Writing most of
+`mut`, `match`. Writing most of
 these is an error that names the Velt replacement.
+
+`@` starts a decorator (`@name`, `@ns.name(args)`) before a declaration: a typed compile-time
+decorator when `name` is a `declare decorator function`
+([Decorators](/docs/reference/decorators/)).
 
 ## Operators
 
@@ -168,7 +176,7 @@ From highest to lowest precedence, with JavaScript's associativity:
 | Operators | Notes |
 |---|---|
 | `x++` `x--` | postfix |
-| `.` `?.` `()` `[]` | member access, optional chaining, call, index |
+| `.` `?.` `()` `[]` | member access, optional chaining, call, index (`m[i, j]`: an [indexer](/docs/reference/classes/#indexers-with-several-keys) with several keys) |
 | `!` `~` `-` `+` `++x` `--x` `await` `typeof` | prefix |
 | `**` | right-associative |
 | `*` `/` `%` | |
@@ -185,6 +193,13 @@ From highest to lowest precedence, with JavaScript's associativity:
 | `=` `+=` `-=` `*=` `/=` `%=` `**=` `<<=` `>>=` `>>>=` `&=` `\|=` `^=` `&&=` `\|\|=` `??=` | assignment |
 | `=>` | arrow function |
 
+There is no comma operator. A class, struct or `extend` block may define the arithmetic and
+bitwise operators (`+ - * / % ** & | ^ << >> >>>`, unary `-` and `~`, their compound
+assignments) and indexing for its own type
+([Operator methods](/docs/reference/classes/#operator-methods)). The comparisons, `==`, `===`,
+`&&`, `||`, `??`, `!`, `in`, `instanceof`, `typeof` and unary `+` can't be overloaded, and the
+operators of the built-in types (numbers, `string`, arrays, `any`) never change.
+
 The logical assignments `&&=`, `||=` and `??=` assign when `&&`, `||` or `??` would take their
 right side: `x ??= d` is `x = x ?? d` ([Types](/docs/reference/types/#null-and-undefined)). As in JavaScript, a compound
 assignment or `++` / `--` evaluates its target's object and indices once, before the right
@@ -200,6 +215,8 @@ element written even when the right side changes a variable index (`(xs[k] = nex
 `next` changes `k`, gives the value written into the element `k` named before). The target's
 object may be any expression that gives an object: `(c ? a : b).t[0] = 7` and
 `xs.find(f)!.t[1] = "x"` write into the object the conditional or the call gave, which every
-other reference to it sees. A tuple is a value, so a write into an element of a tuple that a
-call or a conditional gives (`m.get(k)![1] = 2`) is an error: it would change a copy. A postfix
-`!` after an expression on the same line is the non-null assertion (`m.get(k)!`).
+other reference to it sees. A write into an element of a tuple that a call or a conditional
+gives (`m.get(k)![1] = 2`) is an error. A postfix
+`!` after an expression on the same line is the non-null assertion (`m.get(k)!`). It is an
+assignment target wherever the expression is one, as in TypeScript: `a[i]! += 1`, `x! = v`,
+`s.hits!++` ([the non-null assertion](/docs/reference/types/#the-non-null-assertion-x)).

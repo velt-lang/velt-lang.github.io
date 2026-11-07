@@ -1,6 +1,6 @@
 ---
 title: "Packages"
-description: "The package manager is built into velt. A package is a directory with a package.vlt; dependencies come from a registry, a local path or a git repository, and velt.lock.json pins them."
+description: "The package manager built into velt: dependencies from a registry, a local path, a git repository or a release archive, pinned by velt.lock.json, and packages with native code."
 layout: "docs"
 category: "Tooling"
 order: 50
@@ -9,18 +9,20 @@ order: 50
 # Packages and registries
 
 The package manager is built into `velt`. A package is a directory with a
-[`package.vlt`](/docs/tooling/manifest/); dependencies come from a registry, a local path or a git
-repository, and `velt.lock.json` pins them.
+[`package.velt`](/docs/tooling/manifest/); dependencies come from a registry, a local path, a git
+repository or a release archive, and `velt.lock.json` pins them.
 
 | Command | What it does |
 |---|---|
-| `velt add <pkg>[@<req>]` | add a registry dependency to `package.vlt` (latest version without a requirement) and install it; comments in `package.vlt` are kept |
+| `velt add <pkg>[@<req>]` | add a registry dependency to `package.velt` (latest version without a requirement) and install it; comments in `package.velt` are kept |
 | `velt add <pkg> --path <dir>` | add a local package |
+| `velt add <url> [--path <dir>]` | add a package from a release archive, pinned by its sha256 ([release archives](#release-archives)) |
 | `velt install [--locked]` | resolve and fetch dependencies, write `velt.lock.json`; `--locked` fails if the lock would change |
 | `velt update` | resolve again, ignoring `velt.lock.json`, with the newest published velt the package's `velt` field accepts, installed first (recorded in the lock) |
 | `velt publish` | publish the current package to its registry (with its prebuilt native libraries) |
-| `velt native build [--target <t>]` | build the package's native library (package authors; needs Rust) |
-| `velt manifest [--json]` | check `package.vlt`, or print it as JSON for other tools |
+| `velt native build [--target <t>]` | build the package's native library: its C `sources` with the pinned zig, or its Rust crate with cargo (package authors) |
+| `velt native headers` | check the package's `declare c` functions against their C headers on every target and write `c-headers.json` (package authors) |
+| `velt manifest [--json]` | check `package.velt`, or print it as JSON for other tools |
 | `velt search <text>` | find packages by name, keywords and description (`--json` for scripts) |
 | `velt yank <pkg>@<version> [--undo]` | withdraw a published version: lockfiles that pin it keep working, new requirements skip it |
 | `velt owner list\|add\|remove <pkg> [<user>]` | who may publish a package on a registry server |
@@ -31,7 +33,7 @@ velt new textkit --template lib     # a library with doc comments and tests
 cd textkit && velt test && velt publish
 
 cd ../app
-velt add textkit                    # the latest version, into package.vlt and velt.lock.json
+velt add textkit                    # the latest version, into package.velt and velt.lock.json
 ```
 
 ```ts ignore
@@ -40,10 +42,12 @@ import { slugify } from "textkit";
 
 ## Official packages
 
-The SQLite, PostgreSQL and Redis drivers and the HTTP server are packages in the Velt
-repository, not part of the standard library: [`sqlite`](/docs/packages/sqlite/),
-[`postgres`](/docs/packages/postgres/), [`redis`](/docs/packages/redis/) and
-[`http-server`](/docs/packages/http-server/) ([all packages](/docs/packages/)). Until there is a
+The SQLite, PostgreSQL and Redis drivers, the HTTP server, the `web` router and the Cloudflare
+bindings are packages in the Velt repository, not part of the standard library:
+[`sqlite`](/docs/packages/sqlite/), [`postgres`](/docs/packages/postgres/),
+[`redis`](/docs/packages/redis/), [`http-server`](/docs/packages/http-server/),
+[`web`](/docs/packages/web/), and [`cloudflare`](/docs/packages/cloudflare/) with
+`host-cloudflare` ([all packages](/docs/packages/)). Until there is a
 public registry, depend on one through a [git dependency](#git-dependencies) on the repository
 (what `velt new --template api` writes), or on a checkout of it with a `path`:
 
@@ -51,17 +55,21 @@ public registry, depend on one through a [git dependency](#git-dependencies) on 
 dependencies: {
   "http-server": {
     git: "https://github.com/velt-lang/velt",
-    tag: "v0.5.0",                         // the release your toolchain is
+    tag: "v0.6.0",                         // the release your toolchain is
     path: "packages/http-server",
   },
   sqlite: { path: "../velt/packages/sqlite" },
 },
 ```
 
-The database drivers are Rust crates underneath ([native code](#packages-with-native-code)),
-so a git or path dependency on one builds its library with cargo and needs Rust; for a git
-dependency, allow that with `VELT_NATIVE_FROM_SOURCE=1`. `http-server` is written in Velt and
-needs nothing else.
+`sqlite` and `postgres` have [native code](#packages-with-native-code), so the program lists
+them in `allowNative`: by name for a path dependency (`allowNative: ["sqlite"]`), and with the
+repository for a git one
+(`allowNative: [{ name: "sqlite", git: "https://github.com/velt-lang/velt" }]`). `sqlite` calls SQLite through `declare c` and
+compiles SQLite's C sources with the pinned zig the first time (`velt` downloads zig once);
+`postgres` is a Rust crate, which a git or path dependency builds with cargo, so it needs Rust.
+For a git dependency, allow either build with `VELT_NATIVE_FROM_SOURCE=1`. `redis` and
+`http-server` are written in Velt and need nothing else.
 
 ## Git dependencies
 
@@ -83,7 +91,7 @@ dependencies: {
   repository's default branch. `path` is the package's directory in the repository, for a
   repository that holds several packages. A `version` beside them is a requirement the package
   must meet.
-- **npm packages too.** A target without a `package.vlt` but with a `package.json` is an npm
+- **npm packages too.** A target without a `package.velt` but with a `package.json` is an npm
   package, compiled from its TypeScript sources ([npm packages](#npm-packages)), as
   `npm install git+…` takes it; a workspace's root (`pnpm-workspace.yaml`, or `workspaces` in its
   `package.json`) provides every package of the workspace besides its own. As in npm, a
@@ -134,19 +142,76 @@ dependencies: {
   packages of a pnpm, npm or Yarn workspace in the checkout compile from their sources
   ([npm packages](#npm-packages)), with nothing installed into `node_modules`.
 - **Nothing runs.** Installing never runs code from the repository. A package with native code is
-  built from source with cargo only when you set `VELT_NATIVE_FROM_SOURCE=1`, since that runs its
-  build scripts.
+  built from source (C sources with the pinned zig, a Rust crate with cargo) only when you set
+  `VELT_NATIVE_FROM_SOURCE=1`, since that trusts a build no checksum pins (and a crate's build
+  scripts run). Its `allowNative` entry names the repository: `{ name, git }`.
 - **Publishing.** A registry package is built from the registry alone, so `velt publish` needs a
   `version` beside `git`, which becomes the published requirement.
+
+## Release archives
+
+A package can come from a release archive at a URL, pinned by its SHA-256:
+
+```sh
+velt add https://github.com/acme/zstd/releases/download/v1.0.0/zstd-1.0.0.tar.gz
+```
+
+```ts ignore
+dependencies: {
+  zstd: {
+    url: "https://github.com/acme/zstd/releases/download/v1.0.0/zstd-1.0.0.tar.gz",
+    sha256: "<64 lowercase hex digits>",
+    strip: 1,
+  },
+}
+```
+
+- **`velt add <url> [--path <dir>]`** downloads the archive once, computes its sha256 and finds
+  the package: at `--path`, or inside the archive's one top directory (which gives `strip: 1`).
+  It writes `{ url, sha256, strip?, path? }` under the package's own name, then installs. It
+  prints the full sha256, computed from this download: nothing checked it against the publisher,
+  so compare it with what the project publishes. It refuses to replace an entry of that name from
+  another source or hash; remove the entry first.
+- **The fields** ([`dependencies`](/docs/tooling/manifest/#dependencies)): `url` is a `.tar.gz` or
+  `.zip` at an `https` URL; `sha256` is required; `strip` removes leading directories, each the
+  archive's only entry at its level; `path` is the package's directory inside the archive.
+  Plain `http` is allowed only to this machine, in a manifest the project controls, and a download
+  that starts on `https` never follows a redirect to `http`.
+- **Use real release assets.** A forge's generated archive of a tag can change its bytes, and
+  another archive at the URL is an error, not an update. For source, use a
+  [git dependency](#git-dependencies) at a commit.
+- **Sibling packages.** A `path` dependency of a package from an archive is another directory of
+  the same archive.
+- **What an archive may not hold**: besides links out of it and unsafe names, a `.git` entry in
+  any spelling, and a directory laid out like a git repository (`HEAD` with `objects` and `refs`)
+  under any name.
+- **Locked.** `velt.lock.json` records `"source": "url+<url>?strip=1&path=<dir>#sha256:<hex>"`
+  with the tree's checksum. The archive is extracted once into the cache
+  (`<cache>/url/<sha256>/`).
+- **Native code** from an archive builds only with `VELT_NATIVE_FROM_SOURCE=1`, as from git, and
+  its `allowNative` entry is `{ name, url: "<https prefix>" }`.
+
+**Fetched trees are checked.** A tree from git or an archive is checked against the lock before
+it is used:
+
+- `velt install`, `update` and `add` compare every file's metadata against a stamp, and read the
+  tree when it differs; `velt install --locked` reads every byte, whatever the stamp says (for CI).
+- A build that compiles (`velt build`, `run`, `test`) checks every file of every fetched tree
+  first, so an edit in place is caught there. A build with nothing to compile compares only the
+  directories, which catches a file added, removed or renamed.
+- Without a lock, a cached archive is read in full against its checksum from when it was
+  extracted, so a changed cache never reaches a new lock.
+- A mismatch is an error that names what to delete to fetch the tree again: the git checkout, or
+  the archive's `<cache>/url/<sha256>/` directory.
 
 ## Workspaces
 
 A repository with several Velt packages (an app, the libraries it shares with a CLI) is a
-workspace: a `velt.workspace.vlt` at its root lists the member packages, which then share one
+workspace: a `velt.workspace.velt` at its root lists the member packages, which then share one
 `velt.lock.json`, one `velt` version and one registry, and depend on each other by name.
 
 ```ts ignore
-// velt.workspace.vlt
+// velt.workspace.velt
 import type { Workspace } from "velt/package";
 
 export const workspace: Workspace = {
@@ -157,7 +222,7 @@ export const workspace: Workspace = {
 ```
 
 ```ts ignore
-// apps/server/package.vlt
+// apps/server/package.velt
 export const pkg: Package = {
   name: "server",
   version: "0.4.0",
@@ -169,9 +234,9 @@ export const pkg: Package = {
 };
 ```
 
-- **Members** are the directories with a `package.vlt` that the `members` globs list: `*` matches
+- **Members** are the directories with a `package.velt` that the `members` globs list: `*` matches
   one directory name, `**` any number of them, a `!` in front excludes (`"!packages/old"`), and
-  `"."` is a `package.vlt` beside the workspace file. A glob that lists no package is an error, so
+  `"."` is a `package.velt` beside the workspace file. A glob that lists no package is an error, so
   a typo never drops a member silently. Two members can't have the same name.
 - **`"workspace"`** names the member of that name, else the workspace's `dependencies` entry. A
   member is always a `"workspace"` dependency: `core: "0.1"` or `core: { path: "../core" }` for a
@@ -202,7 +267,7 @@ export const pkg: Package = {
   |---|---|
   | `--workspace` | all of them |
   | `-p <glob>` (repeatable) | those whose name matches (`-p 'server*'`); a scoped name matches whole or without its scope (`-p 'server*'` and `-p '@org/*'` both select `@org/server`) |
-  | `--affected [<base>]` | those with a file changed since `<base>` (committed or not), and every member that uses them; without a base, the merge base with the upstream branch (in CI, name it: `--affected origin/main`). A change to `velt.workspace.vlt` or `velt.lock.json` affects all |
+  | `--affected [<base>]` | those with a file changed since `<base>` (committed or not), and every member that uses them; without a base, the merge base with the upstream branch (in CI, name it: `--affected origin/main`). A change to `velt.workspace.velt` or `velt.lock.json` affects all |
 
   Members run in dependency order, several at once, each in its own `velt`; each member's output
   is printed in one piece when it finishes, and a summary names the members that failed. A failed
@@ -288,7 +353,7 @@ paths: {
 
 - **Local** (the default): a directory, `$VELT_REGISTRY` or `~/.velt/registry/<name>/<version>/`.
   Downloads are cached in `~/.velt/cache`.
-- **HTTP**: `registry: "https://…"` in `package.vlt`, or `VELT_REGISTRY` set to an
+- **HTTP**: `registry: "https://…"` in `package.velt`, or `VELT_REGISTRY` set to an
   `http(s)://` URL. `velt registry serve [--dir <d>] [--port <n>] [--host <addr>]` serves a
   registry directory (default `127.0.0.1:8091`). `https://` registries are verified against
   Mozilla's root certificates, plus the PEM file in `$VELT_CA_FILE` for a private CA.
@@ -301,7 +366,8 @@ paths: {
   `[::1]`), and refuses a write that would send one anywhere else.
 - A request may take 10 minutes in all. `velt` gives up on a server that stays silent for 60
   seconds, or that it can't connect to within 10 seconds.
-- Package archives contain `package.vlt`, `src/**` and the sources of a `native` crate. Their checksum is the content hash that
+- Package archives contain `package.velt`, `src/**`, `c-headers.json`, and the sources of a
+  `native` crate or, for a package with C `sources`, its `native/` directory. Their checksum is the content hash that
   `velt.lock.json` records, and every download is verified against it before it enters the cache.
 
 ### Users, owners and yanking
@@ -323,7 +389,7 @@ velt yank textkit@1.2.0                          # withdraw a broken version
 `velt login <url>` reads the token from stdin (a prompt that doesn't echo in a terminal, or a
 pipe in a script) and stores it in `$VELT_HOME/credentials.json`, keyed by the registry's URL and
 readable only by you (mode 0600 on Unix; on Windows an access list for its owner alone). `velt`
-sends a stored token only to the registry it was stored for, so a checkout whose `package.vlt`
+sends a stored token only to the registry it was stored for, so a checkout whose `package.velt`
 names another registry never receives it, and `velt login` refuses a plain `http://` registry on
 another machine. `velt logout <url>` forgets the token. `VELT_REGISTRY_TOKEN`, if set,
 overrides the stored tokens and is sent to whichever registry the command uses, which suits CI
@@ -365,30 +431,71 @@ owner and yank endpoints are listed in [the contract](https://github.com/velt-la
 
 ## Packages with native code
 
-A package can include a Rust crate whose library its Velt code calls: database drivers, codecs,
-bindings to C libraries. **Using** such a package needs only `velt`: the author publishes a
-prebuilt library for each target, `velt add`/`velt install` download the one for your machine,
-verify it against the checksum in `velt.lock.json`, and say which packages run native code:
+A package can call a C library through [`declare c`](/docs/reference/c-interop/) (database
+engines, codecs, system libraries), or include a Rust crate whose functions its Velt code
+declares. Such code runs with no safety net, so a program uses a package with native code only if
+its root `package.velt` lists it in [`allowNative`](/docs/tooling/manifest/#allownative):
 
-```text
-     Adding `sqlite` 0.1.0
-     Native `sqlite` 0.1.0 runs native code (prebuilt, checksum verified, x86_64-unknown-linux-gnu)
+```ts ignore
+dependencies: { sqlite: { path: "../velt/packages/sqlite" } },
+allowNative: ["sqlite"],
 ```
 
-`velt run` and debug builds link the library as a shared library, `velt build --release` links
-it statically (the executable stays self-contained; on Windows the DLL is placed next to it), and
-`velt dev` loads it into the running program. If nobody published a library for your target,
-`velt` builds it from the package's sources when Rust is installed and you allow it with
-`VELT_NATIVE_FROM_SOURCE=1` (the build runs the package's build scripts, from its published
-`Cargo.lock`), and otherwise says so:
+Installing or building with a package with native code that the list leaves out, anywhere among
+the dependencies, is an error naming the chain and the line to add. A bare name allows the
+package from the registry or a local path; one from git needs `{ name, git }`, and one from an
+archive `{ name, url }` with a URL prefix. `velt add` of such a package fails until the list
+names it.
+
+**Using** such a package needs only `velt`: the author publishes a prebuilt library for each
+target, and `velt add`/`velt install` download the one for your machine and verify it against the
+checksum in `velt.lock.json`. A C library's declarations were checked against its headers when
+the package was published; builds compare them with the package's `c-headers.json`, so you never
+need zig or a C compiler. `velt run` and debug builds link the library as a shared library,
+`velt build --release` links it statically (the executable stays self-contained; on Windows the
+DLL is placed next to it), and `velt dev` loads it into the running program.
+
+If nobody published a library for your target, or the package comes from git or an archive,
+`velt` builds it from source only when you allow that with `VELT_NATIVE_FROM_SOURCE=1`: C sources
+with the pinned zig (downloaded once, or `VELT_ZIG`), a Rust crate with cargo when Rust is
+installed (its build scripts run, from its published `Cargo.lock`). A path dependency builds it
+directly, the first time and when it changes. For a Rust crate without Rust installed:
 
 ```text
-error: `sqlite 0.1.0` has no prebuilt native library for aarch64-unknown-linux-gnu (published: x86_64-unknown-linux-gnu).
+error: `greet 0.1.0` has no prebuilt native library for aarch64-unknown-linux-gnu (published: x86_64-unknown-linux-gnu).
 Install Rust (https://rustup.rs) to build it from source, or ask the package author to publish this target.
 ```
 
-Native libraries cannot be used for WebAssembly targets. Writing one: [the Book's
-chapter](/docs/book/native-packages/); the details: [native_abi.md](https://github.com/velt-lang/velt/blob/main/docs/internals/contracts/native_abi.md).
+### What a program trusts
+
+When `velt check` passes in a program that allows packages with native code, it ends with a list
+of them: each package's C libraries (the system library each links on this target, or the
+sources it is built from, and whether its declarations were checked against headers), whether it
+has a Rust crate, and each piece of its unsafe code by file and line. That is what an audit reads.
+A check with errors, lint errors included, doesn't print it.
+
+```text
+Native code the program allows (allowNative):
+  imaging: C libraries c (the platform's; headers checked), png (png; headers checked), codec (built from native/codec.c; headers checked); 2 places of unsafe code
+    src/decode.velt:12  unsafe block
+    src/raw.velt:7      unsafe function `rowAt`
+  postgres: a Rust crate; no unsafe code
+```
+
+A library is `headers checked` when it passed the check on this target, `headers listed` when it
+lists headers but nothing was checked here (WebAssembly, or nothing of it declared), `unchecked`
+when it says `unchecked: true`, and `no headers` otherwise. `velt check --json` has the same
+under `native`: `[{ "package", "cLibraries": [{ "name", "system", "checked", "sources" }],
+"rustCrate", "unsafe": [{ "file", "line", "what" }] }]`, left out when there are none and when
+the check has errors.
+
+`velt.lock.json` records the root's `allowNative` list, sorted, so a change of what the program
+trusts shows in the lockfile's diff; `velt install --locked` refuses a lock whose list doesn't
+match `package.velt`'s. `velt install` and `velt update` print a note when a package's native
+code changes.
+
+Native libraries cannot be used for WebAssembly targets. Writing a package with native code:
+[the Book's chapter](/docs/book/native-packages/).
 
 **Not yet available**: a public package registry. Until there is one, share packages through a
 registry you serve yourself, or as path dependencies.

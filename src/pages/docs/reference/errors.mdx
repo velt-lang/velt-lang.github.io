@@ -114,6 +114,36 @@ try {
   ([downcasts](/docs/reference/classes/#instanceof-downcasts)). Such a chain does not cover every member
   (an `AppError` may be neither), so code after it still needs a result.
 
+### Calling an `any` that holds no function
+
+Calling an `any` that holds no function (`f()` with `f` holding `undefined`, a missing method
+`o.missing()`, a member that holds a number) is Node's `TypeError`: `f is not a function`,
+`o.missing is not a function` (an optional chain's member and a module-level value by their
+names).
+
+```ts
+const f: any = undefined;
+try {
+  f();
+} catch (e) {
+  console.log("caught", (e as Error).name); // caught TypeError
+}
+```
+
+- The call throws it when a `try` with a `catch` in the same function surrounds it and that
+  `catch` takes a `TypeError`. The `finally` blocks in between run first.
+- A `catch` takes one when the rest of its `try` body throws an `Error` (or a union with one), a
+  `TypeError`, or an `unknown` or `any` error. The call adds nothing to that type.
+- A `catch` whose `try` throws nothing else also takes one, its variable typed `TypeError`
+  instead of `never`, in two cases: its body doesn't use the variable, or its body only prints
+  it as an error (`console.log` / `console.error` of literals and `e as Error`, `e.message`,
+  `e.name`, `String(e)`, `e instanceof Error`) and the `try` body assigns no variable declared
+  before it and always reaches its end. Otherwise the variable stays `never`.
+- Anywhere else the call stops the process with that message (exit code 101), where Node
+  throws: a `catch` that takes no `TypeError`, no `catch` around the call in its function (a
+  caller's `catch` doesn't take it), and a `finally` block (unless a `try` inside the `finally`
+  surrounds the call).
+
 ## Dynamic calls
 
 Function types carry an error type: `(x: T) => U throws E`. A written `throws` clause bounds

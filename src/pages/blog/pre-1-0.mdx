@@ -35,10 +35,10 @@ The standard library and the sqlite, postgres, redis and http-server
 [YOUR TEXT: what's different on purpose, and why. This is where "familiar, not identical" lives.]
 
 <Callout kind="note" title="Facts you could use (remove before publishing)">
-The [Not supported](/docs/book/ts-developers/#not-supported) list: `eval`, prototypes, `with`,
-`delete` (except on a `Record`), `var` in nested blocks, symbols made at run time as keys,
-`BigInt` values, Unicode identifiers. `x!` is checked at run time. Check this list against the
-release you publish with: it shrinks with every release.
+The [Not supported](/docs/book/ts-developers/#not-supported) list on the TypeScript page:
+`eval`, prototypes, run-time decorators (typed compile-time decorators work), `with`, and more.
+`x!` is checked at run time. Check the list against the release you publish with: it shrinks
+with every release (0.6 added default exports, operators and decorators).
 </Callout>
 
 ## What isn't there yet

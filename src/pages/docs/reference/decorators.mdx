@@ -1,0 +1,105 @@
+---
+title: "Decorators"
+description: "Typed compile-time decorators: declare decorator function, @x and @x(args) on classes, members, functions, structs, enums and parameters, checked like a call."
+layout: "docs"
+category: "Language reference"
+order: 65
+---
+
+# Decorators
+
+A decorator in Velt is typed data attached to a declaration at compile time. It is declared with
+`declare decorator function`, applied with `@x` or `@x(args)`, and checked like a call. Nothing
+runs: a program does exactly what it does without its decorators.
+
+```ts
+declare decorator function name(key: string): FieldDecorator;
+declare decorator function tag(t: string): Repeatable<TypeDecorator | FunctionDecorator>;
+
+@tag("a")
+@tag("b")
+class User {
+  @name("id") id: i64 = 1;
+}
+
+console.log(new User().id); // 1
+```
+
+Decorators are for libraries and tools that read a program's declarations at compile time. The
+standard library doesn't read any yet; a library or a program declares and applies its own.
+
+## Declaring a decorator
+
+`declare decorator function` declares one, with parameters as a function has them and no body.
+Its result type says where it may be used:
+
+| Result type | Targets |
+|---|---|
+| `FunctionDecorator` | functions |
+| `MethodDecorator` | methods, getters and setters |
+| `TypeDecorator` | classes, structs and enums |
+| `FieldDecorator` | fields, abstract properties included |
+| `ParamDecorator` | parameters, constructor parameter properties included |
+
+A union of them allows each of its targets, and `Repeatable<…>` around the result allows more
+than one use on one target. These names mean this only in that position.
+
+- A parameter may have a default, which must fit its type.
+- A decorator has no type parameters, so type arguments on one (`@x<T>(…)`) are an error.
+- A decorator is exported and imported like any declaration (`export declare decorator function
+  mark(): TypeDecorator;`, then `import * as lib from "./lib"` and `@lib.mark`). A name imported
+  with `import type` can't be used as a decorator.
+- A decorator can't be called or used as a value.
+
+## Applying decorators
+
+`@x`, `@ns.x`, `@x(args)` and `@ns.x(args)` go before the declaration they decorate, a
+parameter's inline (`f(@level(Level.High) a: i64)`). On an exported declaration they go on
+either side of `export`, but not both: `@d export class C {}` or `export @d class C {}`, and the
+same for `export default class` and `export default function`. `@d export default x;`, on an
+expression, is an error.
+
+- Functions, classes, methods, getters, setters, fields (also one named by a computed key),
+  parameters, structs and enums take decorators, also when declared inside a function or a
+  block.
+- On an overloaded function or method, the decorators belong to the implementation; they may
+  be written before any of its signatures.
+- A variable that holds a class takes none (`@x const K = class {};` is an error, as for any
+  variable, TypeScript's TS1206): decorate a class declaration instead.
+- `velt fmt` puts each decorator on its own line before the declaration (inline on a parameter)
+  and before `export`.
+
+## Arguments
+
+A use is checked like a call: its target, how often it is used, the number of arguments, their
+types and the defaults. The arguments must be constants:
+
+- literals, enum members, and arrays and object literals of constants;
+- module-level `const`s that hold one, and `static readonly` fields. A `let`, a `var` or a
+  destructured `const` is not a constant, and a local of the same name hides a module constant
+  (or a decorator), as in TypeScript.
+
+The types follow the call's rules: a parameter typed `any` or `unknown` accepts any constant, an
+enum member is accepted where its number or string is expected (`@count(Level.High)` for
+`count(n: i64)`), a number with a type suffix has that type (`@small(1i64)` is refused for
+`small(n: i8)`), a float parameter accepts numbers in its range only (`1e300` isn't an `f32`),
+and an object argument gives each property once (TypeScript's TS1117). Type names as arguments
+are not supported yet.
+
+## TypeScript compatibility
+
+- `@x` where `x` is not a `declare decorator function` is a TC39 run-time decorator, as in
+  TypeScript, and those are not supported yet
+  (`TC39 run-time decorators are not supported yet`). That includes decorators on class
+  expressions (`const C = @x class {}`).
+- Parameter decorators of TypeScript's `experimentalDecorators` get a diagnostic that names that
+  form; `experimentalDecorators` is out of scope.
+- Decorators on plain functions, structs, enums and parameters are a Velt extension: a file with
+  one doesn't parse in `tsc`. `velt check --ts-compat` reports them (rule `decorator`), and
+  `declare decorator function` under `declare-fn`, as well as the decorators `tsc` refuses on
+  class members: on an overload signature, an abstract method or an abstract property.
+
+## Tools
+
+The language server shows a decorator's declaration on hover and offers the decorators in scope
+after `@`. `velt doc` shows each declaration's decorators in its signature.

@@ -449,6 +449,17 @@ const lengths: ((s: string) => number)[] = id([(s) => s.length]);
 console.log(inc(1), lengths[0]("abc")); // 2 3
 ```
 
+As in TypeScript, a type parameter in an arrow's unannotated parameters that nothing inferred
+takes its default, its constraint or `unknown` before the arrow is checked
+(`function f<T = string>(g: (x: T) => void)` with `f((x) => x.length)`), also inside a rest
+parameter, an object or array literal, and an arrow returned by an arrow. A type parameter with
+no candidate takes the interfaces it extends (`T extends HasN`, `T extends A & B`). A shorthand
+or spread field next to such an arrow is a candidate. An annotated callback parameter types the
+call when the literal argument has no type of its own (`[]`, `{}`, `null`, `undefined`,
+`new Map()`): `xs.reduce((acc: number[], x) => …, [])`; otherwise the literal decides, as in
+TypeScript. Explicit type arguments work on the array methods too: `xs.reduce<number[]>(f, [])`,
+`xs.map<string>(f)`.
+
 A bound that is not an interface is a type the type argument must be assignable to, as in
 TypeScript: `T extends Record<string, V>`, `T extends readonly X[]`, `T extends string | number`,
 `T extends "a" | "b"`, an alias of one (`type Primitive = string | number | boolean | null`), a
@@ -755,9 +766,11 @@ console.log([...evens(5)], [...tens(3)]);  // [ 0, 2, 4 ] [ 0, 10, 20 ]
   of them see, and the body may assign it (`count++`). The name of a named expression is not in scope in its body (TS allows recursion through it):
   declare a `function*` to recurse. Type parameters and rest parameters are errors there too;
   declare a `function*`.
-- The return type is required, as for any generator, unless the expression is written where
-  a function type is expected (`return function* () { … }` in a function returning `() => Generator<string>`, or `const g: Gen = function* () { … }`): then it is that type's result,
-  as for an arrow.
+- Where a function type is expected (`return function* () { … }` in a function returning
+  `() => Generator<string>`, or `const g: Gen = function* () { … }`), the result type is that
+  type's result, as for an arrow. Elsewhere, an expression without a result type infers its
+  yield type from its `yield`s (`const g = function* () { yield 1; yield 2; }`); one with a
+  `yield*` needs the result type written.
 
 ## Async generators
 
@@ -1436,9 +1449,22 @@ console.log(kind(), kind.call("s")); // undefined string
 ```
 
 A function with a `this` parameter that its body doesn't use is called like any other function.
-Not supported yet: using a function whose body uses its `this` parameter as a value (`const g = f`, `{ m: f }`, `xs.map(f)`), a function expression whose body uses one, one with overloads, a
-generator with one, and `this` in a function type (`(this: T, a: A) => R` is `(a: A) => R` for
-now).
+One declared with `this: any` whose body uses it can be used as a value: stored in an object,
+assigned through `any` or held as a `Function`. Its `this` is then the object it is called on,
+through `any`, `call`, `apply` and `bind`:
+
+```ts
+function useAsync(this: any, key: string): string {
+  return this.name + ":" + key;
+}
+const ctx: any = { name: "page", useAsync };
+console.log(ctx.useAsync("k")); // page:k
+```
+
+Not supported yet: using a function whose body uses another `this` type as a value
+(`const g = f`, `{ m: f }`, `xs.map(f)`), a generic, async or generator function with a `this`
+parameter, one with overloads, rest or destructured parameters next to it, and `this` in a
+function type (`(this: T, a: A) => R` is `(a: A) => R` for now).
 
 ### Functions with properties
 
@@ -1741,6 +1767,9 @@ with where it leaves its task); nor may the enclosing code assign one it capture
 (```cannot assign to `k` after a stored closure captured it```), nor a closure created in
 another closure
 (```…is assigned by a closure created inside another closure, and cannot be shared with it```).
+A server's handler (a callback a library runs on other threads) may not change what it captured
+through a method or function it calls, a function value or a value reached from what it
+captured either ([Async](/docs/reference/async/#values-sent-to-another-thread)).
 
 The compiler proves which closures stay. One may leave:
 

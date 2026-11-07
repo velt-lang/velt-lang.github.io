@@ -50,5 +50,6 @@ named are Node's: `open`, `read`, `write`, `scandir`, `stat`, `lstat`, `readlink
 `mkdir`, `unlink`, `rmdir`, `rm`, `rename`, `copyfile`. The path is the one you passed (Node on
 Windows prints the absolute path).
 
-A package that wraps a native library turns its failures into `IoError`s with
-[velt/native](/docs/std/native/).
+A package that calls a C library reads its error with
+[`lastOsError`](/docs/std/os/) after a `declare c` call that asks for `errno`; one with a Rust
+crate turns its failures into `IoError`s with [velt/native](/docs/std/native/).

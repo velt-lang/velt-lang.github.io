@@ -9,7 +9,7 @@
  *   ```ts ignore   not a complete program (an excerpt, pseudo-code): skipped
  *   ```ts planned  designed but not implemented yet: skipped
  *
- * `vlt` and `tsx` fences follow the same rules; `title="…"` is allowed with any of them.
+ * `velt` (or `vlt`) and `tsx` fences follow the same rules; `title="…"` is allowed with any of them.
  * Each snippet is checked as written, as the root file of a program: Velt runs a root
  * file's top-level statements like Node (top-level `await` included), and a file with
  * only declarations, or with `function main()`, checks too. So a snippet means what it
@@ -17,8 +17,9 @@
  *
  * A snippet that imports an official package (`http-server`, `sqlite`, `postgres`, `redis`)
  * is checked inside a package that depends on it by path: set VELT_PACKAGES to the `packages/`
- * directory of a velt checkout at the release the docs describe (the database packages build
- * their native code with cargo the first time). Without VELT_PACKAGES such snippets are skipped.
+ * directory of a velt checkout at the release the docs describe. The packages with native code
+ * (`sqlite`, `postgres`) are listed in the generated manifest's `allowNative`, as a program
+ * must; their native code builds the first time. Without VELT_PACKAGES such snippets are skipped.
  *
  * Known failures (scripts/check-examples-known.json, each with its issue) are reported but
  * don't fail the check; one that starts passing does, so the list stays current.
@@ -35,10 +36,10 @@ import { join, relative } from 'node:path';
 const ROOT = join(import.meta.dirname, '..');
 const DOCS = join(ROOT, 'src/pages/docs');
 const VELT = process.env.VELT ?? 'velt';
-const LANGS = new Set(['ts', 'vlt', 'tsx']);
+const LANGS = new Set(['ts', 'velt', 'vlt', 'tsx']);
 const filter = process.argv[2];
 const PACKAGES_DIR = process.env.VELT_PACKAGES;
-const PACKAGES = ['http-server', 'sqlite', 'postgres', 'redis'];
+const PACKAGES = ['http-server', 'sqlite', 'postgres', 'redis', 'web'];
 
 /** The official packages a snippet imports (`import … from "sqlite"`, `"http-server/websocket"`). */
 export function packagesOf(source) {
@@ -50,11 +51,18 @@ export function packagesOf(source) {
     return [...names].sort();
 }
 
-/** package.vlt for a snippet that uses `pkgs`, each by path from VELT_PACKAGES. */
-const manifest = (pkgs) =>
-    `import type { Package } from "velt/package";\n\nexport const pkg: Package = {\n  name: "example",\n  version: "0.1.0",\n  dependencies: {\n${pkgs
+/** The official packages with native code: a program lists them in `allowNative`. */
+const NATIVE = ['sqlite', 'postgres'];
+
+/** package.velt for a snippet that uses `pkgs`, each by path from VELT_PACKAGES. */
+const manifest = (pkgs) => {
+    const native = pkgs.filter((p) => NATIVE.includes(p));
+    return `import type { Package } from "velt/package";\n\nexport const pkg: Package = {\n  name: "example",\n  version: "0.1.0",\n${
+        native.length ? `  allowNative: ${JSON.stringify(native)},\n` : ''
+    }  dependencies: {\n${pkgs
         .map((p) => `    ${JSON.stringify(p)}: { path: ${JSON.stringify(join(PACKAGES_DIR, p).replace(/\\/g, '/'))} },`)
         .join('\n')}\n  },\n};\n`;
+};
 const KNOWN = JSON.parse(readFileSync(join(import.meta.dirname, 'check-examples-known.json'), 'utf8')).known;
 const knownOf = (s) => KNOWN.find((k) => s.origin.startsWith(`${k.file}:`) && s.source.split('\n')[0].trim() === k.first);
 
@@ -64,7 +72,7 @@ const walk = (dir) =>
         return statSync(f).isDirectory() ? walk(f) : n.endsWith('.mdx') ? [f] : [];
     });
 
-/** The `ts` / `vlt` / `tsx` fences of one MDX file. */
+/** The `ts` / `velt` / `tsx` fences of one MDX file. */
 export function snippets(rel, text) {
     const out = [];
     const errors = [];
@@ -127,10 +135,10 @@ async function main() {
             const program = s.source;
             const pkgs = packagesOf(program);
             if (pkgs.length) {
-                writeFileSync(join(sub, 'package.vlt'), manifest(pkgs));
+                writeFileSync(join(sub, 'package.velt'), manifest(pkgs));
                 mkdirSync(join(sub, 'src'), { recursive: true });
             }
-            const file = join(sub, pkgs.length ? 'src' : '', `main.${s.lang === 'tsx' ? 'tsx' : 'vlt'}`);
+            const file = join(sub, pkgs.length ? 'src' : '', `main.${s.lang === 'tsx' ? 'tsx' : 'velt'}`);
             writeFileSync(file, program);
             const { code, output } = await run(file);
             const shown = () => program.split('\n').map((l, i) => `${String(i + 1).padStart(4)} | ${l}`).join('\n');

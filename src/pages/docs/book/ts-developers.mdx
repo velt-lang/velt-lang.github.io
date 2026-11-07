@@ -11,7 +11,7 @@ order: 40
 If you write TypeScript, you already write Velt: classes, interfaces, generics, unions and
 narrowing, discriminated unions, closures, `async`/`await`, template literals, destructuring,
 spread, optional chaining, `??`, ES modules, `throw`/`try`/`catch`, `using`. Velt reads `.ts`
-and `.tsx` files directly (`velt run app.ts`), and they import `.vlt` files and the other way
+and `.tsx` files directly (`velt run app.ts`), and they import `.velt` files and the other way
 round, so an existing project can move over one file at a time.
 
 What you get in return is a native executable: no interpreter or JIT, no garbage collector, and
@@ -27,8 +27,8 @@ The differences come from three rules:
    write instead, and editors offer it as a quick fix.
 3. **Add what makes native code faster.** Velt compiles to machine code, not to JavaScript, so
    it isn't limited to what TypeScript can express. Integer types, typed errors, `shared` state
-   across threads and `extend` are there when you want them. Code without them still runs as
-   TypeScript would.
+   across threads, `extend`, operator methods and compile-time decorators are there when you
+   want them. Code without them still runs as TypeScript would.
 
 ## Programs are compiled
 
@@ -81,8 +81,10 @@ wrap at their width instead of losing precision past 2^53, and integer division 
 same result (loop counters, indexes), so integer types are for when you want integer semantics
 or a fixed width ([Numbers](/docs/reference/types/#numbers)).
 
-`i8` … `i32`, `u8` … `u32` and `f32` convert to `number` implicitly (exactly); the 64-bit types
-need `as number`, and a `number` needs `as T` to become an integer:
+`i8` … `i32`, `u8` … `u32`, `f32` and the 2-byte storage floats `f16` and `bf16` (each like a
+`Float16Array` element: [`f16` and `bf16`](/docs/reference/types/#f16-and-bf16)) convert to
+`number` implicitly (exactly); the 64-bit types need `as number`, and a `number` needs `as T` to
+become an integer:
 
 ```ts
 const xs = [1, 2, 3];
@@ -181,6 +183,13 @@ contents.
   `string`, arrays and your unions.
 - `as` converts numbers, brands a value (`"u1" as UserId`, below) and converts an `any` or
   `unknown`, checked at run time; there are no unchecked type assertions. Narrow with `typeof`, `instanceof`, `==` or a discriminant instead.
+  An object held as `any` converts to a `Record<string, V>` as a copy of its entries: writing
+  to the record doesn't change the object, where Node shares the one object
+  ([Objects into records](/docs/reference/types/#objects-into-records)).
+- A class, struct or `extend` block can define operators for its own type
+  (`[Symbol.add](o: Vec3): Vec3`, so `a + b` works; also `a[i, j]` indexers), which TypeScript
+  rejects on objects; the operators of numbers, strings, arrays and `any` never change
+  ([Operator methods](/docs/reference/classes/#operator-methods)).
 - Enums are numeric or string enums; tagged data is a discriminated union (payload enums and
   `match` don't exist).
 - `Partial`, `Required`, `Readonly`, `Pick` and `Omit` work on concrete object types, also through
@@ -236,7 +245,8 @@ contents.
 - Function expressions (`function (x) { … }`, also `async` and generic) work like arrows with
   the same body; as an object literal's property, one is a method and `this` is the object. `f.call`, `f.apply` and
   `f.bind` work. A function whose `this` is bound at the call, or that reads `arguments`,
-  declares a `this: any` parameter and is then a dynamic `Function`
+  declares a `this: any` parameter and is then a dynamic `Function`, also when it is a
+  declared function used as a value
   ([Function expressions](/docs/reference/functions/#function-expressions)).
 - Overloads in TypeScript's form (bodiless signatures before one implementation) work for
   functions and methods ([Overloads](/docs/reference/functions/#overloads)). Optional and default parameters work, on arrows too; rest parameters
@@ -252,7 +262,8 @@ contents.
   hand-written code. Bounds are interfaces.
 - Generators (`function*`, `*name()` methods, `yield`, `yield*`) work as in JS, lazily, with
   their return type written (`Generator<T>`, `Iterable<T>`, `Iterator<T>`,
-  `IterableIterator<T>` or `IteratorObject<T>`). A `for...of` over
+  `IterableIterator<T>` or `IteratorObject<T>`; a generator function expression may leave it
+  out). A `for...of` over
   a generator call allocates nothing and runs like a hand-written loop. There is no `return
   value`, `next(value)` or `throw()`, and a `finally` block in a generator cannot `yield`,
   throw, or `break` out of it ([Generators](/docs/reference/functions/#generators)).
@@ -324,24 +335,34 @@ reference count. Reference cycles are not freed; `WeakRef`, `WeakMap` and `WeakS
 
 ## Modules
 
-- Named exports only: `export default` and default imports are errors with a fix.
-- Standard library modules are imported as `velt/<module>`: `import { readFile } from "velt/fs"`.
+- `export default`, default imports and `export * as ns` work as in TypeScript; there is no
+  `esModuleInterop` default made up from a module's named exports
+  ([Default exports](/docs/reference/modules/#default-exports)).
+- Standard library modules are imported as `velt/<module>`, with named exports only:
+  `import { readFile } from "velt/fs"` or `import * as fs from "velt/fs"`.
+- Conditional imports work like Node's `imports` field: `#name` specifiers mapped per target in
+  `package.velt` ([Conditional imports](/docs/reference/modules/#conditional-imports)).
 - Relative imports drop the extension: `import { x } from "./util"`. A folder is a module
-  through its `index.vlt`, `index.ts` or `index.tsx`. `paths` aliases in `package.vlt` work like `compilerOptions.paths`.
-- Modules can be `.ts` and `.tsx` files as well as `.vlt`, so a folder can be shared with a
+  through its `index.velt`, `index.ts` or `index.tsx`. `paths` aliases in `package.velt` work like `compilerOptions.paths`.
+- Modules can be `.ts` and `.tsx` files as well as `.velt`, so a folder can be shared with a
   TypeScript project; as in TypeScript, JSX needs `.tsx`, and `"./x.js"` names `x.ts`
   ([TypeScript files](/docs/reference/modules/#typescript-files-ts-and-tsx)).
 
 ## Not supported
 
 `var` in nested blocks and loops, `eval`, prototypes, `delete` (other than on a `Record`),
-`with`, decorators, symbols made at run time as object keys (a symbol key must be a module
+`with`, TC39 run-time decorators (Velt's decorators are typed and read at compile time:
+[Decorators](/docs/reference/decorators/)), symbols made at run time as object keys (a symbol key must be a module
 constant: [Symbols](/docs/reference/types/#symbols)), `BigInt` values (the type `bigint` has none
 yet, [Types](/docs/reference/types/#bigint); use [`velt/math`](/docs/std/math/bigint/)), Unicode
 identifiers. `x!` is checked (a `null` panics) where TypeScript trusts it, and `as const` keeps
 the value as it is. `Date` follows JS (months 0-11, local-time getters); its `toString()` has no
 time zone name and its `toLocale…` methods always format as `en-US`. JSX is supported for
-server-side rendering ([TSX](/docs/reference/tsx/), [`velt/jsx`](/docs/std/jsx/)).
+server-side rendering ([TSX](/docs/reference/tsx/), [`velt/jsx`](/docs/std/jsx/)), and a
+runtime with TypeScript's automatic `jsx`/`jsxs` exports compiles as under `"jsx": "react-jsx"`.
+lib.dom's types (`HTMLElement`, `Event`, …) exist as global types for code shared with the
+browser, without a DOM ([`typeof`](/docs/reference/types/#object-built-ins) of one is what Node
+answers).
 
 ## Quick reference
 
@@ -373,7 +394,9 @@ server-side rendering ([TSX](/docs/reference/tsx/), [`velt/jsx`](/docs/std/jsx/)
 | `Object.keys(process.env)`, `{ ...process.env }` | `envAll()` from `velt/process`: a `Record<string, string>` snapshot, in the same order | — |
 | `process.argv` | the same layout, `[runtime, script, ...args]`: the script is the source file under `velt run`, the executable for a built program; each read is a new array, so changing it in place is an error (copy it first) | — |
 | `a.localeCompare(b, locale, options)` (the host's locale by default) | `a.localeCompare(b)`: the CLDR root collation, like `new Intl.Collator("und").compare(a, b)`; no locales | — |
-| `export default` | named exports only | — |
+| `export default`, `import x from`, `export * as ns` | the same; the standard library has named exports only, and there is no `esModuleInterop` made-up default | — |
+| decorators | typed compile-time decorators (`declare decorator function`, `@x(args)`), checked like calls; nothing runs | TC39 run-time decorators |
+| operators on objects are errors (or ToPrimitive) | operator methods: `a + b` calls `a[Symbol.add](b)` on classes, structs, SIMD vectors, `BigInt`, `Duration`; `m[i, j]` indexers; built-in types and `any` keep JS's operators | — |
 | `for...of` over any `Iterable`; `IteratorResult` has `value: undefined` when done | the same protocol (`[Symbol.iterator]()`, `next()`, `return()` on early exit, returning `{ done: true }`); a done result has no `value` (unnarrowed, `r.value` is `T \| null`, so `g().next().value` works); `Iterator<T, E>` carries the error type `next()` throws; `for await` over `AsyncIterable`s, and over arrays of promises | — |
 | generators: `function*`, `yield`, `yield*`, `Generator<T, TReturn, TNext>` | the same, lazy, `Generator<T, E>` (`E`: what the body throws); TS's `Generator<T, void, unknown>` spelling means `Generator<T>`, and a real `TReturn` is an error; no `return value`, `next(value)` (so `yield` has no value) or `throw()`, each an error that says so; a `for...of` over a call allocates nothing; async generators (`AsyncGenerator<T, E>`) likewise, and `yield p` there awaits a promise `p` as in JS | — |
 | arrays, strings, `Map`s and `Set`s are `Iterable`; `a[Symbol.iterator]()` | the same: they convert to `Iterable<T>` values and satisfy `Iterable<T>` bounds (`sum(xs: Iterable<number>)` takes `[1, 2, 3]`); `x[Symbol.iterator]()` returns an `Iterator<T>`, live for arrays as in JS; map and set iterators see the entries as of the call (JS's are live), and `m.keys()` / `values()` / `entries()` are arrays; `for...of` over a map (a variable, field, getter, element or call result, or its `keys()`, `values()`, `entries()`) and `forEach` are live, as in JS | — |

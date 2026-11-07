@@ -16,7 +16,7 @@ TypeScript client, is [`examples/apps/ssr-blog`](https://github.com/velt-lang/ve
 
 ## A first page
 
-JSX works in any `.vlt` (or `.tsx`) file. A component is a function from typed props to
+JSX works in any `.velt` (or `.tsx`) file. A component is a function from typed props to
 `JSX.Element`, and `renderToStringSync` turns an element into HTML:
 
 ```ts
@@ -185,8 +185,8 @@ console.log(`listening on http://127.0.0.1:${server.port}`);
 - The status and headers go out before the first chunk, so decide the status (here the 404)
   before streaming starts.
 - `raw` writes the doctype unescaped; the fragment (`<>…</>`) puts it before `<html>`.
-- A `src/main.tsx` is the program's entry when there is no `src/main.vlt`, and its top-level
-  statements are the program, as in a `.vlt` file.
+- A `src/main.tsx` is the program's entry when there is no `src/main.velt`, and its top-level
+  statements are the program, as in a `.velt` file.
 - If the client goes away, rendering stops; a component that throws while the page streams
   cuts the response off, so the client sees a failed body rather than a complete one.
 
@@ -194,7 +194,7 @@ console.log(`listening on http://127.0.0.1:${server.port}`);
 
 Components in the common subset of TypeScript and Velt compile with both `velt` and `tsc`, so a
 browser bundle can use the same files. Keep them in folders listed under `tsCompat` in
-`package.vlt` and check them with `velt check --ts-compat`
+`package.velt` and check them with `velt check --ts-compat`
 ([the CLI](/docs/tooling/cli/#code-shared-with-typescript---ts-compat)). The provider must exist
 on both sides: `examples/apps/ssr-blog` names its own (`jsx: { importSource: "./jsx" }`), which
 is `velt/jsx` on the server and a small TypeScript runtime for `tsc`, and both render the same
@@ -205,7 +205,7 @@ HTML.
 A page is a value, so a test renders it and compares the HTML:
 
 ```ts ignore
-// tests/greeting.test.vlt
+// tests/greeting.test.velt
 import { renderToStringSync } from "velt/jsx";
 import { Greeting } from "../src/greeting";
 

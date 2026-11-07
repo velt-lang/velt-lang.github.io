@@ -45,6 +45,9 @@
     --color-peach: #ffb27a;
     --color-yellow: #ffc93c;
     --color-green: #3ddc97;
+    /* Violet surfaces: the API reference's panel, card and sidebar pill (design/ApiSwitch.dc.html). */
+    --color-violet-line: #2e2a5c;
+    --color-violet-tint: #12101f;
 
     --font-sans: Inter, system-ui, sans-serif;
     --font-display: 'Space Grotesk', sans-serif;
@@ -190,6 +193,10 @@
 }
 .prose :is(h2, h3, h4) {
     scroll-margin-top: 24px;
+}
+/* Long names (`velt/encoding/json`, `ConcurrentMap<K, V>`) wrap on phones instead of widening the page. */
+.prose :is(h1, h2, h3, h4) {
+    overflow-wrap: anywhere;
 }
 .prose .heading-anchor {
     margin-left: 0.3em;
@@ -591,6 +598,30 @@
     .prose.has-page-actions > h1:first-child {
         padding-right: 190px;
     }
+}
+
+/* "API at a glance" on std guides (ApiGlance.tsx), inside .prose: its links are a button and
+   chips, not text links, so they take their colors here rather than from .prose a. */
+.prose .api-glance a {
+    color: var(--color-fg);
+    text-decoration: none;
+}
+.prose .api-glance a:hover {
+    color: var(--color-cyan);
+}
+.prose .api-glance .api-glance-more {
+    color: var(--color-violet);
+}
+.prose .api-glance .api-glance-open,
+.prose .api-glance .api-glance-open:hover {
+    color: white;
+}
+/* The dev server hands the layout the page as one component, so the panel can't go after the
+   lead in the markup: it comes last and is moved up to the same place. */
+.prose > .api-glance-late,
+.prose:has(> .api-glance-late) > h1:first-child,
+.prose:has(> .api-glance-late) > h1:first-child + p {
+    order: -1;
 }
 
 /* ─── Std API pages (design/Api.dc.html) ────────────────────────────────── */

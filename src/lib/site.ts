@@ -12,7 +12,7 @@ export const EDIT_BASE = `${SITE_REPO_URL}/edit/main/`;
  * The Velt release the docs describe. Bump it in the same PR that documents a
  * release (AGENTS.md, "Refresh playbook").
  */
-export const DOCS_VERSION = '0.5.0';
+export const DOCS_VERSION = '0.6.0';
 
 export const LLMS_URL = `${SITE_URL}/llms.txt`;
 export const LLM_PROMPT = `Read ${LLMS_URL} and help me build a small HTTP server in Velt.`;

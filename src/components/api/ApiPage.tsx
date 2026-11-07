@@ -188,7 +188,7 @@ export const ExportSection = component<{ item: ApiItem; module: ApiModule }>(({ 
                 <h3 class="m-0 font-mono text-[22px] font-medium leading-[1.3] text-fg [overflow-wrap:anywhere]">{it.name}</h3>
                 <a href={`#${anchorOf(it)}`} aria-label={`Link to ${it.name}`} class="text-[#5A5A70] hover:text-cyan">#</a>
                 {src && (
-                    <a href={sourceUrl(src.file, src.line)} class="ml-auto font-mono text-xs text-muted hover:text-cyan">
+                    <a href={sourceUrl(src.file, src.line)} class="ml-auto min-w-0 font-mono text-xs text-muted [overflow-wrap:anywhere] hover:text-cyan">
                         {`${src.file}:${src.line}`}
                     </a>
                 )}
@@ -325,7 +325,7 @@ export const ApiPage = component<{ module: ApiModule }>(({ props, slots }) => ()
     return (
         <>
             <div class="flex flex-wrap items-baseline gap-3">
-                <h1 class="m-0 font-mono text-[40px] font-medium leading-[1.1] tracking-[-0.02em] text-fg max-[480px]:text-[32px]">{specifierOf(m)}</h1>
+                <h1 class="m-0 font-mono text-[40px] [overflow-wrap:anywhere] font-medium leading-[1.1] tracking-[-0.02em] text-fg max-[480px]:text-[32px]">{specifierOf(m)}</h1>
                 <span class="rounded-full border border-line-3 px-2.5 py-0.5 text-xs text-fg-3">API reference</span>
             </div>
             <p class="api-lead m-0 text-lg text-fg-3">

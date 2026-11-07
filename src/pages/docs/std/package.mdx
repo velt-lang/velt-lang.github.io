@@ -1,6 +1,6 @@
 ---
 title: "velt/package"
-description: "import type { Package } from \"velt/package\". The types of the package manifest, package.vlt, and of the workspace manifest. Types only; nothing imports it at run time."
+description: "import type { Package } from \"velt/package\". The types of the package manifest, package.velt, and of the workspace manifest. Types only; nothing imports it at run time."
 layout: "docs"
 category: "Standard library"
 order: 260
@@ -9,8 +9,8 @@ order: 260
 # velt/package
 
 `import type { Package } from "velt/package"`. The type of the package manifest,
-[`package.vlt`](/docs/tooling/manifest/), and of the workspace manifest,
-`velt.workspace.vlt`. The module contains only types; nothing imports it at run time.
+[`package.velt`](/docs/tooling/manifest/), and of the workspace manifest,
+`velt.workspace.velt`. The module contains only types; nothing imports it at run time.
 
 ```ts ignore
 import type { Package } from "velt/package";
@@ -24,7 +24,7 @@ export const pkg: Package = {
 };
 ```
 
-`velt` never compiles `package.vlt`: it reads it as data. The language server does the same, so
+`velt` never compiles `package.velt`: it reads it as data. The language server does the same, so
 the editor's completion, hover and errors in a manifest come from the manifest's rules, not from
 type-checking the file; these types document the same fields (a test keeps them in line).
 
@@ -36,6 +36,6 @@ type-checking the file; these types document the same fields (a test keeps them 
 | `Jsx` | `{ importSource?: string }` |
 | `Native` | `{ path?: string; targets?: string[]; wasm?: boolean }` |
 | `Build` | `{ cpu?: string }` ([CPU](/docs/tooling/platforms/#cpu)) |
-| `Workspace` | a `velt.workspace.vlt`: `members` (globs), and the optional `velt`, `registry`, `dependencies` the members share ([workspaces](/docs/tooling/packages/#workspaces)) |
+| `Workspace` | a `velt.workspace.velt`: `members` (globs), and the optional `velt`, `registry`, `dependencies` the members share ([workspaces](/docs/tooling/packages/#workspaces)) |
 
-The fields and their rules are in [`package.vlt`](/docs/tooling/manifest/).
+The fields and their rules are in [`package.velt`](/docs/tooling/manifest/).

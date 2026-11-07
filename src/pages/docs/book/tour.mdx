@@ -254,7 +254,7 @@ JSON work, see [`velt/encoding/json`](/docs/std/encoding/json/).
 The HTTP server is the [`http-server`](/docs/packages/http-server/) package, written in Velt.
 `velt new todo --template api` makes a package that depends on it:
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { serve } from "http-server";
 
 let hits = 0;
@@ -271,7 +271,8 @@ uses, and run concurrently on every core ([Building an HTTP server](/docs/book/h
 
 ## Modules
 
-Modules work like TypeScript's ES modules, with named exports only:
+Modules work like TypeScript's ES modules, default exports included (the standard library has
+named exports only):
 
 ```ts
 import * as path from "velt/path";            // namespace import: path.join, path.basename, …
@@ -286,8 +287,8 @@ console.log(describe("/tmp/a.txt"));        // a.txt (6)
 
 The standard library is imported as `velt/<area>` or `velt/<area>/<module>` (`velt/fs`,
 `velt/net/http`, `velt/encoding/json`); the global functions and types, such as `console`,
-`fetch`, `Map` and `JSON`, need no import ([Standard library](/docs/std/)). A folder is a module through its `index.vlt`, `import type` imports types only, and `paths`
-in `package.vlt` replaces long `../../` chains ([Modules and packages](/docs/book/packages/)).
+`fetch`, `Map` and `JSON`, need no import ([Standard library](/docs/std/)). A folder is a module through its `index.velt`, `import type` imports types only, and `paths`
+in `package.velt` replaces long `../../` chains ([Modules and packages](/docs/book/packages/)).
 
 ## Where next
 

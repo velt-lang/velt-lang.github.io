@@ -1,0 +1,87 @@
+---
+title: "velt/half"
+description: "import { f16FromBytes, widenF16 } from \"velt/half\". f16[] and bf16[] in bulk: loaded from bytes, widened to and narrowed from f32[], and their dot products."
+layout: "docs"
+category: "Standard library"
+order: 182
+---
+
+# velt/half
+
+`import { f16FromBytes, widenF16, dotF16 } from "velt/half"`. Arrays of the 16-bit storage floats
+[`f16` and `bf16`](/docs/reference/types/#f16-and-bf16) in bulk: loading them from the bytes of a
+model file, widening them to `f32[]` and narrowing them back, and the dot product of two of
+them, at the speed of the CPU's conversion instructions.
+
+```ts
+import { dotF16, f16FromBytes, narrowF16, widenF16 } from "velt/half";
+
+// Three f16 weights as a model file stores them: 1, 2.5 and 0.1, little-endian.
+const bytes: u8[] = [0x00, 0x3c, 0x00, 0x41, 0x66, 0x2e];
+const ws = f16FromBytes(bytes);
+const xs = widenF16(ws);
+console.log(ws.length, xs[1]); // 3 2.5
+const twos: f32[] = [2, 2, 10];
+console.log(dotF16(ws, narrowF16(twos))); // 7.999755859375
+```
+
+## Loading from bytes
+
+- `f16FromBytes(bytes: u8[], at = 0, count?): f16[]` reads `count` little-endian 16-bit patterns
+  from byte `at` on into a packed `f16[]`, with one copy. Every pattern is kept, NaN payloads
+  included.
+- `bf16FromBytes(bytes, at = 0, count?): bf16[]` does the same for `bf16`.
+- `count` defaults to every whole pattern after `at`, so an odd byte left at the end is not
+  read. `at` may be the length (no values). When `at + 2 * count` passes the end of `bytes`,
+  they panic with a `RangeError`, as `u8x16.load` does.
+
+The bytes are little-endian only, as safetensors and GGUF store their weights. For big-endian
+data, swap each pair of bytes first (`u16x8.reverseBytes()` in [velt/simd](/docs/std/simd/), or
+by hand). There is no `littleEndian` flag on purpose: JavaScript's `DataView.getFloat16`
+defaults to big-endian, and a flag with the opposite default would be a trap.
+
+The input is a `u8[]`, as [`readFileBytes`](/docs/std/fs/) and `Buffer` give it. An `any` array
+viewed as a `u8[]` stops the program with a `TypeError`.
+
+## Widening and narrowing
+
+- `widenF16(ws: f16[]): f32[]` and `widenBf16(ws: bf16[]): f32[]`: each value as an `f32`,
+  exactly. A NaN keeps its payload, with its quiet bit set.
+- `narrowF16(xs: f32[]): f16[]` and `narrowBf16(xs: f32[]): bf16[]`: each value rounded once to
+  the nearest (ties to even); past `f16`'s largest value, ±Infinity. A NaN keeps the top bits of
+  its payload, quieted.
+- `widenF16Into(ws, xs, at = 0)`, `widenBf16Into`, `narrowF16Into(xs, ws, at = 0)` and
+  `narrowBf16Into` write into an array you already have, at `dst[at .. at + src.length)`, and
+  allocate nothing. They panic with a `RangeError` when that range passes the end of the
+  destination.
+
+A signalling NaN comes back quiet from a widen and narrow round trip through these functions.
+In plain code, an optimizer may remove a widen-then-narrow pair (`(w as f32) as f16`, or
+through `number`): the NaN then keeps `w`'s sign and payload, quiet or not. A direct narrow of
+a signalling `f32` or `f64` NaN still gives a quiet NaN. Only code that reads raw bits
+(`toBits()`) sees the difference, and none of it should rely on a NaN's bits.
+
+## Dot products
+
+`dotF16(a: f16[], b: f16[]): number` and `dotBf16(a: bf16[], b: bf16[]): number` are the dot
+product `a[0] * b[0] + a[1] * b[1] + …`, the inner loop of inference with 16-bit weights.
+
+- Each product is exact in `f32`. The products are accumulated in `f32` lanes by
+  [`f16x8.dotAdd` and `bf16x8.dotAdd`](/docs/std/simd/#16-bit-floats), and the lanes are summed
+  in `number` at the end.
+- The result is the same number on every CPU. `dotBf16` doesn't use a CPU's own bf16 dot product,
+  whose rounding differs; a loop over `bf16x8.dotAddFast` does.
+- They panic with a `RangeError` when the lengths differ.
+
+The int8 dot product, `dotI8`, is in [velt/simd](/docs/std/simd/#integer-dot-products).
+
+## Performance
+
+- On arm64 the conversions are `fcvtl` and `fcvtn`. With `--cpu x86-64-v3` (or `native` on such
+  a CPU) x86-64 uses F16C, one instruction for eight values.
+- A default x86-64 build (`x86-64-v2`) converts `f16` with an SSE4.1 integer sequence, several
+  times slower. The F16C instructions are not chosen at run time yet, so build with `--cpu` where
+  speed matters ([Platforms](/docs/tooling/platforms/)).
+- `bf16` is a shift on every CPU.
+- On arm64, `f16FromBytes` costs the same as copying the bytes, and `widenF16Into` about 1.1
+  times as much.

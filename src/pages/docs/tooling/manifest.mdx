@@ -1,15 +1,19 @@
 ---
-title: "package.vlt"
-description: "Every package has a package.vlt at its root: the manifest, written in Velt. velt new and velt init write one."
+title: "package.velt"
+description: "Every package has a package.velt at its root: the manifest, written in Velt. velt new and velt init write one."
 layout: "docs"
 category: "Tooling"
 order: 40
 ---
 
-# `package.vlt`
+import { Callout } from '@/components/mdx';
 
-Every package has a `package.vlt` at its root: the manifest, written in Velt. `velt new` and
+# `package.velt`
+
+Every package has a `package.velt` at its root: the manifest, written in Velt. `velt new` and
 `velt init` write one.
+
+<Callout title="Coming from 0.5">The manifest used to be `package.vlt`. It is no longer read: rename it to `package.velt` (the error says so), and your `.vlt` source files to `.velt`.</Callout>
 
 ```ts ignore
 import type { Package } from "velt/package";
@@ -22,13 +26,18 @@ export const pkg: Package = {
     json: "1.2",                // registry package, semver requirement
     http: { version: "0.3" },   // object form
     util: { path: "../util" },  // local package (version optional)
+    zstd: {                     // from a release archive, pinned by its SHA-256
+      url: "https://github.com/acme/zstd/releases/download/v1.0.0/zstd-1.0.0.tar.gz",
+      sha256: "<64 lowercase hex digits>",
+      strip: 1,
+    },
     "http-server": {            // from a git repository
       git: "https://github.com/velt-lang/velt",
-      tag: "v0.5.0",
+      tag: "v0.6.0",
       path: "packages/http-server",
     },
   },
-  paths: { "@app/*": "src/*" }, // import { x } from "@app/util"  →  src/util.vlt (or .ts, .tsx)
+  paths: { "@app/*": "src/*" }, // import { x } from "@app/util"  →  src/util.velt (or .ts, .tsx)
 };
 ```
 
@@ -39,7 +48,7 @@ objects. Comments and trailing commas are fine; anything else (`null`, template 
 variables, calls, spreads) is an error that points at it:
 
 ```text
-package.vlt:5:13: error: `null` is not allowed; leave the key out
+package.velt:5:13: error: `null` is not allowed; leave the key out
 ```
 
 In an editor, the language server ([`velt lsp`](/docs/tooling/editors/)) completes the fields valid where
@@ -74,10 +83,10 @@ file and reports these errors without building anything.
 
   The registry keeps both per published version, so changing them means publishing a new
   version.
-- `entry`: the program's root file, a path inside the package (default `"src/main.vlt"`). A
-  package with `src/main.vlt` is runnable; a package with `src/lib.vlt` is a library that other
+- `entry`: the program's root file, a path inside the package (default `"src/main.velt"`). A
+  package with `src/main.velt` is runnable; a package with `src/lib.velt` is a library that other
   packages import. A package can have both. Without an `entry`, `src/main.ts` or
-  `src/main.tsx` (`src/lib.ts`, `src/lib.tsx`) work like `src/main.vlt` (`src/lib.vlt`); two of
+  `src/main.tsx` (`src/lib.ts`, `src/lib.tsx`) work like `src/main.velt` (`src/lib.velt`); two of
   them at once are an error.
 
 ## `velt`
@@ -95,7 +104,7 @@ the field accepts, installing one first when none is
 own `velt` started directly warns when its version is not one the field accepts:
 
 ```text
-warning: package.vlt asks for velt "0.2", but this is velt 0.1.0; it may not build the package
+warning: package.velt asks for velt "0.2", but this is velt 0.1.0; it may not build the package
 ```
 
 | `velt` | builds with |
@@ -117,14 +126,30 @@ a requirement that names one (`"0.2.0-rc.1"`). Leave the field out to build with
 ## `dependencies`
 
 `import … from "json"` and `"json/sub"` resolve through `dependencies`: the dependency's
-`src/lib.vlt`, or `src/sub.vlt` / `src/sub/index.vlt` (or `.ts`, `.tsx`, tried like a relative
+`src/lib.velt`, or `src/sub.velt` / `src/sub/index.velt` (or `.ts`, `.tsx`, tried like a relative
 import's files). Standard library imports (`"velt/x"`)
 and relative imports (`"./x"`) never do. Names that aren't identifiers are quoted
 (`"my-lib": "1.0"`, `"@sigx/reactivity": { path: "../reactivity" }`; a scoped dependency needs
-a `path` or `git`). `{ git: "https://…", branch: "main", path: "packages/x" }` takes the package
+a `path`, `git` or `url`). `{ git: "https://…", branch: "main", path: "packages/x" }` takes the package
 from a git repository ([git dependencies](/docs/tooling/packages/#git-dependencies)): a Velt package, or an
 npm package (or a whole workspace of them) compiled from its TypeScript sources. The official packages (`sqlite`, `postgres`, `redis`, `http-server`) come this way or by
-`path` ([official packages](/docs/tooling/packages/#official-packages)). `velt add` edits this object and keeps your comments. In a member of a
+`path` ([official packages](/docs/tooling/packages/#official-packages)).
+`{ url, sha256, strip?, path?, version? }` takes it from a release archive
+([release archives](/docs/tooling/packages/#release-archives)):
+
+- `url`: a `.tar.gz` or `.zip` at an `https` URL (the scheme in lowercase). Plain `http` is
+  allowed only to this machine, and only in a manifest the project controls (its own, a workspace
+  member's, a local path dependency's).
+- `sha256`: the archive's SHA-256, 64 lowercase hex digits. Required: `velt add <url>` computes and
+  writes it. Another archive at that URL is an error, not an update.
+- `strip`: how many leading directories to remove (0 to 16), each the archive's only entry at its
+  level, as `tar --strip-components` on a release's one top directory.
+- `path`: the package's directory inside the archive.
+
+Use a project's real release assets: a forge's generated archive of a tag can change its bytes.
+For source, use `git` with a commit.
+
+`velt add` edits this object and keeps your comments. In a member of a
 [workspace](/docs/tooling/packages/#workspaces), `name: "workspace"` depends on another member, or on the
 requirement the workspace writes for `name`. See
 [Packages](/docs/tooling/packages/). A bare import that no dependency (and no `paths` alias) claims looks
@@ -187,17 +212,100 @@ is an error too.
 ## `native`
 
 ```ts ignore
-native: { targets: ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] },
+native: {
+  c: {
+    c: { headers: ["<string.h>"] },
+    sqlite3: { sources: ["native/sqlite3.c"], headers: ["native/sqlite3.h"], defines: { SQLITE_THREADSAFE: "1" } },
+  },
+  targets: ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"],
+},
 ```
 
-The package includes a Rust crate (a `cdylib` + `staticlib` built on the `velt_native` crate)
-whose functions its Velt code declares ([Packages with native code](/docs/tooling/packages/#packages-with-native-code)).
+The package has native code: C libraries its Velt code calls with
+[`declare c`](/docs/reference/c-interop/), or a Rust crate whose functions it declares
+([Packages with native code](/docs/book/native-packages/)). A program that depends on it lists
+it in [`allowNative`](#allownative).
 
-- `path`: the crate's directory, a directory name in the package root (default `"native"`).
-- `targets`: the targets `velt publish` publishes a prebuilt library for (it fails if one is
-  missing): `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`,
-  `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`.
-- `wasm`: must be `false` (the default); WebAssembly libraries are not supported yet.
+- `c`: the C libraries the package's `declare c("<library>")` functions name, by that name. A
+  package that declares C functions has this object; `c: { c: { headers: ["<stdlib.h>"] } }` is
+  enough to call only the platform's C library, whose key is `c`. Each library is an object:
+  - `system`: the platform's library, by build condition (`darwin`, `linux`, `win32`, `native`,
+    `default`). `{ linux: "sqlite3" }` links `-lsqlite3` (`sqlite3.lib` on Windows), and
+    `"framework:Accelerate"`, under `darwin` only, a macOS framework. The first condition the
+    build has applies; on a target none applies to, the library's declarations are errors. A
+    value is a library's name, at most 64 bytes, not a linker flag or a file name (`libm.so.6` is
+    an error naming `m`). The `c` library has no `system`.
+  - `headers`: the C headers the declarations are checked against, one list for every target: a
+    path in the package (`"native/sqlite3.h"`), or `"<string.h>"` for a C library header. Names
+    are letters, digits, `_`, `-`, `+` and `.`, in `/`-separated segments that aren't `.` or `..`
+    and don't start with `-`; a path outside the package, an absolute path in angle brackets or an
+    empty segment is an error. Other libraries' headers aren't found by name (`"<sqlite3.h>"`):
+    the package ships its copy.
+  - `unchecked: true`: the library has no headers (a binary-only SDK), so its declarations go
+    unchecked; `allowNative`'s refusal and `velt check` say so. Every library the package declares
+    functions of lists `headers` or says `unchecked`, not both.
+  - `sources`: the library's `.c` files under `native/` (`"native/sqlite3.c"`), which
+    `velt native build` compiles for each target with the pinned zig. A library has `sources` or
+    `system`, not both. A package with `sources` ships all of `native/`.
+  - `defines`: what its `sources` and headers are compiled with: `{ SQLITE_THREADSAFE: "1" }` is
+    `-DSQLITE_THREADSAFE=1`.
+- `targets`: the targets `velt publish` builds or takes a prebuilt library for, of the C
+  `sources` or of a Rust crate (it fails if one is missing): `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`,
+  `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`.
+- `path`: a Rust crate's directory, a directory name in the package root (default `"native"`). A
+  package with `targets` and no `c` sources has a Rust crate there (a `cdylib` + `staticlib` built
+  on the `velt_native` crate).
+- `wasm`: must be `false` (the default); native libraries are not supported on WebAssembly.
+
+## `allowNative`
+
+```ts ignore
+allowNative: [
+  "sqlite",                                                                // the registry, or a local path
+  { name: "llama", git: "https://github.com/o/llama" },                   // that repository, any commit
+  { name: "duck", url: "https://github.com/o/duck/releases/download/" },  // archives under that prefix
+],
+```
+
+The packages with native code (C libraries or a Rust crate) the program allows. Native code runs
+with no safety net, so a program says which packages it trusts with it: installing or building
+with any other package that has native code, anywhere among its dependencies, is an error that
+names the chain of dependencies and the line to add.
+
+```text
+package `sqlite` (through `orm` → `sqlite`) has native code, which runs with no safety net
+allow it in package.velt, if you trust it: allowNative: ["sqlite"]
+```
+
+- Only the root package's list applies. At a [workspace](/docs/tooling/packages/#workspaces)'s
+  root, `velt install` checks each member's list before it builds anything.
+- A name allows that package from the registry or a local path. A package from git needs
+  `{ name, git }`, and one from a release archive `{ name, url }`, with exactly one of the two.
+- `git` matches the repository at any commit. URLs compare without a trailing `/` or `.git`, with
+  the host in any case and a default port dropped, and `user@host:/path` as
+  `ssh://user@host/path`. A home-relative `git@host:path` and `ssh://git@host/path` are different
+  repositories: write the entry the way the dependency spells it (the error names both URLs).
+- `url` is an `https` prefix with a path under the host, and matches whole path segments:
+  `https://github.com/o/duck/releases/download/` allows every release of that project. A refusal
+  suggests the archive URL's directory as the prefix (and nothing for a URL no prefix can name,
+  such as plain `http`). An archive cached from one URL counts for another only once that URL has
+  served the same bytes.
+- One package name has one source. The root's own dependency entry for a name wins over what
+  other packages ask for (`velt install` prints a note, and the lock records it); two
+  dependencies that ask for one package from different sources, when the root doesn't name it,
+  are an error.
+- A refusal says when a package's C library is `unchecked`:
+  ``its C library `sdk` is not checked against headers (`unchecked: true`)``.
+- `velt add` and `velt remove` keep `allowNative` and `native` when they rewrite the file.
+  `velt add` of a package with native code fails until the list names it, printing the line to
+  add. `velt install` and `velt update` print a note when a package's native code changes.
+
+When `velt check` passes, it ends with what the list allows: each package's C libraries, whether
+it has a Rust crate, and each piece of its unsafe code by file and line
+([what a program trusts](/docs/tooling/packages/#what-a-program-trusts)).
+
+<Callout title="Coming from 0.5">A program that uses `sqlite` or `postgres` lists it here: `allowNative: ["sqlite"]`. Then run `velt install` once, since `velt.lock.json` records the list. `redis` has no native code and needs no entry.</Callout>
 
 ## `build`
 
@@ -221,7 +329,7 @@ tsCompat: ["src/components", "src/models"],
 
 Folders whose modules a TypeScript client shares, so they must stay in the
 common subset of TypeScript and Velt (like the
-client's `tsconfig.json` `include`). `velt check --ts-compat` without paths lints every `.vlt`,
+client's `tsconfig.json` `include`). `velt check --ts-compat` without paths lints every `.velt`,
 `.ts` and `.tsx` file in them ([`velt check`](/docs/tooling/cli/#code-shared-with-typescript---ts-compat)),
 and the editor shows the findings, with their fixes, as you type
 ([editors](/docs/tooling/editors/#code-shared-with-typescript)). Nothing else changes: `velt build` and a
@@ -234,10 +342,48 @@ plain `velt check` never lint.
   are the same folder, so such a list would mean something else on Linux.
 - The files in a folder are found as `velt check` finds a package's: `node_modules/`,
   `target/`, hidden and symlinked directories are skipped, and so is a package nested in the
-  folder (a directory with its own `package.vlt`), which lints its own `tsCompat`.
+  folder (a directory with its own `package.velt`), which lints its own `tsCompat`.
 - Not empty: leave the field out instead of writing `[]`.
 - A folder that doesn't exist is a warning in the editor and an error for
   `velt check --ts-compat`.
+
+## `host`
+
+A **host package** describes a JavaScript platform for [`velt build --host`](/docs/tooling/webassembly/#javascript-platforms-velt-build---host):
+its target, the condition its builds give [conditional imports](/docs/reference/modules/#conditional-imports),
+the entry module that adapts the platform to the runtime's glue, and configuration files to
+start from. `{{name}}` in a scaffolded file becomes the program's name.
+
+```ts ignore
+host: {
+  target: "wasm32-unknown-unknown",
+  condition: "workers",
+  entry: "./src/worker.mjs",
+  scaffold: { "wrangler.toml": "./src/wrangler.toml" },
+},
+```
+
+## `hostModules`
+
+The JavaScript of the host modules a package's [`declare host`](/docs/reference/host-functions/)
+functions call, by module name; a host build copies them next to the program
+([host modules](/docs/packages/cloudflare/#host-modules)).
+
+```ts ignore
+hostModules: { kv: "./src/kv.mjs" },
+```
+
+## `lint`
+
+Levels for [lint findings](/docs/tooling/lint/): `perf` for every `perf/…` finding (`"hint"`,
+the default, `"warn"`, `"deny"` or `"off"`), and `rules` for single rules by code.
+
+```ts ignore
+lint: {
+  perf: "warn",
+  rules: { "perf/number-double": "off" },
+},
+```
 
 ## `registry`
 
@@ -260,7 +406,7 @@ $ velt manifest --json
   "dependencies": {
     "json": "1.2"
   },
-  "entry": "src/main.vlt",
+  "entry": "src/main.velt",
   "name": "hello",
   "paths": {},
   "velt": "0.1",
@@ -273,13 +419,17 @@ $ velt manifest --json
 `velt install` writes `velt.lock.json`, which pins the exact version and content hash of every
 dependency. It is generated JSON, pretty-printed with a stable key order so diffs stay readable:
 `"version": 1` and a `"packages"` array with one entry per package (`name`, `version`, `source`:
-`"registry"`, `"path+<relative path>"`, `"git+<url>?branch=main&path=<dir>#<commit>"` ([git dependencies](/docs/tooling/packages/#git-dependencies)) or,
+`"registry"`, `"path+<relative path>"`, `"git+<url>?branch=main&path=<dir>#<commit>"` ([git dependencies](/docs/tooling/packages/#git-dependencies)),
+`"url+<url>?strip=1&path=<dir>#sha256:<hex>"` ([release archives](/docs/tooling/packages/#release-archives)) or,
 in a [workspace](/docs/tooling/packages/#workspaces), `"workspace+<member dir>"`, `checksum`, `dependencies`, and for a package with
 native code a `"native"` object with the checksum of its prebuilt library for every published
-target). In a package with a [`velt` field](#velt), it also records the velt version that builds the
+target). It also records the root's [`allowNative`](#allownative) list, sorted
+(`"allowNative": ["sqlite"]`), so a change of what the program trusts shows in the lockfile's
+diff, and as `overrides` the dependencies whose source the root's own entry chose. A workspace's
+lockfile has no list. In a package with a [`velt` field](#velt), it also records the velt version that builds the
 package, `"velt": "0.2.1"`: the one that created the lock, kept until `velt update` (or until
 the field doesn't accept it). The `velt` on your `PATH` runs that version in the package, installing it
 if needed, so a laptop and CI build a commit with the same compiler even when newer patch
 versions are installed. Commit it for applications. `--locked` on `build`, `run`, `test` and
 `install` fails instead of changing it, and fails when a different velt runs than the lock
-records.
+records or when its `allowNative` list doesn't match `package.velt`'s (run `velt install` once).

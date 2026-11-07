@@ -132,13 +132,14 @@ export default defineSSGConfig({
     // "Point your AI assistant at veltlang.com/llms.txt" strip on the home page.
     llms: {
         intro: [
-            'Velt is a compiled language with TypeScript syntax: `velt run app.ts` compiles a `.ts`/`.tsx`/`.vlt`',
+            'Velt is a compiled language with TypeScript syntax: `velt run app.ts` compiles a `.ts`/`.tsx`/`.velt`',
             'file to native code through LLVM. Valid TypeScript behaves as in Node, but the dynamic parts of',
-            'JavaScript are left out on purpose (`eval`, prototypes, decorators, `with`, `delete`, loose `==`);',
+            'JavaScript are left out on purpose (`eval`, prototypes, run-time decorators, `with`, `delete`, loose `==`);',
             'read [Velt for TypeScript developers](https://veltlang.com/docs/book/ts-developers.md) before writing',
-            'code. Velt adds integer types (`i64`, `u8`…), typed errors (`throws`), `extend`, `spawn` and',
-            '`velt/*` standard modules. Every docs page has a markdown rendition at its URL with the trailing',
-            'slash replaced by `.md`; the whole corpus is https://veltlang.com/llms-full.txt.',
+            'code. Velt adds integer types (`i64`, `u8`…), typed errors (`throws`), `extend`, operator methods,',
+            'typed compile-time decorators, `spawn` and `velt/*` standard modules. Every docs page has a markdown',
+            'rendition at its URL with the trailing slash replaced by `.md`; the whole corpus is',
+            'https://veltlang.com/llms-full.txt.',
         ].join('\n'),
         sections: [
             { title: 'The book', pages: docsArea('book') },

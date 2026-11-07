@@ -55,7 +55,7 @@ describe('the snapshot', () => {
         expect(apiModules().size).toBeGreaterThanOrEqual(30);
         expect(apiModule('net/http')?.specifier).toBe('velt/net/http');
         expect(apiModule('/fs/')?.specifier).toBe('velt/fs');
-        for (const m of apiModules().values()) expect(m.file, m.module).toMatch(/(^|\/)index\.vlt$/);
+        for (const m of apiModules().values()) expect(m.file, m.module).toMatch(/(^|\/)index\.velt$/);
     });
 
     it("gives a module's internal files no page of their own", () => {
@@ -117,7 +117,7 @@ describe('an export section', () => {
             params: [{ name: 'text', doc: 'The JSON text.' }], returns: 'The parsed value.', throws: ['SyntaxError if `text` is not JSON.'],
             examples: ['```ts\nconst v = await parse("1");\n```'], deprecated: 'Use `JSON.parse`.', see: ['`stringify`'],
         },
-        links: [], source: { file: 'std/demo.vlt', line: 12 }, reexportedFrom: null, members: [],
+        links: [], source: { file: 'std/demo.velt', line: 12 }, reexportedFrom: null, members: [],
     };
     const render = async (it: ApiItem) => {
         await highlighterReady;
@@ -127,7 +127,7 @@ describe('an export section', () => {
     it('renders every tag section it has', async () => {
         const html = await render(item);
         for (const label of ['Deprecated', 'Parameters', 'Returns', 'Throws', 'Example', 'See also']) expect(html).toContain(`>${label}<`);
-        expect(html).toContain('std/demo.vlt:12');
+        expect(html).toContain('std/demo.velt:12');
         expect(html).toContain('>async<');
         expect(html).toContain('>deprecated<');
     });

@@ -1,0 +1,95 @@
+---
+title: "velt/ffi"
+description: "What crosses to C functions declared with declare c: Ptr, StrBytes, CString, Out, OutPtr, and copies of C memory."
+layout: "docs"
+category: "Standard library"
+order: 155
+---
+
+# velt/ffi
+
+`import { Ptr, StrBytes, byteLength, CString, Out, OutPtr, readBytes, readUtf8, readCString } from "velt/ffi"`.
+The types that cross to C functions declared with
+[`declare c`](/docs/reference/c-interop/): pointers, strings, out-parameters, and copies of C
+memory. Programs use them only through a binding's safe API; a
+[package with native code](/docs/book/native-packages/) uses them to write that API.
+
+```ts ignore
+import { CString, Out, OutPtr, Ptr, StrBytes, byteLength, readCString } from "velt/ffi";
+
+declare c("c") function memcmp(a: StrBytes, b: StrBytes, n: usize): i32;
+declare c("c") function strtoll(s: CString, end: OutPtr<u8>, base: i32): i64;
+declare c("c") function frexp(x: f64, exp: Out<i32>): f64;
+declare c("c") function getenv(name: CString): Ptr<u8> | null;
+
+const e = new Out<i32>(0);
+// SAFETY: frexp writes `e` and reads nothing else.
+const m = unsafe { frexp(8, e) }; // m = 0.5, e.value = 4
+// SAFETY: getenv returns a NUL-terminated string or NULL, read before any setenv.
+const p = unsafe { getenv(new CString("HOME")) };
+// SAFETY: as above.
+const home = p === null ? null : unsafe { readCString(p) };
+```
+
+Who may import what: `Ptr`, `OutPtr`, `readBytes`, `readUtf8` and `readCString` are raw API,
+importable only by the standard library and by packages with native code that the program allows
+([where unsafe code may be](/docs/reference/c-interop/#where-unsafe-code-may-be)). `CString`,
+`Out`, `StrBytes` and `byteLength` can be imported anywhere:
+
+```ts
+import { CString, Out, byteLength } from "velt/ffi";
+
+const text = new CString("héllo");
+console.log(text.toString(), byteLength("héllo")); // héllo 6
+const n = new Out<i32>(0);
+console.log(n.value); // 0
+```
+
+## Pointers
+
+- `Ptr<T>`: the address of a `T` in C memory, what a C function returns as `Ptr<T>` and takes as
+  one. `T` is a [`declare c type`](/docs/reference/c-interop/#declare-c-type), a C struct, a
+  number type, `bool`, `void` or another pointer. `Ptr<T> | null` may be `NULL`. Nothing in Velt
+  reads or writes through a `Ptr` outside unsafe code.
+- `Ptr.at<T>(address: usize): Ptr<T>` makes one from an address. It is unsafe: nothing checks that
+  a `T` is there, and C will read or write it. `Ptr.addressOf(p): usize` is the address it holds.
+- A parameter typed `null` always passes `NULL`.
+
+## Strings
+
+- `StrBytes` (a `string`): a parameter of this type passes the string's UTF-8 bytes, borrowed for
+  the call, without a NUL and without a copy. The binding passes the length beside it with
+  `byteLength(s)`. A string holding a lone surrogate passes a copy with U+FFFD in its place,
+  which has the same byte length.
+- `byteLength(s: string): usize`: the number of UTF-8 bytes a `StrBytes` argument passes. O(1).
+- `CString`: a NUL-terminated copy of a string's UTF-8, for C's `const char *`. `new CString(s)`
+  makes it once, with one allocation, and it can be passed to any number of calls. A lone
+  surrogate becomes U+FFFD; a string holding a NUL throws a `TypeError`, since C would stop
+  reading there. `toString()` gives the text back.
+
+## Out-parameters
+
+- `Out<T>` for a number or `bool` (C's `_Bool`): C writes through a `T *` parameter, and `value`
+  holds what it wrote once the call returned. `new Out<T>(initial)` makes one.
+- `OutPtr<T>` for a pointer: C writes through a `T **` parameter (`sqlite3_open_v2`'s database),
+  and `value` is the `Ptr<T>` it wrote, or `null` for `NULL` (also before any call).
+  `new OutPtr<T>()` makes one.
+
+## Reading C memory
+
+Each of these copies C memory into a Velt value. They are unsafe functions: the caller vouches
+that the memory is there and C doesn't change it during the copy.
+
+- `readBytes(p: Ptr<u8>, len: usize): u8[]`: a copy of the `len` bytes at `p`.
+- `readUtf8(p: Ptr<u8>, len: usize): string`: the text of the `len` bytes of UTF-8 at `p`.
+- `readCString(p: Ptr<u8>): string`: the text of the NUL-terminated string at `p`.
+
+Invalid UTF-8 becomes U+FFFD.
+
+## Arrays
+
+Arrays of numbers need no type of their own: a `u8[]` or `readonly f64[]` parameter passes the
+address of the first element, borrowed for the call. `readonly` says C only reads it; otherwise
+the array counts as modified. A `u8[]` parameter also takes a typed array, a `DataView` or a
+`subarray`. The full table of what crosses, and how each type matches the C headers, is in
+[C functions](/docs/reference/c-interop/#what-crosses).

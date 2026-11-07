@@ -933,8 +933,10 @@ As in TypeScript, an interface declared again in the same module is one interfac
 members of every declaration: the first declaration's members first, then each later one's.
 `declare module "spec" { interface X { … } }` adds members to the interface `X` that module
 declares (also when it re-exports it from another module), wherever the augmentation is: the
-interface has the same members in every module. `declare global { interface X { … } }` merges
-into an interface `X` of its own module, or declares one there.
+interface has the same members in every module. Names in an augmentation resolve in the
+augmenting module (its imported types, private types and namespace imports), except that a
+name the target module exports wins. `declare global { interface X { … } }` merges into an
+interface `X` of its own module, or declares one there.
 
 ```ts
 interface Point {
@@ -957,8 +959,9 @@ console.log(p.x + p.y); // 3
   ([Types and values of one name](/docs/reference/modules/#types-and-values-of-one-name)).
 - `var NAME: T;` in `declare global` declares a build-time constant (see
   [`define`](/docs/tooling/manifest/#define)).
-- A namespace of types in `declare global` is declared in its module, as a `declare namespace`
-  ([Namespaces](/docs/reference/modules/#namespaces)), like a `declare global` interface.
+- A namespace of types in `declare global` is global: other modules name its members
+  (`JSX.IntrinsicElements`) unless they declare or import a namespace of that name themselves
+  ([Namespaces](/docs/reference/modules/#namespaces)).
 - Not supported yet: other declarations in `declare global` and `declare module` blocks
   (functions, namespaces in `declare module`, `var` in `declare module`), declaring a new interface in another module with
   `declare module`, a `declare global` interface visible in other modules, and a shorthand
@@ -1105,6 +1108,9 @@ builtins included, at zero cost (the calls are direct):
   have none), a call is an error: ``ambiguous extension method `m` ``, naming both blocks.
 - `private` is not allowed in `extend`, and an extension cannot add fields (the layout is
   fixed).
+- An `extend` block may add [operator methods](#operator-methods) to a class or a struct
+  (`extend Money { [Symbol.add](o: Money): Money { … } }`), but not to a number type,
+  `string`, arrays or other built-in types, whose operators are fixed.
 - A type becomes `Comparable` by defining `compareTo` in an `extend` block
   ([Comparable](#comparable)), and `Iterable<T, E>` by defining `[Symbol.iterator]()`
   returning an `Iterator<T, E>`, or as a generator method (`*[Symbol.iterator](): Generator<T, E>`); `[Symbol.asyncIterator]()` makes it an `AsyncIterable<T, E>`
@@ -1245,6 +1251,133 @@ console.log(label(5 as u64), label("abc"), items.map((d) => d.describe()));
 // the u64 5 a comparable value [ 'the u64 7', 'a comparable value' ]
 ```
 
+## Operator methods
+
+A class, a struct or an `extend` block defines an operator for its type with a method keyed by
+a well-known symbol: `a + b` calls `a[Symbol.add](b)`, which may also be called directly.
+
+```ts
+class Vec3 {
+  constructor(public x: f64, public y: f64, public z: f64) {}
+  [Symbol.add](o: Vec3): Vec3 { return new Vec3(this.x + o.x, this.y + o.y, this.z + o.z); }
+  [Symbol.sub](o: Vec3): Vec3 { return new Vec3(this.x - o.x, this.y - o.y, this.z - o.z); }
+  [Symbol.mul](k: f64): Vec3 { return new Vec3(this.x * k, this.y * k, this.z * k); }
+  static [Symbol.mul](k: f64, v: Vec3): Vec3 { return v * k; }   // 2 * v
+  [Symbol.neg](): Vec3 { return new Vec3(-this.x, -this.y, -this.z); }
+  toString(): string { return `(${this.x}, ${this.y}, ${this.z})`; }
+}
+
+const a = new Vec3(1, 2, 3);
+const b = new Vec3(4, 5, 6);
+const c = new Vec3(1, 1, 1);
+console.log((a + b * 0.5 - -c).toString()); // (4, 5.5, 7)
+console.log((2 * a).toString());            // (2, 4, 6)
+```
+
+| Operator | Method | Shape |
+|---|---|---|
+| `a + b`, `-`, `*`, `/`, `%`, `**` | `[Symbol.add]`, `sub`, `mul`, `div`, `rem`, `pow` | `(other: R): O` |
+| `a & b`, `\|`, `^`, `<<`, `>>`, `>>>` | `[Symbol.bitAnd]`, `bitOr`, `bitXor`, `shl`, `shr`, `ushr` | `(other: R): O` |
+| `l op b` with only `b` of the type | `static [Symbol.<op>](l: L, b: Self): O` | the first parameter of another type |
+| `-a`, `~a` | `[Symbol.neg]`, `[Symbol.bitNot]` | `(): O` |
+| `a op= b` | `[Symbol.addAssign]` … `[Symbol.ushrAssign]` | `(other: R): void`, changes `this` |
+| `a[i]` | `[Symbol.index]` | `(i: K, …): V` |
+| `a[i] = v` | `[Symbol.setIndex]` | `(i: K, …, v: V): void` |
+
+- An operator is resolved as the method call it stands for: own and inherited methods
+  (overridden ones dispatch), `extend` blocks with their specificity rules, interface values
+  and a type parameter's bounds. Overloads pick by the right operand. The operands are
+  evaluated left to right, once each, and the operator throws what the method throws.
+- For `a op b`, `a`'s instance method that accepts `b` is used, else the static method of
+  `b`'s type whose first parameter accepts `a` (`2 * v`). When both accept, the use is an
+  error (``ambiguous operator `+` for `V` and `W` ``), so adding a static method never changes
+  what existing code calls.
+- `a op= b` evaluates its target once and calls `[Symbol.opAssign]` on it in place when the
+  type has one (other references to the object see the change, as with Python's `+=`), else it
+  assigns `a = a op b`; the target must be assignable either way. `++a` and a statement `a++`
+  are `a += 1`; a postfix `a++` whose value is used keeps the old object and assigns
+  `a = a + 1`.
+- `a[i]` reads through `[Symbol.index]` and `a[i] = v` writes through `[Symbol.setIndex]`, whose
+  value is of the type `[Symbol.index]` returns; a type with `[Symbol.index]` only is
+  read-only. `a?.[i]` short-circuits, and `a[i] op= v` reads, applies the operator and writes
+  back. A key naming a member stays property access: with a member `x`, `a["x"]` is the member
+  and `a[s]` the indexer.
+- An operator method has plain parameters (no optional, default or rest one) and runs
+  synchronously (no `async`, generator or accessor).
+- **Not overloadable**: `==`, `!=`, `===`, `!==`; `<`, `<=`, `>`, `>=`, which come from
+  [`Comparable`](#comparable); `&&`, `||`, `??`, `!`, `in`, `instanceof`, `typeof` and unary
+  `+`.
+- **Operators never change the built-in types**: numbers, `string`, `boolean`, arrays, tuples,
+  records, `Map` indexing, and `any` / `unknown`, which keep JavaScript's ToPrimitive (an object
+  with `[Symbol.add]` held as `any` is not added through it). Declaring an operator method on
+  one of them is an error, and so is a `[Symbol.add]` taking a `string`: `+` with a string is
+  always concatenation.
+- A type without the operator gets ``cannot apply binary operator `*` to type `V` `` with the
+  method to define. In editors, hover and go-to-definition on an operator show the method, and
+  `velt check --ts-compat` reports operators on objects (rule `operator`), which TypeScript
+  rejects.
+
+[`velt/simd`](/docs/std/simd/) vectors ([SIMD vectors](/docs/reference/types/#simd-vectors)),
+[`BigInt`](/docs/std/math/bigint/) and [`Duration`](/docs/std/time/) have operators.
+
+### Indexers with several keys
+
+`m[i, j]` reads through `[Symbol.index](i, j)` and `m[i, j] = v` writes through
+`[Symbol.setIndex](i, j, v)`, with any number of keys (`cube[x, y, z]`). The compound forms work
+too: `m[i, j] op= v`, `??=`, `m[i, j]++` and `--`, an assignment used as a value, and
+`m?.[i, j]`. Generic code reaches them through an interface bound (`G extends Grid`).
+
+```ts
+class Matrix {
+  data: f64[] = [];
+  constructor(public rows: usize, public cols: usize) {
+    for (let i: usize = 0; i < rows * cols; i++) this.data.push(0);
+  }
+  [Symbol.index](i: usize, j: usize): f64 { return this.data[i * this.cols + j]; }
+  [Symbol.setIndex](i: usize, j: usize, v: f64): void { this.data[i * this.cols + j] = v; }
+}
+
+const m = new Matrix(2, 2);
+m[0, 0] = 1;
+m[1, 1] = 4;
+m[1, 1] += 1;
+console.log(m[0, 0], m[1, 1], m[0, 1]); // 1 5 0
+```
+
+- The object is evaluated first, then each key once, left to right, then the value. `op=` and
+  `++` read and write the element at the same keys without evaluating them again. `m?.[i, j]`
+  on `null` evaluates no key and gives `undefined`.
+- `[Symbol.setIndex]` takes `[Symbol.index]`'s keys, as many and of the same types position by
+  position, and then the value.
+- Several keys on a type without such an indexer (an array, a `Map`, a typed array, a string,
+  `any`, a class whose `[Symbol.index]` takes one key) is an error. In TypeScript `a[x, j]` is
+  the comma operator, which reads `a[j]`; Velt has no comma operator, so the error suggests
+  `a[i][j]` for an element of an element. `delete m[i, j]` is an error, and an index has no
+  trailing comma and no spread.
+
+### Operators in generic code
+
+`velt/ops` has one interface per operator (`Add<R, O = R>`, …, `Neg<O>`,
+`AddAssign<R>`, …, `Index<K, V>`, `SetIndex<K, V>`) and `Arithmetic<T>` (`Add`, `Sub`, `Mul`,
+`Div`, `Neg`) to bound a type parameter. A type with the operator method implements the
+interface without an `implements` clause, as `compareTo` makes a type `Comparable`, and
+importing `velt/ops` gives the number types and `string` their operator methods (the built-in
+operators themselves), so the same generic function runs on numbers:
+
+```ts
+import type { Arithmetic } from "velt/ops";
+
+function dot<T extends Arithmetic<T>>(a: T[], b: T[], zero: T): T {
+  let s = zero;
+  for (let i = 0; i < a.length; i++) {
+    s += a[i] * b[i];
+  }
+  return s;
+}
+
+console.log(dot([1.5, 2], [3, 4], 0)); // 12.5
+```
+
 ## Comparable
 
 The prelude declares `interface Comparable<T> { compareTo(other: T): i64; }` and implements it
@@ -1252,7 +1385,9 @@ for every number type, `string` (UTF-16 code-unit order, as `<`) and `bool`. Wit
 operators `<`, `<=`, `>` and `>=` work on `T` (static dispatch after monomorphization), and
 `sort()` orders Comparable elements (floats put `NaN` last). User types implement it with
 `implements Comparable<X>` or an `extend` block, and then `<`, `<=`, `>` and `>=` work on their
-values too (`v1 < v2` is `v1.compareTo(v2) < 0`).
+values too (`v1 < v2` is `v1.compareTo(v2) < 0`). The comparisons are not
+[operator methods](#operator-methods): `compareTo` is the one way to define them, and `==` and
+`===` compare objects by identity.
 
 ```ts
 class Version implements Comparable<Version> {

@@ -83,6 +83,31 @@ export const ROADMAP: RoadmapItem[] = [
 
     // Shipped (newest first).
     {
+        title: 'Any C library through `declare c`',
+        detail: 'Declare C functions, constants and structs and call them from `unsafe` code, checked against the C headers. `sqlite` uses it; `allowNative` decides which packages may.',
+        area: 'packages', status: 'shipped', since: '0.6.0', href: '/docs/reference/c-interop/',
+    },
+    {
+        title: 'JavaScript hosts and Cloudflare Workers',
+        detail: '`declare host` functions, `fetch` through the host, and `velt build --host host-cloudflare` for the same `http-server` program.',
+        area: 'platforms', status: 'shipped', since: '0.6.0', href: '/docs/reference/host-functions/',
+    },
+    {
+        title: 'Operators, decorators and default exports',
+        detail: 'Operator methods on your own types, typed compile-time decorators, and `export default` as in TypeScript.',
+        area: 'language', status: 'shipped', since: '0.6.0', href: '/docs/reference/decorators/',
+    },
+    {
+        title: '`f16` and `bf16`',
+        detail: 'Two-byte floats that compute as `number`, like `Float16Array`, with `velt/half` and 16-bit SIMD.',
+        area: 'language', status: 'shipped', since: '0.6.0', href: '/docs/reference/types/#f16-and-bf16',
+    },
+    {
+        title: 'Crypto, TLS and compression in Velt',
+        detail: 'X25519, ChaCha20-Poly1305, AES-GCM and P-256 in `velt/crypto`, `startTls`, and gzip, deflate and Brotli encoders.',
+        area: 'std', status: 'shipped', since: '0.6.0', href: '/docs/std/crypto/',
+    },
+    {
         title: 'Objects are references, like JavaScript',
         detail: 'Objects, arrays, maps and closures are shared references. `.clone()` makes a deep copy. No more “use of moved value”.',
         area: 'language', status: 'shipped', since: '0.5.0', href: '/docs/reference/memory/',

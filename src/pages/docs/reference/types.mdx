@@ -14,6 +14,7 @@ import { Callout } from '@/components/mdx';
 |---|---|
 | `i8 i16 i32 i64 isize`, `u8 u16 u32 u64 usize` | fixed-width integers |
 | `f32 f64`; `number` | floats; `number` is `f64`, a JavaScript number ([Numbers](#numbers)) |
+| `f16 bf16` | 2-byte storage floats that compute as `number` ([`f16` and `bf16`](#f16-and-bf16)) |
 | `boolean`, `bool` | `true` / `false`; one type with two names ([Booleans](#booleans)) |
 | `string` | immutable text, indexed in UTF-16 code units (stored as UTF-8), a value ([Strings](#strings)) |
 | `symbol`, `unique symbol` | unique values compared by identity, also naming members ([Symbols](#symbols)) |
@@ -42,8 +43,8 @@ with a constant or function, as in TypeScript
 and `unknown` hold a value of any type, checked at run time ([any and unknown](#any-and-unknown));
 dynamic JSON is `JsonValue` ([`velt/encoding/json`](/docs/std/encoding/json/)).
 
-The names TypeScript does not have (`i8`…`i64`, `isize`, `u8`…`u64`, `usize`, `f32`, `f64`,
-`bool`) are like library globals: a type alias, class, interface or enum of the module with
+The names TypeScript does not have (`i8`…`i64`, `isize`, `u8`…`u64`, `usize`, `f16`, `bf16`,
+`f32`, `f64`, `bool`) are like library globals: a type alias, class, interface or enum of the module with
 one of these names, or one it imports, takes their place there, as a local `Map` would in
 TypeScript. So TypeScript code that declares `type u8 = number` compiles and behaves as in
 Node. A module that declares none of them has Velt's types. TypeScript's own names (`number`,
@@ -74,8 +75,9 @@ integer where it proves the result is identical (loop counters, indexes, `% m` s
 of `| 0`), so integer code runs at integer speed without changing what it computes.
 `velt build --report numbers` lists the `number` variables in loops that stay doubles, and why.
 
-Integer types (`i8`..`i64`, `u8`..`u64`, `isize`, `usize`) and `f32` are Velt's opt-in for speed
-and memory where you want a fixed width; code shared with TypeScript never names them.
+Integer types (`i8`..`i64`, `u8`..`u64`, `isize`, `usize`), `f32` and the storage floats `f16`
+and `bf16` are Velt's opt-in for speed and memory where you want a fixed width; code shared with
+TypeScript never names them.
 
 - **Literals**: `7` and `0.5` are numbers. Where an integer type is expected, a literal takes it:
   `const n: i64 = 7`, `n + 1` with `n: i64`, `f(2)` with an `i32` parameter, `300 as u8` (`44`).
@@ -193,6 +195,69 @@ Locals used together (`x = y`, `x + y`) get one type. A local used both ways sta
 each use as `T` is an error that says why, with the fix: declare the type (`let i: i64 = 0`,
 which makes `/` on it integer division) or convert (`i as i64`).
 
+### `f16` and `bf16`
+
+`f16` (IEEE 754 half precision: 11 significant bits, largest finite value 65504) and `bf16`
+(bfloat16, the top 16 bits of an `f32`: 8 significant bits, `f32`'s range) are storage types,
+made for model weights and other low-precision data: an `f16[]` or `bf16[]` takes 2 bytes per
+element. Each is a `number` with 16-bit storage, exactly like an element of JavaScript's
+`Float16Array`:
+
+```ts
+const w: f16 = 0.1;      // stores 0.0999755859375
+const b: bf16 = 0.1;     // stores 0.10009765625
+const x = w * 0.1;       // a number: 0.00999755859375
+let acc: f16 = 0;
+acc += 0.1;              // as a Float16Array element's `+= 0.1`
+const ws: f16[] = [1, 2.5, 0.1];
+console.log(w, b, x, acc, w == 0.1, ws); // 0.0999755859375 0.10009765625 0.00999755859375 0.0999755859375 false [ 1, 2.5, 0.0999755859375 ]
+```
+
+- **Reading** one widens it to `number`, exactly. It also converts implicitly to `f32` and `f64`.
+- **Arithmetic** is `number` arithmetic: `w * 0.1`, `w1 + w2` and `w * w` compute in f64 and
+  give a `number`, and the bitwise operators take ToInt32 as on any number. Comparisons are
+  exact, so they give JavaScript's answer (`w == 0.1` is `false` above).
+- **Storing** rounds once, to nearest with ties to even: a literal (`const w: f16 = 0.1`),
+  `x as f16` from any number type or from the other storage type, and a compound assignment:
+  `w op= x` is `w = (w op x) as f16`, computed in f64, with `x` of any number type that converts
+  to `number` exactly. `w++` and `w--` work the same way. Only `as` converts a computed `number`
+  into one, and a literal that rounds to infinity is an error
+  (``literal out of range for `f16` ``).
+- **As expressions**, assignments give the `number` before the store rounds it, as in JS:
+  `(w = 0.1)` is `0.1`, `(w += 0.1)` is the f64 sum, and `++w` is the old value plus 1.
+- `x as f16` of an `any` takes the number it holds (a `TypeError` for anything else). Without
+  `as`, an `any` doesn't convert into one.
+- **Equality and collections** go by value, as for other numbers: `-0 == 0`, and `includes`
+  finds NaN, which is also one `Map`/`Set` key. Search and key methods compare a `number`
+  argument exactly: `xs.includes(0.1)` is `false` for `xs: f16[] = [0.1]`, which holds
+  0.0999755859375, and `xs.includes(0.1 as f16)` is `true` (also `indexOf`, `lastIndexOf`,
+  `Map.get`/`has`/`delete`, `Set.has`/`delete`). A `Set<f16>` holds f16 values, so after
+  `s.add(0.1)`, `s.has(0.1)` is `false` and `s.has(0.1 as f16)` is `true`; a JS `Set` of
+  numbers would keep the f64.
+- `sort()` and `toSorted()` without a comparator order by value, NaN last (`-0` and `0` are
+  equal), as `w.compareTo(v)` does. `+w`, `Number(w)` and `w.toString()` read the value, and
+  printing, templates, `String()` and `JSON.stringify` show it (`${0.1 as f16}` is
+  `0.0999755859375`).
+- `w.toBits()` is the `u16` bit pattern, and `f16.fromBits(b)` / `bf16.fromBits(b)` the value
+  with those bits. Storing a NaN keeps its sign and the top bits of its payload, quieted, as the
+  conversion instructions do; Node writes `0x7e00`. JavaScript leaves that encoding to the
+  implementation, so don't rely on a NaN's bits after a store.
+
+The results are Node's `Float16Array` results for every operator and literal, apart from which
+NaN a store writes. `velt check --ts-compat` reports `f16` and `bf16` as not TypeScript types,
+suggesting `number` and `Math.f16round`.
+
+**Speed.** One `+ - * /` of two `f16` values (or two `bf16` values), or of one and a literal the
+type holds exactly (`0.5`, `2`, `-3`, `65504`), stored back into an `f16`/`bf16`, runs as one
+f32 operation and one conversion instruction (`w = a * b`, `w += z`, `xs[i] *= ys[i]`,
+`x / 2`), with the same result. Anything else computes in f64 and narrows exactly, which on x86
+costs roughly 2–4× as much in vectorized loops: a literal the type can't hold (`x * 0.999`), a
+`number` or `f32` operand, `%`, `**`, or a chain such as `a * b + c`. In a hot loop, round the
+constant once (`const k = 0.999 as f16;`, then `xs[i] *= k`, which can differ from
+`x * 0.999` in JavaScript), or compute in f32 explicitly:
+`xs[i] = ((xs[i] as f32) * 0.999) as f16`. [`velt/half`](/docs/std/half/) loads and
+converts them in bulk, and [`velt/simd`](/docs/std/simd/) has `f16x8` and `bf16x8` for kernels.
+
 ### `as`
 
 `as` converts with Rust semantics: floats truncate and saturate (`3.9 as i64` is `3`,
@@ -232,7 +297,19 @@ each element converted or checked as it would be alone. The result is a new tupl
 elements, so a write into one of the two tuples does not show in the other, and `t2 === t` is
 `false` (an element that is an object is the same object in both).
 
+#### Object literals asserted to a discriminated union
+
+An object literal asserted to a discriminated union whose discriminant it gives as a value
+(`{ value: v.value, hasValue: v.hasValue } as ValuePresence<T>`) builds the member that value
+names, at run time. A value that names no member is a `TypeError` (`kind: "triangle"` for
+`"circle" | "square"`); a discriminant of a literal type tries only the member it names. Each
+property must be a field of every member.
+
 #### Field reads of an assertion
+
+`(x as M).f`, where `x`'s own type declares the field `f`, reads `x.f` and converts it to `M`'s
+field type (`(ctx as { parent?: Ctx<any> | null }).parent`); a field that doesn't convert is a
+cast error, as in tsc. The rest of this section is about a union's member.
 
 A field read of such an assertion, `(u as A).f` with `u` a variable or a field path (outside
 generic code) whose union has as a member the object type `A`, which has the field `f`, reads as
@@ -305,8 +382,12 @@ usable and no copy method is needed.
 - `String(x)` converts any value that can be printed to its text, exactly as `` `${x}` ``
   writes it (`String(1.5)` is `"1.5"`, `String(null)` is `"null"`, `String([1, 2])` is
   `"1,2"`, also when the array is held by a union: `String(x)` of a `string | number[]` or a
-  `T | string`). `Number(x)` converts a string (as JS: the whole trimmed string, `""` is `0`, else
-  `NaN`), a number or a boolean (`1` / `0`); `Boolean(x)` is `x`'s
+  `T | string`). An object type that `console.log` can't print (a field holding a function or
+  an `any`), also in a union with `undefined`, gives what Node gives, `[object Object]`; a union
+  with a function member is an error. `Number(x)` takes any value, as JS's `ToNumber` does: a
+  string (the whole trimmed string, `""` is `0`, else `NaN`), a number, a boolean (`1` / `0`),
+  `null` (`0`), `undefined` (`NaN`), an object, a `BigInt`, an `any` or `unknown`, and a value
+  of a type parameter; `Boolean(x)` is `x`'s
   [truthiness](/docs/reference/variables/#conditions-truthiness). They are called as functions, not as values
   (`xs.map(String)` is not supported yet: write `xs.map((x) => String(x))`).
 - A template literal writes `${x}` as JS's `String(x)` does ([Lexical structure](/docs/reference/lexical/)):
@@ -493,11 +574,46 @@ holds symbol keys made at run time too (see `Record<K, V>` in
 [Objects, arrays, tuples and maps](#objects-arrays-tuples-and-maps)). `PropertyKey` is
 TypeScript's `string | number | symbol`; a proxy trap's key is a `string | symbol`.
 
+### `unique symbol` types
+
+`typeof K` of a module constant holding a fresh symbol (`const K = Symbol("k")`, or
+`const K: unique symbol = Symbol()`) is a type of its own, as in TypeScript, and is used wherever
+a `symbol` is. On a union with that member, `x === K` and `x !== K` narrow both branches, and so
+does `case K:` in a `switch` (with `default` as the other branch):
+
+```ts
+const FLUSH = Symbol("flush");
+type Suspend = { p: Promise<number> } | typeof FLUSH;
+
+async function step(s: Suspend): Promise<number> {
+  if (s === FLUSH) return 0;
+  return await s.p;
+}
+
+console.log(await step(FLUSH), await step({ p: Promise.resolve(7) })); // 0 7
+```
+
+Velt checks what TypeScript trusts:
+
+- A symbol asserted to `typeof K` (`s as typeof K`, or an `any` converted to it) is checked at
+  run time: another symbol is a `TypeError`.
+- On a union with no member for other symbols, a symbol that is none of the union's constants
+  stops `x === K`, `x !== K`, `case K:` and `default` with ``TypeError: the value is not `S` ``,
+  however it arrived (an `any` array, a type parameter's instance). Where Node reads
+  `undefined` from it and goes on, Velt stops. A member that can hold other symbols leaves room
+  for it: `symbol`, or a member made from a type parameter whose instance holds symbols.
+- `as` between types that differ only in `typeof K` and `symbol` keeps the value (`l as S[]`,
+  `{ v: L } as { v: S }`, `[Symbol("z")] as S[]`), `readonly` aside, and a later test of `K`
+  stops on a bad value.
+
+Values of such types compare as in TypeScript (`x === y` with `y: symbol`), without narrowing.
+
 ## SIMD vectors
 
 A SIMD vector holds several numbers of one type, its *lanes*, and an operation on it works on
 all of them with one CPU instruction: a `u8x16` is sixteen `u8`, an `f32x4` four `f32`. The
-types are `i8x16 u8x16 i16x8 u16x8 i32x4 u32x4 i64x2 u64x2 f32x4 f64x2`, each 128 bits, which
+types are `i8x16 u8x16 i16x8 u16x8 i32x4 u32x4 i64x2 u64x2 f32x4 f64x2` (and `f16x8`, `bf16x8`
+for [half-precision data](#f16-and-bf16)), each 128 bits, which
 every x86-64 and arm64 CPU has: the same source compiles everywhere, with no CPU flag, in debug
 and release builds. On WebAssembly they are `v128` values: WebAssembly SIMD is part of Velt's
 WebAssembly baseline, and a program that uses vectors needs an engine with it (every current
@@ -507,10 +623,16 @@ does not is free to use these names for its own types, as TypeScript code may.
 
 A vector is a value like a number: it is copied when assigned or passed, lives in a register,
 and can be a field, an array element, `T | null` or a `Map` value. Its operations are methods
-([`simd`](/docs/std/simd/)), not operators, and it has no `==`, truthiness, printed or JSON form:
-comparing two vectors with `eq`, `lt`, … gives a *mask* (`mask8x16` for a `u8x16`), one lane
-per lane, set or not, which `any()`, `all()`, `first()`, `count()` and `bitmask()` turn into a
-`boolean` or a number and `select` into a choice between two vectors.
+([`simd`](/docs/std/simd/)), and the arithmetic ones are also
+[operators](/docs/reference/classes/#operator-methods), lane by lane, where the lane operation
+exists: `+`, `-` and `*`, `/` on float vectors, unary `-`, `&`, `|`, `^` and `~`, `<<` and `>>`
+by a `u32` count, and `>>>`. A scalar operand is splatted to every lane (`v * 2`; a variable
+there must have the lane type), and the compound assignments (`acc += v`) work too. `v[i]`
+reads a lane, checked; `v[i] = x` is an error (use `withLane`). A vector has no `==`,
+truthiness, printed or JSON form: comparing two vectors with the methods `eq`, `lt`, … gives a
+*mask* (`mask8x16` for a `u8x16`), one lane per lane, set or not, which `any()`, `all()`,
+`first()`, `count()` and `bitmask()` turn into a `boolean` or a number and `select` into a
+choice between two vectors.
 
 ```ts
 import { u8x16 } from "velt/simd";
@@ -877,6 +999,39 @@ if (f != null) {
 
 `x!` is `x` known to be neither `null` nor `undefined` (TS's non-null assertion). TypeScript
 trusts it; Velt checks it: a nothing panics with `non-null assertion failed`.
+
+`e!` is an assignment target wherever `e` is one, as in TypeScript: `=`, the compound
+operators (`+=`, `??=`, …) and `++` / `--`. The assertion only types the target; the write goes
+to `e` (`x!`, `a[i]!`, `o.f!`, `(e)!`):
+
+```ts
+const a: number[] = [1, 2, 3];
+a[1]! += 10;
+a[2]! = 7;
+console.log(a.join(",")); // 1,12,7
+
+const counts: Record<string, number> = {};
+for (const w of ["a", "b", "a"]) {
+  counts[w] ??= 0;
+  counts[w]! += 1;
+}
+
+interface Stats { hits?: number }
+const s: Stats = { hits: 1 };
+const before = s.hits!++;
+console.log(counts, before, s.hits); // { a: 2, b: 1 } 1 2
+```
+
+- A compound assignment or an update reads the target as `e!` does: the value is checked to be
+  present (a nothing panics), the new value is computed from it and written back. So `+=` and
+  `++` work on a target whose type has `null` or `undefined` in it (a `Record<string, V>` key,
+  an optional field, a `T | undefined` variable); without `!`, those are errors.
+- The target's object and indices are evaluated once, before the right side, as in
+  JavaScript: a getter on the path, a key with an effect (`counts[key()]! += 1`), and a
+  setter's getter and setter each run once. `x!++` as a value is the old value, `++x!` the new
+  one.
+- `??=`, `||=` and `&&=` test the stored value as it is: `x! ??= v` is `x ??= v`.
+- A destructuring pattern isn't asserted: `[a, b]! = v` is an error.
 
 A write into a tuple behind `!` or `as` (one that keeps the tuple's type, or a union's tuple
 member; an element-wise tuple assertion makes a new tuple, see [`as`](#tuple-assertions))
@@ -1914,8 +2069,14 @@ error, as in TypeScript (TS2502). `ReturnType<F>` is the result type of function
 default parameter is not supported yet. In a field of an interface, object type or class
 (`signal: typeof signal`), `typeof f` is the type the function's declaration writes: its
 parameter types and its written result, and no error (a function there needs a written result,
-and one that throws needs its `throws` written in a function type instead). `typeof` of a
-symbol constant (`const K = Symbol("k")`) is `symbol` there too.
+and one that throws needs its `throws` written in a function type instead). `typeof f` in a
+field, of a generic function or of one whose type needs its body, makes the field an `any`, and
+its uses are not checked; the same holds for other type forms over a type parameter in a field.
+`typeof` of a symbol constant (`const K = Symbol("k")`) is its own
+[`unique symbol` type](#unique-symbol-types).
+
+`ReturnType<typeof f>` and `Parameters<typeof f>` of a generic `f` take each type parameter at
+its constraint, else `unknown`. An indexed tuple type (`[A, B][1]`) is the element's type.
 
 `keyof T` is the union of an object type's keys as string literal types (`keyof { a: number; b: string }` is `"a" | "b"`; a key a mapped type made from a number literal stays that number:
 `keyof { [K in 1 | 2]: K }` is `1 | 2`), and on a `Record` with literal keys it is the key type.
@@ -1944,7 +2105,8 @@ console.log(show(parse("a=1")), read(s, "port")); // a -> 1 443
 A function generic only over the errors its callbacks throw (`setTimeout<E>(task: () => Promise<void, E>, ms: i64)`) has the function type without them (`typeof setTimeout` takes a
 callback that does not throw), as TypeScript declares such functions without type parameters.
 
-Not supported yet (each is an error): `typeof` of another generic function, of an `async` or
+Not supported yet (each is an error): `typeof` of another generic function (outside
+`ReturnType`, `Parameters` and fields, above), of an `async` or
 generator function (function types have no type parameters), of a class or enum itself (TypeScript's constructor
 and enum object types; the type of a class's instances is its name), of `this` and of a local
 function value; `typeof import("./m")`; type arguments after the name (`typeof f<string>`);
@@ -1971,8 +2133,9 @@ the result is an ordinary object type, union or literal type.
   extends `Record<string, number>`.
 - **`infer X`** in `E` of a conditional type names the part of `C` it stands for: in a generic
   type, an object type's field, a function type, a tuple, or a template literal pattern. An
-  `infer` that finds nothing is TypeScript's `unknown`, which Velt supports only as
-  `NonNullable<X>` (`{}`). An `infer X` in several function parameters finds their intersection.
+  `infer` that finds nothing is `unknown`, as in TypeScript; `keyof unknown` is `never`, and
+  `Omit`, `Partial`, `Required`, `Readonly` and `Pick` of `unknown` are `{}`. An `infer X` in
+  several function parameters finds their intersection.
 - **Mapped types** `{ readonly [K in S as N]?: V }`: one field per key of the literal union `S`.
   Over `keyof X`, each field keeps `X`'s `?` and `readonly` unless `+`, `-` or a modifier says
   otherwise; `-?` also removes `undefined` from the field's type. `as N` renames a key, and a key
@@ -2458,7 +2621,7 @@ expected, `return xs[0]` from a function returning `T | undefined` or
 
 Its methods include `push` (any number of items: `xs.push(a, b)`, `xs.push(...ys)`, all
 evaluated before the first is pushed, as in JS), `pop(): T | null`,
-`forEach map filter reduce find findIndex some every indexOf lastIndexOf includes slice concat reverse isEmpty entries fill`,
+`forEach map flatMap filter reduce reduceRight find findIndex some every indexOf lastIndexOf includes slice concat reverse isEmpty entries fill`,
 `join` and `toString()` (any elements, written as `${xs}` writes them), `sort()` on numbers,
 strings and `Comparable` elements, and `sort(cmp)` (stable, any element type, like JS's
 `Array.prototype.sort(compareFn)`). The full list is in the [prelude](/docs/std/prelude/#arrays).
@@ -2553,6 +2716,20 @@ elements (`[A, B?]`, `[name: string, age?: number]`) and rest elements (variadic
 order (an optional element after a rest one, TS1266; a required one after an optional one,
 TS1257), and using one is an error saying it is not supported yet. `Promise.all` over tuples of
 different types is not supported.
+
+A tuple is shared where it is changed, as in JS: `const t = tp; t[0] = 5` changes `tp[0]`
+([Values and references](/docs/reference/memory/#values-and-references)). Unlike arrays, tuples
+compare by their elements (`t === u` is `true` for two tuples with equal elements).
+`t.length` and the array methods that don't change the receiver work on a tuple (`t.map`,
+`t.reduce`, `t.filter`, `t.join`, …); they read each element when they reach it, so a callback
+that writes to the tuple is seen, as in Node. `const [x, ...rest] = t` makes `rest` a tuple of
+the elements after `x`.
+
+```ts
+const t: [number, string, boolean] = [1, "a", true];
+const [n, ...rest] = t;
+console.log(t.length, t.map((x) => String(x)).join("|"), n, rest); // 3 1|a|true 1 [ 'a', true ]
+```
 
 ### `Map<K, V>`
 
@@ -2650,10 +2827,17 @@ any key that is not a symbol (a `string` or `symbol | string` variable, TS7053) 
 symbol (`[Symbol.iterator]`) are not supported yet, and neither is any other use of the cast:
 writing through it and keeping it are not supported yet.
 
-On an `any` `x`, `(x as Record<K, V>)[k]` and `(x as Record<K, V>).k` read and write `x` itself,
-as the assertion converts nothing in TypeScript: a read is a `V | undefined` (a `V` where one is
-expected, a missing key then a `TypeError`), and a value written is checked as a `V`, also by
-`??=`, `||=` and `&&=` (and `+=` on a number member takes a number).
+On an `any` `x`, and on an `object` `x`, `(x as Record<K, V>)[k]` and `(x as Record<K, V>).k`
+read and write `x`'s own key, as the assertion converts nothing in TypeScript: a read is a
+`V | undefined` (a `V` where one is expected, a missing key then a `TypeError`), and a value
+written is checked as a `V`, also by `??=`, `||=` and `&&=` (and `+=` on a number member takes a
+number). `props as Record<string, any>` of a `Record<string, unknown> | undefined` checks that
+the value is present (a `TypeError` for `undefined`), then is the same record.
+
+A fresh record (a function's result) where a record of another value type is expected, also
+with `| null`, converts as a new record with the same entries (`return parseStyle(s)` of a
+`Record<string, string>` in a function returning `Record<string, any> | null`). An existing
+record variable passed that way is an error.
 
 #### Open and closed records
 
@@ -2846,6 +3030,16 @@ runtimes' (`Deno`, `Bun`) and CommonJS's (`require`, `module`, `exports`, `__dir
 `BigInt`, `AbortController`, `Headers`, `atob`, ...), and `"function"` for
 a class's or a function's name, so `typeof window === "undefined"` tells the server from the
 browser. Reading or calling one of the absent globals throws Node's `ReferenceError` (`window is not defined`), so code that only runs elsewhere still compiles.
+
+lib.dom's types are global types, for code shared with the browser: `Node`, `Element`,
+`HTMLElement`, `SVGElement`, `Event`, `CustomEvent`, `EventTarget`, `EventListener`,
+`ShadowRoot`, `HTMLDivElement`, `HTMLInputElement`, `HTMLTextAreaElement` and
+`HTMLSelectElement`. They are types only: Velt has no DOM, and `new Element()` is an error.
+`typeof` of one is what Node answers, `"undefined"`, and `"function"` for `Event`,
+`EventTarget` and `CustomEvent`, so `if (typeof HTMLElement !== "undefined") { … }` compiles.
+The same holds for any global Velt has only as a type (`typeof Iterable` is `"undefined"`,
+`typeof Iterator` is `"function"`). `typeof` of a type the program declares or imports is an
+error, as under `tsc` (TS2693), and a program's own type of one of these names hides the global.
 
 ```ts
 class Point {
@@ -3400,8 +3594,12 @@ a container of one is a container of the other: a `Record<string, any>` is a
 `Map<string, unknown>`, `Set`s, nullables and function types that differ only there. It is the
 same object seen through the other type, as in TypeScript: a write through one is seen through
 the other, and `===` compares them as one value. A tuple (`[any, number]` as
-`[unknown, number]`) converts too, but is copied, as every tuple is when assigned
-([Values and references](/docs/reference/memory/#values-and-references)).
+`[unknown, number]`) converts too, and is the same tuple
+([Values and references](/docs/reference/memory/#values-and-references)). An existing array (a
+variable or a field) of any element type passed where an `any[]` or `unknown[]` parameter is
+expected is the same array too, as in Node: a value the callee pushes reaches the caller's
+array. Other element types are an error (``cannot use `xs` (`A[]`) as `B[]` ``) that suggests a
+copy.
 
 ```ts
 class Point {
@@ -3425,9 +3623,8 @@ if (typeof u === "string") {
 
 What works on `any` and `unknown`: conversions in and out (also `null`, `undefined`,
 `T | null`, unions and class instances, checked against the class and its subclasses, and an
-instance of a generic class against that very instantiation (`Box<number>`, so a
-`Record<string, number>` converts only from a record of that type: an object of a fixed shape
-stops with a `TypeError` for now; Node reads any object as a record); into a
+instance of a generic class against that very instantiation (`Box<number>`); into a
+`Record<string, V>` from any object ([below](#objects-into-records)); into a
 union or a literal type such as `"red" | "green"` the value takes the first member it is: a
 `typeof` test for `number`, `string`, `boolean` and `symbol` (`k as string | symbol`),
 `instanceof` for a class, `===` for a literal, `Array.isArray` for the union's one array member;
@@ -3729,9 +3926,11 @@ not `length`, an element or a member of its prototype). A class's
 except a standard-library class's, which implement it and which Node's built-ins don't have
 (`re.matchAt(…)` on a `RegExp` is `TypeError: re.matchAt is not a function`). A `null` or
 `undefined` receiver stops with Node's `TypeError: Cannot read properties of undefined (reading
-'f')` before the call's arguments are evaluated, calling something that is not a function with
-`TypeError: x.f is not a function`, and an argument of the wrong type with the conversion's
-`TypeError`. Optional chaining short-circuits as in Node: `x?.f`, `x?.m()`, `x?.[0]` and
+'f')` before the call's arguments are evaluated, and an argument of the wrong type with the
+conversion's `TypeError`. Calling something that is not a function throws Node's
+`TypeError: x.f is not a function`, which a `catch` of the same function that takes a
+`TypeError` catches; elsewhere it stops the program
+([Errors](/docs/reference/errors/#calling-an-any-that-holds-no-function)). Optional chaining short-circuits as in Node: `x?.f`, `x?.m()`, `x?.[0]` and
 `x.f?.()` are `undefined` when the link is `null` or `undefined`, and the rest of the chain
 (`x?.a.b`) is not evaluated. What Velt cannot do through `any` yet
 stops with a `TypeError` saying it is not supported yet, rather than giving a wrong value: a method read without a
@@ -3930,6 +4129,29 @@ An object literal converted to `any` or `unknown` (`const u: unknown = { a: null
 holds an `any` that is `null`. A `void` value or one of type `undefined` (a call of a function
 returning it) converts to an `any` holding `undefined`.
 
+### Objects into records
+
+An `any` or `unknown` holding an object (an object literal, a class instance, an array or a
+record of other values) converts to a `Record<string, V>`, as `x as Record<string, any>`, as an
+argument or as a field written through `any`: the record gets the object's own enumerable
+entries in their order, each value converted to `V` (checked). The record is a copy, so writing
+to it does not change the object, where Node shares the one object. An `any` holding a `Proxy`
+doesn't convert yet (a `TypeError`).
+
+```ts
+function stringifyStyle(style: Record<string, any>): string {
+  let s = "";
+  for (const key in style) s += key + ":" + style[key] + ";";
+  return s;
+}
+const a: any = { color: "red" };
+console.log(stringifyStyle(a)); // color:red;
+```
+
+An object type at an `any` type argument converts to the same type at another argument field
+by field (a `Binding<any>` where a `Binding<number>` is expected), each `any` field converted as
+an `any` converts to its type, checked.
+
 ### Operators and built-in methods on `any`
 
 The arithmetic, bitwise and unary operators take an `any` operand as JavaScript does, as
@@ -3963,8 +4185,9 @@ method of that value, with the arguments converted as JavaScript converts them
 string patterns), `charAt`, `charCodeAt`, `at`, `repeat`, `padStart`, `padEnd`, `concat`,
 `localeCompare`, `toString` and `valueOf`; on arrays `push`, `pop`, `shift`, `unshift`,
 `splice`, `slice`, `at`, `reverse`, `concat`, `indexOf`, `lastIndexOf`, `includes`, `map`,
-`forEach`, `filter`, `find`, `findIndex`, `some`, `every`, `reduce`, `sort` (by `ToString`
-without a comparator, `undefined` last), `join` and `toString`; on
+`forEach`, `filter`, `find`, `findIndex`, `some`, `every`, `flatMap`, `reduce` and
+`reduceRight` (with or without an initial value), `sort` (by `ToString` without a comparator,
+`undefined` last), `join` and `toString`; on
 numbers `toFixed`, `toString` (with a radix), `toPrecision` and `valueOf`; on booleans
 `toString` and `valueOf`. Callbacks get each element, its index and the array, as `any`s; the
 result is an `any` (`map` gives an `any[]`, `filter` an array of the elements' own type). An
@@ -3972,9 +4195,27 @@ array keeps its element type: pushing a value of another type stops with the con
 `TypeError` (Node's arrays take anything); an empty literal converted to `any`
 (`const xs: any = []`) is an `any[]`, which takes every value. Other built-in methods of these
 values stop with a `TypeError` saying they are not supported yet, and a name that is no method of the value is Node's
-`TypeError: x.foo is not a function`. A function held has no methods through `any` yet: `call`,
-`apply`, `bind` and `toString` stop with a `TypeError` saying they are not supported yet, and any other name is not a
-function.
+`TypeError: x.foo is not a function`. A function held has `call`, `apply` and `bind` through
+`any` when it declares a `this: any` parameter
+([Function expressions](/docs/reference/functions/#function-expressions)) or is one of
+`Array.prototype`'s methods (below); on other functions they and `toString` stop with a
+`TypeError` saying they are not supported yet, and any other name is not a function.
+
+In a program that uses `Proxy` or a function expression with a `this` parameter,
+`(Array.prototype as any)[name]` gives the array method `push`, `pop`, `shift`, `unshift`,
+`splice`, `map`, `filter`, `forEach`, `some`, `every`, `find`, `includes`, `indexOf`,
+`lastIndexOf`, `join`, `slice`, `reverse` or `sort`, and its `apply`, `call` and `bind` run it on
+the `this` they pass, an array or a proxy of one (through the proxy's traps, as in Node). The
+common wrapper works:
+
+```ts ignore
+const original = (Array.prototype as any).push;
+const push = function (this: any) {
+  return original.apply(this, arguments);
+};
+```
+
+Other members of `Array.prototype`, and these reads in a program with neither, are `undefined`.
 
 ```ts
 let n: any = "4";
@@ -4437,7 +4678,9 @@ with TypeScript's rules:
   types when the function runs, and the result is an `any`. A field of type `Function` is
   called the same way (`plugin.setup(app)`). `f.call(thisArg, a, b)` and
   `f.apply(thisArg, [a, b])` are the call `f(a, b)` when `thisArg` is `null` or `undefined` (or
-  left out: `f.call()`); `f` and `thisArg` are evaluated once, before the arguments. A Velt
+  left out: `f.call()`); `f` and `thisArg` are evaluated once, before the arguments. A function
+  declared with a `this: any` parameter gets `thisArg` as its `this`
+  ([Function expressions](/docs/reference/functions/#function-expressions)); any other Velt
   function value has no `this` to set, so another `thisArg` stops with a `TypeError`
   (Node would call the function with it). `f.bind(thisArg)` without arguments to fix is a
   new function forwarding to `f` (an `any`) under the same rule.
@@ -4459,11 +4702,15 @@ with TypeScript's rules:
   yet (a function value, a tuple) is a `TypeError` there too. A variable passed as a key or
   target stays alive to the end of its scope. `Function` keys are not supported yet.
 - `typeof u === "object"` narrows an `unknown` to `object` and `typeof u === "function"` to
-  `Function`; a union with `object` or
-  `Function` is that type when its other members are objects (or functions), `null` and
-  `undefined` included, and `unknown` otherwise (`string | Function`). `f?.(x)` on a
+  `Function`; a union with `object` or `Function` is that type when its other members are
+  objects (or functions), and `unknown` otherwise (`string | Function`). `f?.(x)` on a
   `Function | undefined` (an optional `onClick?: Function` field) skips the call when it holds
   `null` or `undefined`, as in JavaScript.
+- `object | undefined` and `object | null` are types of their own, as in TypeScript: an optional
+  object (`opts?: Opts`) passes for an `object | undefined` parameter, and an
+  `object | undefined` is an error where a plain `object` is expected until a test narrows it
+  (TS2322). `String(o)`, a template and `join` write its object as `String(x)` does
+  (`[object Object]`) and its nothing as `undefined` or `null`.
 - A field path of type `any` or `unknown` (or a union that is `unknown`, `string | Function`)
   narrows as a variable does: after `typeof vnode.type === "string"`, `vnode.type` is a
   `string` there. A type predicate (`isRef(x): x is Ref`) narrows an `unknown` variable or field

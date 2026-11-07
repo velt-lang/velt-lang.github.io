@@ -22,10 +22,10 @@ velt new count
 cd count
 ```
 
-The work goes into a module, `src/count.vlt`: `run` takes the arguments and returns the lines
+The work goes into a module, `src/count.velt`: `run` takes the arguments and returns the lines
 to print, so tests can call it without starting a process.
 
-```ts title="src/count.vlt"
+```ts title="src/count.velt"
 import { ArgParser, CliError } from "velt/cli";
 import { readFileSync } from "velt/fs";
 
@@ -81,10 +81,10 @@ export function run(argv: string[]): string[] {
 }
 ```
 
-`src/main.vlt` is the process around it: arguments in, lines out, errors to stderr with an
+`src/main.velt` is the process around it: arguments in, lines out, errors to stderr with an
 exit code.
 
-```ts ignore title="src/main.vlt"
+```ts ignore title="src/main.velt"
 import { CliError } from "velt/cli";
 import { args } from "velt/process";
 import { run } from "./count";
@@ -136,7 +136,7 @@ Options:
   `parse` takes the argument array, so the logic is testable without a process. `args()` from
   [`velt/process`](/docs/std/process/) is the program's arguments, `process.argv.slice(2)` in
   Node's terms.
-- **Top-level code**: `main.vlt`'s statements are the program, as in a Node script; there is no
+- **Top-level code**: `main.velt`'s statements are the program, as in a Node script; there is no
   `main` to write. A file with `function main()` and no top-level statements runs `main`
   instead, and a `main(): i32` returns the exit code
   ([scripts](/docs/reference/modules/#scripts-top-level-statements)).
@@ -156,9 +156,9 @@ Options:
 ## Testing
 
 Because `run` takes the argument array and returns lines, tests call it directly. In
-`tests/count.test.vlt`, with the poem in `tests/data/poem.txt`:
+`tests/count.test.velt`, with the poem in `tests/data/poem.txt`:
 
-```ts ignore title="tests/count.test.vlt"
+```ts ignore title="tests/count.test.velt"
 import { run } from "../src/count";
 
 export function test_counts() {
@@ -177,14 +177,14 @@ export function test_usage_error() {
 
 ```sh
 $ velt test
-running tests/count.test.vlt (ran: not cacheable, it uses the file system)
+running tests/count.test.velt (ran: not cacheable, it uses the file system)
 ok test_counts
 ok test_usage_error
 
 test result: ok. 2 passed; 0 failed
 ```
 
-The tests import `src/count.vlt`, not `src/main.vlt`: importing a module runs its top-level
+The tests import `src/count.velt`, not `src/main.velt`: importing a module runs its top-level
 statements. `velt test` runs every exported `test_*` function ([Testing](/docs/book/testing/)).
 
 ## Running other programs

@@ -1,6 +1,6 @@
 ---
 title: "velt/fs: file streams"
-description: "openRead and openWrite from velt/fs: read files in chunks or line by line, and write them through a buffer, for files too large to hold in memory."
+description: "openRead and openWrite from velt/fs: read files or byte ranges in chunks or line by line, and write them through a buffer, for files too large to hold in memory."
 layout: "docs"
 category: "Standard library"
 order: 170
@@ -37,7 +37,14 @@ removeSync(path);
 
 ## Reading
 
-`openRead(path): Promise<FileReader>`. A `FileReader` has:
+`openRead(path, options?): Promise<FileReader>` opens the file for reading. Without options it
+reads the whole file; `OpenReadOptions { start?: u64; end?: u64 }` reads the bytes `start` to
+`end`, both included, as Node's `createReadStream` does: `{ start: 0, end: 9 }` reads the first
+ten bytes, what an HTTP `Range: bytes=0-9` asks for. Reading stops at the end of the file, so an
+`end` past it reads to the end, and a `start` past it reads nothing. An `end` before `start`
+reads nothing too, where Node throws a `RangeError`.
+
+A `FileReader` has:
 
 - `read(max = 0): Promise<u8[]>`: the next bytes, empty at the end of the file.
 - `readString(max = 0): Promise<string>`: the next text, `""` at the end of the file.
@@ -46,7 +53,35 @@ removeSync(path);
 - `lines(): AsyncGenerator<string, IoError>`: the remaining lines, as `readLine` reads them, for
   `for await (const line of r.lines())`. Leaving the loop early keeps the reader open at the next
   line (like Node's `filehandle.readLines()`, but the file is not closed for you).
+- `openedStats(): Stats`: the file's [`Stats`](/docs/std/fs/#metadata-and-links) as of the
+  open, taken with it, so it costs no I/O. It describes the file this reader reads, even after
+  its path was renamed, replaced or removed. `size` is the whole file's, whatever range was
+  given, and growth after the open isn't seen (`stat(path)` looks again). Unlike Node's
+  `filehandle.stat()`, it doesn't ask the file system again.
 - `close()`.
+
+A file server answers a range request from one open, without a race between a `stat` and the
+read:
+
+```ts
+import { openRead } from "velt/fs";
+
+async function part(path: string, start: u64, end: u64): Promise<u8[]> {
+  const r = await openRead(path, { start, end });
+  const size = r.openedStats().size; // the whole file's, for `Content-Range`
+  let body: u8[] = [];
+  while (true) {
+    const chunk = await r.read();
+    if (chunk.length == 0) {
+      break;
+    }
+    body = body.concat(chunk);
+  }
+  r.close();
+  console.log(`bytes ${start}-${end}/${size}`);
+  return body;
+}
+```
 
 ## Writing
 

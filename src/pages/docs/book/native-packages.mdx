@@ -1,260 +1,325 @@
 ---
 title: "Packages with native code"
-description: "Most packages are pure Velt. When a package needs code that only exists natively (a database driver, an image codec, a C library), it can include a Rust crate."
+description: "Most packages are pure Velt. A package that needs a C library calls it with declare c, checked against its headers; programs allow such packages with allowNative."
 layout: "docs"
 category: "The book"
 order: 140
 ---
 
+import { Callout } from '@/components/mdx';
+
 # Packages with native code
 
 Most packages are pure Velt. When a package needs code that only exists natively (a database
-driver, an image codec, a C library), it can include a **Rust crate**. Users of the package never
-need Rust: you publish a prebuilt library for each platform, and `velt` downloads the right one.
-This chapter writes one; `packages/sqlite` in the Velt repository is a complete example.
+engine, an image codec, a system library), it calls the library's C functions directly with
+`declare c`, from `unsafe` code, and wraps them in a safe Velt API. The declarations are checked
+against the library's C headers, and a program uses such a package only if it lists it in
+`allowNative`. Users of the package need no C compiler: a published package carries a prebuilt
+library for each target. This chapter writes one; `packages/sqlite` in the Velt repository is a
+complete example.
 
-## Layout
+## A first binding
+
+The smallest native package calls the platform's C library:
 
 ```text
-greet/
-  package.vlt
-  src/lib.vlt          # the package's Velt API
-  native/Cargo.toml    # the Rust crate
-  native/src/lib.rs
+mathc/
+  package.velt
+  src/lib.velt
 ```
 
-```ts ignore
-// package.vlt
+```ts ignore title="package.velt"
 import type { Package } from "velt/package";
 
 export const pkg: Package = {
-  name: "greet",
+  name: "mathc",
   version: "0.1.0",
-  native: { targets: ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"] },
+  // The C libraries the package declares functions of: here only `c`, the platform's,
+  // checked against <stdlib.h>.
+  native: { c: { c: { headers: ["<stdlib.h>"] } } },
 };
 ```
 
-```toml
-# native/Cargo.toml
-[package]
-name = "greet_native"
-version = "0.1.0"
-edition = "2021"
+```ts ignore title="src/lib.velt"
+declare c("c") function abs(n: i32): i32;
 
-[lib]
-name = "velt_native_greet"           # always velt_native_<package>
-crate-type = ["cdylib", "staticlib"]
-
-[dependencies]
-velt_native = "0.1"
-```
-
-`velt_native` is not on crates.io yet: until it is, depend on it by path or git
-(`velt_native = { git = "https://github.com/velt-lang/velt" }`).
-
-## The Rust side
-
-```rust
-use velt_native::{export, Error};
-
-velt_native::package!(greet); // once per crate: the start-up function
-
-#[export]
-fn velt_greet__hello(name: &str, excited: bool) -> String {
-    format!("hello, {name}{}", if excited { "!" } else { "" })
-}
-
-#[export]
-fn velt_greet__parse(text: &str) -> Result<i64, Error> {
-    text.trim().parse().map_err(|e| Error::other(format!("{e}")))
-}
-
-#[export(blocking)] // an async function: runs on the runtime's blocking pool
-fn velt_greet__slow(n: u64) -> Result<u64, Error> {
-    std::thread::sleep(std::time::Duration::from_millis(10));
-    Ok(n * 2)
+/** `n` without its sign. */
+export function magnitude(n: i32): i32 {
+  // SAFETY: abs of any i32 but INT_MIN, which is clamped first.
+  return unsafe { abs(n == -2147483648 ? -2147483647 : n) };
 }
 ```
 
-- Every exported function's name starts with `velt_`, the package name and two underscores
-  (`velt_greet__…`; a `-` in the package name becomes `_`). No C library function starts with
-  `velt_`, so an export can never stand in for one.
-- Parameters are lent for the call only, so references take no lifetime (`&str`, not
-  `&'static str`).
-- Parameters: `bool`, integers, `f32`/`f64`, `&str`/`Cow<str>`/`String` (a Velt `string`),
-  `&[u8]`/`Vec<u8>` (a `u8[]`). `blocking` functions take owned values (`String`, `Vec<u8>`).
-  A Velt string is UTF-16 text and may hold a lone surrogate, which Rust text can't: such a
-  string arrives with one U+FFFD in place of each (a copy; well-formed text is borrowed, and a
-  `Cow<str>` parameter tells which).
-- Results: the same scalars, `()`, `String`, `Vec<u8>`, or `Result<T, velt_native::Error>`
-  (an `IoResult<T>` in Velt; `Result<(), Error>` is an `IoStatus`).
-- Arrays and structs cross too, as in std: `&[T]`/`Vec<T>`/`velt_native::Array<T>` for a
-  `T[]`, and a `#[repr(C)]` struct with `#[derive(velt_native::Value)]` for a Velt `struct`
-  with the same fields (`user_id` is `userId`; `#[velt(name = "…")]` names one). A field that
-  differs in name, order or type is a build error.
-- A panic becomes an error result (`native panic: …`) where the result can carry one.
-- Objects (a connection, a decoder) stay on the Rust side behind a `u64` handle.
+- `declare c("c") function abs(n: i32): i32;` states the C function's signature. `"c"` names a key
+  of `native.c`; the platform's C library is `c`.
+- Calling it needs `unsafe`, and each piece of unsafe code needs a `// SAFETY:` comment directly
+  above it, saying why it is sound. A build without it fails.
+- `magnitude` is safe: whoever calls it never writes `unsafe`. That is the package's job: turn the
+  C function's preconditions (here, "not `INT_MIN`") into code that always meets them.
 
-### Async functions and network I/O
+A program that depends on the package allows it:
 
-An `#[export(async)] async fn` is a `declare async function` whose future runs on the program's
-scheduler, polled by the task that awaits it, with no thread in between. With
-`velt_native = { version = "0.1", features = ["tokio"] }`, its sockets are Velt's own and work
-with libraries written for tokio:
+```ts ignore title="package.velt"
+import type { Package } from "velt/package";
 
-```rust
-use velt_native::{export, net::TcpStream, time, Error};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-#[export(async)]
-async fn velt_greet__ping(addr: String) -> Result<String, Error> {
-    let mut s = TcpStream::connect(&addr).await?;
-    s.write_all(b"ping\n").await?;
-    let mut buf = vec![0; 64];
-    let n = time::timeout(std::time::Duration::from_secs(5), s.read(&mut buf))
-        .await
-        .map_err(|e| Error::new(velt_native::code::TIMED_OUT, e.to_string()))??;
-    Ok(String::from_utf8_lossy(&buf[..n]).into_owned())
-}
+export const pkg: Package = {
+  name: "app",
+  version: "0.1.0",
+  dependencies: { mathc: { path: "../mathc" } },
+  allowNative: ["mathc"],
+};
 ```
 
-- Parameters are owned (`String`, `Vec<u8>`, `Str`): the future outlives the call. To read
-  borrowed arguments first (encode a request from a `&[Str]` without keeping it), write a plain
-  `fn` that returns `impl Future<Output = R> + Send + 'static`; the future cannot hold the
-  borrowed arguments, which the compiler checks.
-- `velt_native::rt::spawn(fut)` runs a background task (a connection's protocol loop) on the
-  current worker.
-- Don't start another async runtime (a tokio runtime) in the library: its I/O would wake Velt's
-  tasks across threads. Libraries that only need tokio's I/O traits and `sync` types (most
-  drivers, with their connection future spawned through `rt::spawn`) run on Velt's directly.
+```ts ignore title="src/main.velt"
+import { magnitude } from "mathc";
 
-### Strings without copies
-
-A `String` result is copied into Velt's memory and its UTF-16 length counted; a `String`
-parameter is a copy of Velt's. For text that is large or on a hot path, use Velt's own strings:
-
-```rust
-use std::fmt::Write;
-use velt_native::{export, Str, StrBuf};
-
-#[export]
-fn velt_greet__table(rows: u32) -> Str {
-    // Written straight into the Velt string: no copy when it is done.
-    let mut out = StrBuf::new();
-    for i in 0..rows {
-        let _ = write!(out, "{i}\t{}\n", i * i);
-    }
-    out.finish()
-}
-
-#[export(async)]
-async fn velt_greet__shout(text: Str) -> Str {
-    // `text` is Velt's string, kept by reference (no copy) for as long as the future runs.
-    Str::new(&text.to_str().to_uppercase())
-}
+console.log(magnitude(-42)); // 42
 ```
 
-- `StrBuf` is a Velt `string` being built in Velt's memory (`push_str`, `push`, `write!`);
-  `finish()` makes it the string. Short text stays inline, as Velt keeps it.
-- `Str` is an owned Velt `string`: a parameter (`as_bytes()`, or `to_str()`, borrowed when
-  well-formed), a result, an array element or a struct field. Cloning one adds a reference.
-- Velt's database drivers encode with the `velt_text` crate (JavaScript number formatting, JSON escaping,
-  database rows as JSON), whose writers take any `velt_text::Out`: a `Vec<u8>`, or with its
-  `sdk` feature a `StrBuf`.
-
-## The Velt side
-
-The package declares each function with exactly the signature the Rust side exports, and wraps
-them in a Velt API:
-
-```ts ignore
-import { IoResult } from "velt/native";
-
-declare function velt_greet__hello(name: string, excited: bool): string;
-declare function velt_greet__parse(text: string): IoResult<i64>;
-declare async function velt_greet__slow(n: u64): Promise<IoResult<u64>>;
-
-export function hello(name: string): string {
-  return velt_greet__hello(name, true);
-}
-```
-
-`velt` checks every `declare` against the library: a name it does not export, or a type that
-differs, is a compile error at the `declare`, not a crash at run time:
+Without the `allowNative` entry, `velt install` and every build refuse, with the line to add:
 
 ```text
-src/lib.vlt:4:1: error: `declare` of `velt_greet__parse` does not match the native library of `greet 0.1.0`
-  = note: the library exports `(string)->IoResult<i64>`
-  = note: this declares     `(string)->IoResult<i32>`
+package `mathc` has native code, which runs with no safety net
+allow it in package.velt, if you trust it: allowNative: ["mathc"]
 ```
 
-Only a package's own library can be declared this way. A `declare function` anywhere else (in
-a program or a package without native code, or naming another package's export) is a compile
-error, so ordinary Velt code can't call arbitrary C functions such as `free`.
+When `velt check` passes, it lists what the program trusts, so a review of a new dependency
+starts there:
 
-`velt/native` also has what turns a failed result into an error: `unwrapIo(r)` and `checkIo(s)`
-throw an `IoError` (velt/io), and `errorCodeName(code)` is the Node-style name of a failure code
-(`"ECONNREFUSED"`, `"ETIMEDOUT"`), for a package that throws an error class of its own:
+```text
+Native code the program allows (allowNative):
+  mathc: C libraries c (the platform's; headers checked); 1 place of unsafe code
+    src/lib.velt:6  unsafe expression
+```
 
-```ts ignore
-import { errorCodeName, IoStatus } from "velt/native";
+The language reference has the details: [C functions and unsafe
+code](/docs/reference/c-interop/) (what crosses, `unsafe`, where it may be) and
+[`velt/ffi`](/docs/std/ffi/) (pointers, strings, out-parameters).
 
-export class GreetError extends Error {
-  code: string;
+## Pointers, handles and strings
 
-  constructor(code: string, message: string) {
-    super(message);
-    this.code = code;
+A real library hands out objects behind pointers and takes strings. `packages/sqlite` binds
+SQLite this way; reduced:
+
+```ts ignore title="src/sqlite3.velt"
+import { CString, OutPtr, Ptr } from "velt/ffi";
+
+export declare c type sqlite3;
+
+export declare c("sqlite3") function sqlite3_open_v2(
+  name: CString,
+  db: OutPtr<sqlite3>,
+  flags: i32,
+  vfs: null,
+): i32;
+export declare c("sqlite3") function sqlite3_close_v2(db: Ptr<sqlite3>): i32;
+export declare c("sqlite3") function sqlite3_errmsg(db: Ptr<sqlite3>): Ptr<u8>;
+
+export declare c const SQLITE_OK: i32;
+export declare c const SQLITE_OPEN_READWRITE: i32;
+export declare c const SQLITE_OPEN_CREATE: i32;
+```
+
+```ts ignore title="src/connection.velt"
+import { CString, OutPtr, Ptr, readCString } from "velt/ffi";
+import { sqlite3, sqlite3_close_v2, sqlite3_errmsg, sqlite3_open_v2, SQLITE_OK,
+  SQLITE_OPEN_CREATE, SQLITE_OPEN_READWRITE } from "./sqlite3";
+
+export class Connection {
+  private db: Ptr<sqlite3>;
+
+  constructor(path: string) {
+    const out = new OutPtr<sqlite3>();
+    // SAFETY: the name is NUL-terminated, and `out` is written before the call returns.
+    const rc = unsafe {
+      sqlite3_open_v2(new CString(path), out, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, null)
+    };
+    const db = out.value;
+    if (db === null) {
+      throw new Error("out of memory opening the database");
+    }
+    this.db = db;
+    if (rc != SQLITE_OK) {
+      // SAFETY: SQLite's message is NUL-terminated and valid until the next call on `db`.
+      throw new Error(unsafe { readCString(sqlite3_errmsg(db)) });
+    }
   }
-}
 
-function check(s: IoStatus) {
-  if (s.code != 0) {
-    throw new GreetError(errorCodeName(s.code), s.message);
+  [Symbol.dispose]() {
+    // SAFETY: `db` is open, and nothing uses it after this.
+    unsafe {
+      sqlite3_close_v2(this.db);
+    }
   }
 }
 ```
 
-A database driver hands its rows and a statement's parameters to std's generated decoder and
-binder through velt/db's `decodeRows` and `bindParams` ([velt/db: native drivers](/docs/std/db/#native-drivers)). Its library registers the row cursor or parameter sink with the runtime
-(`velt_text::rows_cursor::open_cursor` / `open_sink`) and returns the handle; std looks it up, so
-the Velt side never holds an address that a wrong number could stand in for.
+- `declare c type sqlite3;` is a C type that exists only behind pointers: `Ptr<sqlite3>` is a
+  database handle and can't be mistaken for any other pointer.
+- `CString` passes a NUL-terminated copy of a string; `StrBytes` passes a string's own bytes with
+  a length, without a copy. `OutPtr<T>` and `Out<T>` take what C writes through a pointer
+  parameter. `readCString`, `readUtf8` and `readBytes` copy C memory into Velt values, and are
+  unsafe.
+- `declare c const` reads a constant (a `#define`, an enumerator) from the headers, for each
+  target.
+- Keep handles in a class that releases them in `[Symbol.dispose]()`, so `using` and the end of
+  the object's life close them. `Ptr`, `OutPtr`, `declare c type`s and unsafe functions are raw
+  API: a program can't import them, so the class is all it sees.
+- In a dependency that declares C functions, a class with a `private` field has no JSON form:
+  `JSON.stringify` and `JSON.parse<T>` of it are compile errors, so JSON can never carry or forge
+  a handle. A program's own `declare c` changes nothing: its classes' private fields are written
+  by `JSON.stringify`, as Node writes them.
 
-Wrap handles in a class that releases them in `[Symbol.dispose]()`, so `using` and the end of
-the object's life close them (see `packages/sqlite/src/lib.vlt`).
+## C libraries
+
+Each key of `native.c` is one C library the package declares functions of, by the name its
+declarations use (`declare c("sqlite3")`). Each library comes from the system or from the
+package's own C sources, and lists the headers its declarations are checked against:
+
+```ts ignore title="package.velt"
+native: {
+  c: {
+    c: { headers: ["<string.h>", "<stdlib.h>"] },                                // the platform's C library
+    z: { system: { default: "z" }, headers: ["native/zlib.h"] },                   // -lz, z.lib
+    accel: { system: { darwin: "framework:Accelerate" }, unchecked: true },         // a macOS framework
+  },
+},
+```
+
+- `system` maps build conditions (`darwin`, `linux`, `win32`, `native`, `default`) to a system
+  library's name: `"z"` links `-lz` (`z.lib` on Windows), and `"framework:Name"` a macOS framework,
+  under `darwin` only. The first condition the build has applies; on a target none applies to,
+  the library's declarations are errors. A name is a name, not a linker flag or a file
+  (`libm.so.6` is an error naming `m`). The bundled linker links only the platform's own
+  libraries: another system library needs `VELT_LINKER=system`.
+- `headers`: paths in the package (`native/zlib.h`), or `<name.h>` for a C library header. Only
+  the C library's headers are found by name, for every target; a package ships its own copy of any
+  other library's header.
+- `unchecked: true`: the library has no headers (a binary-only SDK), so its declarations go
+  unchecked. `allowNative`'s refusal and `velt check` say so. A library lists `headers` or says
+  `unchecked`, not both.
+- `sources` and `defines`: the library is compiled from the package's C files
+  ([below](#bundling-c-sources)).
+
+Every build (debug, release and `velt dev`) links the libraries the program's declarations name,
+and nothing else.
+
+## Bundling C sources
+
+A library that isn't on every system ships with the package as C sources. `packages/sqlite`
+builds SQLite's amalgamation this way, so its users need no system `libsqlite3`:
+
+```ts ignore title="package.velt"
+native: {
+  c: {
+    c: { headers: ["<string.h>"] },
+    sqlite3: {
+      sources: ["native/sqlite3.c"],
+      headers: ["native/sqlite3.h"],
+      defines: { SQLITE_THREADSAFE: "1", SQLITE_ENABLE_FTS5: "1" },
+    },
+  },
+  targets: [
+    "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin", "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
+  ],
+},
+```
+
+- `sources`: `.c` files under `native/`, compiled with the pinned zig. A library has `sources` or
+  `system`, not both. A source may read only `native/` and the C library's headers.
+- `defines`: macro name to value (`-DSQLITE_THREADSAFE=1`), for the sources and for the header
+  check.
+- `targets`: the targets `velt publish` builds and uploads a library for.
+- `velt native build [--target <triple>]` builds the library for any target from any machine,
+  and reproducibly: two builds give the same bytes. A build reuses the last one while nothing it
+  is built from has changed.
+- Debug builds link the shared library, release builds the static one, and Windows the DLL in
+  both modes. `velt dev` loads the shared library; a change under `native/` restarts the program.
+
+While you work on the package, a program that depends on it by path builds the sources the first
+time it needs them, into the package's `target/velt-native/`, and again when they change.
+
+## Checking against C headers
+
+Each `declare c` function of a library that lists `headers` is checked against them for the
+build's target, wherever the package is built where it is developed (the program itself, a path
+dependency, a workspace member). A declaration must name a function the headers declare, with
+matching parameters and result; a mismatch is a build error naming the header line:
+
+```text
+error: parameter 1 of C function `labs` is `long` in stdlib.h:301, not the declaration's `i64`
+  = note: declare `i32`
+```
+
+`long` is 32 bits on Windows, so `velt check --target x86_64-pc-windows-msvc` catches that on any
+machine. The check needs zig 0.17.1, which `velt` downloads once into `~/.velt/cache/zig/` (about
+55 MB, 100 MB on Windows, checksum-verified), or the one `VELT_ZIG` names. Only package authors
+need it.
+
+Those who install the package don't run the check: they get its record. `velt native headers`
+checks the package on every target and writes `c-headers.json`, a digest of each declaration,
+each `declare c const`'s value, and each of the package's own headers the check read, per target
+and library. `velt publish` runs it first, and a package used from git commits the file. A build
+compares a fetched package's declarations with the record: a missing record, a target it doesn't
+cover, or a declaration that differs from the one checked is an error. A git dependency's headers
+are compared with the record too; a registry archive ships `native/` only for a package with
+`sources`, so other registry packages are trusted to have checked the headers they published.
+
+<Callout kind="info" title="A record, not a signature">
+`c-headers.json` catches mistakes, not a hostile package: its author can write any digest.
+Trust is what `allowNative` decides, so read a package's `velt check` listing before you add it.
+</Callout>
 
 ## Building and publishing
 
-While you work on the package, any program that depends on it by path builds the crate with
-cargo when needed, into the package's own `target/velt-native/` (where the package really is,
-also when the path goes through a symbolic link), so the programs that share the package share
-the build. The Velt repository's database drivers in `packages/` are such packages; its examples
-and benchmarks depend on them by path. To publish:
-
 ```sh
-velt native build                                  # this machine's target → target/velt-native/<triple>/
-velt native build --target aarch64-apple-darwin    # another target your toolchain can build
-velt publish                                       # the package plus one library per target
+velt native headers                                 # check every target, write c-headers.json
+velt native build --target aarch64-apple-darwin     # one target's library → target/velt-native/<triple>/
+velt publish                                        # the package plus a library for every target
 ```
 
-A release build links the library's prelinked object into the executable (Linux and macOS),
-with the system libraries the crate needs: `velt native build` records the ones rustc lists for
-it (what its dependencies declare, e.g. a framework on macOS), and only programs that use the
-package link them.
+`velt publish` builds every target in `native.targets` (or takes them from
+`--native-artifacts <dir>`) and refuses a missing one. `velt add`, `velt install` and builds
+download the library for the machine, verify it against the checksum in `velt.lock.json`, and
+never run zig. A target nobody published, a git dependency and a release-archive dependency
+compile the sources locally only with `VELT_NATIVE_FROM_SOURCE=1`: that downloads zig and trusts
+a build no checksum pins, so it is asked for.
 
-`velt publish` needs the crate's `Cargo.lock` (commit it) and a library for every target in
-`native.targets`. Build the others on machines for those platforms (a CI matrix), collect their `target/velt-native/<triple>/`
-directories into one directory, and pass it with `velt publish --native-artifacts <dir>`. A
-target can be added to a published version later (`velt publish --native-only`); a published
-library is never replaced.
+C libraries can't be used on WebAssembly targets: a call of a C function there is a compile error
+naming it. A package that also runs there gives its WebAssembly build another file with a
+[conditional import](/docs/reference/modules/).
 
-## Using the package
+<Callout kind="warn" title="Not supported yet">
+Variadic C functions, callbacks from C into Velt, buffers C keeps after the call, `async` C
+calls, C structs passed by value, C++ and Zig sources. The reference lists [what crosses
+today](/docs/reference/c-interop/#what-crosses).
+</Callout>
 
-```sh
-velt add greet
-```
+## Rust crates
 
-`velt add` downloads the library for your machine, checks it against the checksum recorded in
-`velt.lock.json` (which pins the library of every published target), and lists the packages that run
-native code. Then `velt run`, `velt build --release` (a self-contained executable) and `velt dev`
-(the library is loaded into the running program; Velt edits still hot-swap) work as usual.
+`declare c` is how a package calls native code. A package can still include a Rust crate
+instead, when the library it needs only exists as a crate: `postgres` does (tokio-postgres
+underneath), and its source in the Velt repository's `packages/postgres` is the complete example.
+Prefer `declare c` for anything with a C API: it needs no Rust toolchain while you work, every
+call is checked against the C headers, and `velt check` shows each unsafe call.
+
+The short version, for when a crate is the right tool:
+
+- **Layout**: the crate lives in `native/` (`Cargo.toml` with `crate-type = ["cdylib",
+  "staticlib"]`, library name `velt_native_<package>`, built on the `velt_native` crate, which
+  isn't on crates.io yet: depend on it by git), and the manifest's
+  [`native`](/docs/tooling/manifest/#native) field lists the `targets` it is published for.
+- **The Velt side** declares each exported function with `declare function` and exactly the
+  signature the crate exports; `velt` checks every declaration against the library at compile
+  time. [`velt/native`](/docs/std/native/) turns a failed result into an `IoError`
+  (`unwrapIo`, `checkIo`, `errorCodeName`).
+- **Trust**: programs list the package in [`allowNative`](/docs/tooling/manifest/#allownative)
+  like any package with native code, and `velt check` lists it as `a Rust crate`.
+- **Building and publishing**: a path dependency builds the crate with cargo when needed; `velt
+  native build [--target <triple>]` builds a target's library, and `velt publish` needs the
+  crate's `Cargo.lock` and a library for every target in `native.targets` (collect the ones you
+  built elsewhere with `velt publish --native-artifacts <dir>`). Users never need Rust: they get
+  the prebuilt library. A git dependency builds the crate only with `VELT_NATIVE_FROM_SOURCE=1`,
+  since that runs its build scripts.

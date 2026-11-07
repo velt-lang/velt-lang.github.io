@@ -18,7 +18,7 @@ order: 100
 | macOS arm64 (Apple silicon) | Verified: the full test suite (release through LLVM and, separately, through Cranelift), `velt doctor`, packaging and installation into a fresh prefix. Tested on macOS 26. |
 | macOS x86_64 | Verified under Rosetta 2: every end-to-end test cross-built by the arm64 `velt` and run as x86_64. Not yet run on an Intel Mac. |
 | Linux musl (Alpine) | As a host, not an official target, but works: `velt doctor`, every end-to-end test and the HTTP example pass on Alpine 3.21 (aarch64). `velt dev`'s JIT host is unavailable there (use `velt dev --exe`). As a build target, every toolchain builds fully static executables with `--target <arch>-unknown-linux-musl` after `velt target add` ([Cross-compiling](#cross-compiling)). |
-| WebAssembly | `wasm32-wasip1` and `wasm32-unknown-unknown`, single-threaded, without networking, system functions or native packages; built from a source checkout ([WebAssembly](/docs/tooling/webassembly/)). |
+| WebAssembly | `wasm32-wasip1` and `wasm32-unknown-unknown`, single-threaded, without sockets, system functions or native packages; on JavaScript hosts `fetch` goes through the host's, and `velt build --host` builds for Cloudflare Workers. Built from a source checkout ([WebAssembly](/docs/tooling/webassembly/)). |
 
 x86_64 programs are built for x86-64-v2 CPUs (about 2009 and later) unless `--cpu` says
 otherwise; `--cpu baseline` builds for older ones ([CPU](#cpu)).
@@ -46,10 +46,11 @@ installing, with no Visual Studio Build Tools, Xcode or `cc` ([The bundled linke
     `link.exe` through the registry and vswhere; no Developer Prompt is needed.
   - **Linux**: a C toolchain (`sudo apt install build-essential` or `sudo dnf install gcc`).
   - **macOS**: the Xcode command line tools (`xcode-select --install`).
-- **Optional**: LLVM/clang **16 or newer** for optimized `--release` builds
-  (`winget install LLVM.LLVM`, `brew install llvm`, `sudo apt install clang-18`). Without it,
-  `--release` uses Cranelift. Older clang versions are skipped with a note, and `velt doctor`
-  reports which clang it uses.
+- **Optional**: LLVM/clang **16 or newer** (Apple clang 15 or newer) for optimized `--release`
+  builds (`winget install LLVM.LLVM`, `brew install llvm`, `sudo apt install clang-18`). Without
+  it, `--release` uses Cranelift. Older clang versions are skipped with a note, and
+  `velt doctor` reports which clang it uses, its version and why it was chosen
+  ([Which clang](#which-clang)).
 
 Building Velt itself needs Rust (stable) and the system C toolchain above; see
 [Getting started](/docs/book/getting-started/#install).
@@ -71,7 +72,7 @@ Windows), which the installers set up:
 
 The launcher runs one toolchain's `bin/velt` with the same arguments, so every command behaves
 as that version's. Which one: `velt +<toolchain>` or `$VELT_TOOLCHAIN` for one command, else the
-[`velt` field](/docs/tooling/manifest/#velt) of the nearest `package.vlt` (the newest installed version it
+[`velt` field](/docs/tooling/manifest/#velt) of the nearest `package.velt` (the newest installed version it
 accepts; `velt new` writes the creating version's `"0.1"`), else the default. A version the
 package pins that isn't installed is downloaded and installed on first use: the launcher reads
 the release's `SHA256SUMS` after checking its signature with the velt release key built into
@@ -108,7 +109,7 @@ prefix needs nothing registered globally: its `bin/velt` finds everything relati
   std/**                  standard library sources
   share/velt/lldb/velt_lldb.py
                           LLDB support for Velt programs (the VS Code extension loads it)
-  share/velt/warm/*.vlt   programs `velt cache warm` compiles std into the build cache with
+  share/velt/warm/*.velt   programs `velt cache warm` compiles std into the build cache with
   README.md, LICENSE-MIT, LICENSE-APACHE, NOTICE
 ```
 
@@ -122,7 +123,7 @@ How `velt` finds its parts (first match wins):
 | linker | `$VELT_LINKER` (`bundled`, `system` or a linker program) → the bundled lld (`<exe dir>/../lib/velt/lld`, in a checkout the Rust toolchain's `rust-lld`) with the target's kit (`lib/targets/<triple>/`) → the system linker: Windows: MSVC `link.exe` found through the registry and vswhere; Linux and macOS: `cc` (Linux static links use `-fuse-ld=mold` / `lld` when `mold` / `ld.lld` is on `PATH`) |
 | debugger scripts | `$VELT_SHARE/lldb/velt_lldb.py` → `<exe dir>/../share/velt/lldb/` when the executable is in a `bin/` directory → `editors/lldb/` of the source checkout it was built in |
 | warm-up programs | `$VELT_SHARE/warm` → `share/velt/warm` beside the standard library above (`<prefix>/share/velt/warm` installed, the source checkout's in a dev build) |
-| clang (`--release`) | `$VELT_CLANG` → `clang` on `PATH` → standard install directories (`C:\Program Files\LLVM\bin`, Homebrew, `/usr/bin`, `clang-NN` on `PATH`); versions older than 16 are skipped |
+| clang (`--release`) | `$VELT_CLANG` → on macOS the newest of `clang` on `PATH`, Homebrew's `llvm` and `clang-NN`, then `/usr/bin/clang`; elsewhere `clang` on `PATH` → standard install directories (`C:\Program Files\LLVM\bin`, `/usr/bin`) → `clang-NN` on `PATH`, newest first ([Which clang](#which-clang)) |
 
 **Debug builds link the shared runtime** (milliseconds instead of the seconds a static link of
 the whole runtime takes): the executable loads it from the toolchain's `lib/` (an rpath on Linux
@@ -130,6 +131,47 @@ and macOS; on Windows `velt_rt_shared.dll` is copied next to the executable). Th
 the shared runtime and the C library: the runtime brings the system libraries it needs. Such an executable
 needs the toolchain it was built with; ship `--release` builds, which link the runtime statically
 and run anywhere. `VELT_RT_LINK=static` makes debug builds static too.
+
+### Which clang
+
+Release builds compile through clang. `$VELT_CLANG` is final: if it can't be used, no other
+clang is tried, and it is not checked for this machine, since it may be a cross compiler.
+Without it:
+
+- **On macOS** the newest clang found wins: every `clang` on `PATH`, Homebrew's `llvm`
+  (`/opt/homebrew/opt/llvm/bin/clang`, `/usr/local/opt/llvm/bin/clang`), `/usr/local/bin/clang`
+  and every `clang-16` to `clang-30` on `PATH`; of two with one version, the earlier. Any clang
+  from LLVM ranks above an Apple clang, since Apple's version numbers aren't LLVM's.
+  `/usr/bin/clang` is the last resort. Only absolute `PATH` entries are searched.
+- **On Linux and Windows** the order is `clang` on `PATH`, the standard install locations, then
+  `clang-NN` from new to old.
+
+A candidate is passed over for the next one when it is below the minimum (LLVM 16, Apple clang
+15), doesn't run, doesn't answer `--version` within 30 seconds (`VELT_CLANG_PROBE_LIMIT_MS`), or
+can't compile for this machine (a toolchain for another target only, such as wasi-sdk's
+`clang-NN`; if none can, the first is kept, as it may still do for a `--target` the build
+names). A candidate that times out costs that build the wait and one line on stderr; after a
+second timeout within the hour, builds leave it alone for an hour unless no other clang will
+do.
+
+`velt doctor` prints the clang, its version and the reason, and warns when no clang compiles
+for this machine:
+
+```text
+✓ clang  /opt/homebrew/opt/llvm/bin/clang (clang 23.1.4): the newest clang found; /usr/bin/clang is the last resort
+```
+
+With only Apple's clang on macOS, it suggests `brew install llvm`, which makes some loops faster
+(about 1.6× fewer instructions on an int8 dot product). Homebrew's clang starts more slowly, so
+the first compile of a small program takes longer; later builds use the build cache. To stay on
+Apple's clang, set `VELT_CLANG=/usr/bin/clang`.
+
+A different clang, or a new version of the same one, recompiles: its version is part of the
+build cache's key. A clang behind a wrapper (a script, or a link to ccache, asdf, mise, or
+Nix's and Fedora's wrappers) is asked its version on every release build, which costs one start
+of the clang behind it. A clang that can't run or can't target what the build asks for is
+reported with its path and version and what it answered, with a pointer to `$VELT_CLANG` and
+`--backend cranelift`.
 
 ## The bundled linker
 
@@ -161,8 +203,8 @@ downloaded from the same release):
 
 ```sh
 velt target add x86_64-pc-windows-msvc        # into <prefix>/lib/targets/<triple>/
-velt build --target x86_64-pc-windows-msvc app.vlt
-velt build --release --target x86_64-unknown-linux-musl app.vlt   # static Linux executable
+velt build --target x86_64-pc-windows-msvc app.velt
+velt build --release --target x86_64-unknown-linux-musl app.velt   # static Linux executable
 velt target list                              # this machine, installed and available targets
 velt target remove x86_64-pc-windows-msvc
 ```
@@ -226,7 +268,7 @@ emulates them at several times the cost.
   older than 2010 needs `--cpu baseline`). WebAssembly has no CPU choice: `--cpu` is an error
   there.
 - **Choosing.** `--cpu` comes first, then `$VELT_CPU`, then the package's `build.cpu`
-  ([`package.vlt`](/docs/tooling/manifest/#build)), then the target's default. A setting of another
+  ([`package.velt`](/docs/tooling/manifest/#build)), then the target's default. A setting of another
   architecture's (`VELT_CPU=x86-64-v3` in a build for arm64, `neoverse-n1` in one for x86_64)
   does not apply, so one setting serves every target of a package; the same name in `--cpu` is
   an error. A name no architecture has (`skylkae`) is an error wherever it comes from, in debug
@@ -405,7 +447,8 @@ archive's `bin/velt` also works in place.
 - With the bundled linker, building needs neither Xcode nor its command line tools. Those
   provide `cc` (the system linker driver) and Apple clang. Apple clang 15
   (Xcode 15) or newer is LLVM 16-based and works for `--release`; with an older Xcode,
-  `brew install llvm` or set `VELT_CLANG`.
+  `brew install llvm` or set `VELT_CLANG`. A newer LLVM clang, when installed, is preferred to
+  Apple's ([Which clang](#which-clang)).
 - Programs are built for macOS 11.0 on arm64 (10.12 on x86_64), the same as rustc's defaults,
   whichever backend compiled them. `MACOSX_DEPLOYMENT_TARGET` raises the minimum (e.g. `13.0`);
   values below those defaults are ignored, since the runtime library needs them.

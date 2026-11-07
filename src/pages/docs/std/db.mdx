@@ -1,6 +1,6 @@
 ---
 title: "velt/db"
-description: "What database drivers share: typed rows from any source of tabular data (RowSource, readRows), and the row decoder and parameter binder for native drivers."
+description: "What database drivers share: typed rows from any source of tabular data (RowSource, readRows), parameters value by value (ParamSink, writeParams), and native drivers' binders."
 layout: "docs"
 category: "Standard library"
 order: 410
@@ -8,9 +8,9 @@ order: 410
 
 # velt/db
 
-`import { readRows, RowSource, CellKind, RowError } from "velt/db"`. What database drivers share:
-typed rows from any source of tabular data, and a statement's parameters handed to a native
-driver. The [SQLite](/docs/packages/sqlite/) and [PostgreSQL](/docs/packages/postgres/) packages
+`import { readRows, RowSource, writeParams, ParamSink } from "velt/db"`. What database drivers
+share: typed rows from any source of tabular data, and a statement's parameters handed to a
+driver value by value. The [SQLite](/docs/packages/sqlite/) and [PostgreSQL](/docs/packages/postgres/) packages
 read their rows this way, so a typed query there (`stmt.all<User>()`) fills its `User`s by the
 rules on this page. Use
 the module directly when you write a driver, or read a tabular format of your own into typed
@@ -100,6 +100,66 @@ are read column by column from the source itself, by code generated for the row 
 time: each column is matched to its field once, and no text is made. Any other row type (nested
 objects, arrays, unions) is read through the JSON text of the rows, with the same result.
 
+## Parameters value by value
+
+The other direction: a driver written in Velt implements `ParamSink`, and `writeParams` hands it
+a statement's parameters one value at a time, with no text in between.
+
+- `interface ParamSink`: `object()` (an object's fields follow), `name(name: string)` (before
+  each field's value), and one method per kind of value: `int(v: i64)`, `uint(v: u64)`,
+  `float(v: f64)`, `bool(v: bool)`, `null()`, `text(v: string)`, `blob(v: u8[])`.
+- `writeParams<P, S extends ParamSink>(sink: S, params: P): bool` gives an array, a tuple or a
+  lone value by position, and an object's fields by name after `object()`. Each value is bound
+  as its JSON text would read back: an integral number as an integer, a `u8[]` as a blob. It
+  returns `false`, having done nothing, for a type that can't go that way (a nested object, a
+  union); the driver then takes `JSON.stringify(params)`, which binds the same values. What the
+  sink's methods throw (a parameter the statement doesn't have) passes through.
+
+As with rows, the code for each parameter type is generated at compile time.
+
+```ts
+import { ParamSink, writeParams } from "velt/db";
+
+// Binds by name: `:id`, `:name`, as SQLite does.
+class Binder implements ParamSink {
+  bound: string[] = [];
+  next = "";
+
+  object(): void {}
+  name(name: string): void {
+    this.next = `:${name}`;
+  }
+  int(v: i64): void {
+    this.bound.push(`${this.next}=${v}`);
+  }
+  uint(v: u64): void {
+    this.bound.push(`${this.next}=${v}`);
+  }
+  float(v: f64): void {
+    this.bound.push(`${this.next}=${v}`);
+  }
+  bool(v: bool): void {
+    this.bound.push(`${this.next}=${v}`);
+  }
+  null(): void {
+    this.bound.push(`${this.next}=NULL`);
+  }
+  text(v: string): void {
+    this.bound.push(`${this.next}='${v}'`);
+  }
+  blob(v: u8[]): void {
+    this.bound.push(`${this.next}=<${v.length} bytes>`);
+  }
+}
+
+const b = new Binder();
+console.log(writeParams(b, { id: 1 as i64, name: "a", score: 1.5 }), b.bound.join(" ")); // true :id=1 :name='a' :score=1.5
+console.log(writeParams(new Binder(), { a: { b: 1 } })); // false: a nested object
+```
+
+The [sqlite](/docs/packages/sqlite/) package reads its rows as a `RowSource` and takes its
+parameters through a `ParamSink`.
+
 ## Native drivers
 
 A driver in a [package with native code](/docs/book/native-packages/) hands its rows and
@@ -123,7 +183,7 @@ for each type at compile time.
   driver then takes `JSON.stringify(params)`, which binds the same values. `false` too for a
   handle that names no open parameter sink.
 
-```ts ignore title="src/lib.vlt"
+```ts ignore title="src/lib.velt"
 import { bindParams, decodeRows } from "velt/db";
 
 declare function velt_mydb__bind_begin(stmt: u64): u64;
@@ -144,5 +204,4 @@ export function query<T, P>(stmt: u64, params: P): T[] {
 }
 ```
 
-`packages/sqlite` and `packages/postgres` in the Velt repository are complete drivers built this
-way.
+`packages/postgres` in the Velt repository is a complete driver built this way.
