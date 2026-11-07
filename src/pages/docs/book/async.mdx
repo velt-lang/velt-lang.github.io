@@ -185,6 +185,19 @@ that takes a signal checks it, and a started promise is never cancelled behind t
 back, so `finally` blocks and `using` disposal run as usual
 ([Cancellation](/docs/reference/async/#cancellation)).
 
+```mermaid title="The first error aborts the siblings; the scope settles once all have finished"
+sequenceDiagram
+    participant S as taskScope
+    participant A as One task
+    participant B as Sibling
+    S->>A: spawn
+    S->>B: spawn
+    A-->>S: throws
+    S->>B: abort signal
+    B-->>S: stops
+    Note over S: Fails with<br/>the first error
+```
+
 ## Using every core with `spawn`
 
 `spawn(f())` or `spawn(async () => …)` runs work as its own task on any core and returns a

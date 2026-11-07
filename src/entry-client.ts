@@ -17,5 +17,5 @@ setupPrefetch({ delay: 100 });
 
 // Diagrams: the mermaid runtime loads only on pages that have one.
 if (document.querySelector('[data-sigx-mermaid], code.language-mermaid')) {
-    void import('@sigx/mermaid/client');
+    void import('./lib/mermaid-theme').then(() => import('@sigx/mermaid/client'));
 }

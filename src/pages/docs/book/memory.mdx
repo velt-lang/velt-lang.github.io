@@ -54,6 +54,13 @@ c.v = 3;
 console.log(a.v, c.v, a == b, a == c);   // 2 3 true false
 ```
 
+```mermaid title="a and b refer to one object; c is a deep copy"
+flowchart LR
+    a([a]) --> box["Box { v: 2 }"]
+    b([b]) --> box
+    c([c]) --> copy["Box { v: 3 }"]
+```
+
 An object is freed the moment its last reference goes, together with everything only it
 refers to:
 
@@ -171,6 +178,16 @@ function ping(addr: string): string {
 console.log(ping("db:5432"));
 // closed db:5432
 // PONG from db:5432
+```
+
+```mermaid title="Every return from ping passes through the cleanup"
+flowchart TD
+    start["using conn = …"] --> check{"addr == #quot;#quot;?"}
+    check -- yes --> early["return 'no address'"]
+    check -- no --> pong["return 'PONG from ...'"]
+    early --> dispose["conn is closed"]
+    pong --> dispose
+    dispose --> caller["The caller gets the result"]
 ```
 
 `await using` does the same with an async `[Symbol.asyncDispose]()`.
