@@ -1,12 +1,19 @@
-/** The home page (design/Main.dc.html). Islands: InstallBox, CopyPromptButton, BenchmarkPanel. */
+/**
+ * The home page (design/Main.dc.html, Beyond.dc.html, Wasm.dc.html). Islands:
+ * InstallBox, CopyPromptButton, BenchmarkPanel, BeyondExplorer, TargetSwitcher.
+ */
 import { component } from 'sigx';
 import { ArrowRight, BanIcon, BoltIcon, BoxIcon, CheckIcon, ChipIcon, PulseIcon, ReloadIcon, SparkIcon, WarnIcon } from '../components/Icons';
 import { CodeCard, hl } from '../components/Hl';
 import { InstallBox } from '../islands/InstallBox';
 import { CopyPromptButton } from '../islands/CopyButton';
 import { BenchmarkPanel } from '../islands/BenchmarkPanel';
+import { BeyondExplorer, newBadge, pathIcon } from '../islands/BeyondExplorer';
+import { TargetSwitcher } from '../islands/TargetSwitcher';
 import { HEADLINE_STATS } from '../data/benchmarks';
-import { BEYOND_VLT, SERVER_TS, TERMINAL } from '../data/samples';
+import { AREAS, NEW_IN, TONE, beyondCounts, indexItems } from '../data/beyond';
+import { DEFAULT_TARGET, TARGETS } from '../data/targets';
+import { SERVER_TS, TERMINAL } from '../data/samples';
 import { LLM_PROMPT, LLMS_URL, VSCODE_URL } from '../lib/site';
 import { EXPECTATIONS_POST, post } from '../lib/blog';
 
@@ -57,19 +64,12 @@ const FEATURES = [
     },
 ];
 
-const BEYOND = [
-    { title: () => <>Typed errors</>, body: () => <><C>catch (e)</C> knows what its <C>try</C> can throw. Plain return values: no unwinding, no cost when nothing is thrown.</> },
-    { title: () => <>Integer and float types</>, body: () => <><C>i8</C>–<C>i64</C>, <C>u8</C>–<C>u64</C>, <C>f32</C>, with suffixes like <C>255u8</C>.</> },
-    { title: () => <><code class="font-mono">extend</code> any type</>, body: () => <>Add methods to <C>string</C>, numbers and arrays at no run-time cost.</> },
-    { title: () => <>Tasks and shared state</>, body: () => <><C>spawn</C>, typed channels, <C>shared(x)</C>, <C>Mutex</C> and <C>taskScope</C>.</> },
-    { title: () => <>Typed JSON</>, body: () => <><C>{'JSON.parse<User>(text)'}</C> checks the shape and builds the object in one pass.</> },
-];
-
 const btnPrimary = 'inline-flex min-h-[52px] items-center gap-2.5 rounded-xl bg-accent px-6 font-semibold text-white hover:text-white hover:brightness-110';
 const btnGhost = 'inline-flex min-h-[52px] items-center rounded-xl border border-line-3 px-6 font-semibold text-fg';
 
 export default component(() => () => {
     const expectations = post(EXPECTATIONS_POST);
+    const counts = beyondCounts();
     return (
     <>
         {/* Hero */}
@@ -176,7 +176,7 @@ export default component(() => () => {
                         Left out on purpose
                     </span>
                     <p class="m-0 text-[15px] text-fg-2">
-                        <C>eval</C>, prototypes, decorators, <C>with</C>, <C>delete</C>, <C>1 == "1"</C> — the dynamic parts a native
+                        <C>eval</C>, prototypes, run-time decorators, <C>with</C>, <C>delete</C>, <C>1 == "1"</C> — the dynamic parts a native
                         compiler can't make fast or safe.
                     </p>
                     <a href="/docs/book/ts-developers/" class="inline-flex min-h-11 items-center self-start text-[15px] font-medium text-peach hover:text-orange">
@@ -214,24 +214,124 @@ export default component(() => () => {
 
         {/* Beyond TypeScript */}
         <section id="beyond" class="scroll-mt-6 border-y border-line bg-bg-raised">
-            <div class="mx-auto flex max-w-[1248px] flex-wrap-reverse items-center gap-14 px-6 py-28">
-                <div class="min-w-0 flex-[1.2_1_520px]">
-                    <CodeCard title="beyond.velt" code={BEYOND_VLT} />
-                </div>
-                <div class="flex min-w-0 flex-[1_1_380px] flex-col gap-6">
-                    <div class="flex flex-col gap-3.5">
+            <div class="mx-auto flex max-w-[1248px] flex-col gap-14 px-6 py-28">
+                <div class="flex flex-wrap items-end justify-between gap-8">
+                    <div class="flex min-w-0 flex-[1_1_560px] flex-col gap-4">
                         <span class={`${eyebrow} text-violet`}>Beyond TypeScript</span>
-                        <h2 class={`${h2} text-[clamp(30px,3.4vw,44px)] leading-[1.1]`}>What a compiler makes possible.</h2>
-                        <p class="m-0 text-fg-3">TypeScript compiles to JavaScript, so it can't have these. Velt can.</p>
+                        <h2 class={`${h2} text-[clamp(34px,4.4vw,56px)] leading-[1.04]`}>
+                            TypeScript's syntax. <span class="brand-text">Then everything a compiler adds.</span>
+                        </h2>
+                        <p class="m-0 max-w-[640px] text-lg text-fg-3">
+                            TypeScript compiles to JavaScript, so it stops where JavaScript stops. Velt compiles to native code, so
+                            it keeps going: real number types, typed errors, every core, C libraries, and code that runs at compile
+                            time.
+                        </p>
                     </div>
-                    <ul class="m-0 flex list-none flex-col gap-[18px] p-0">
-                        {BEYOND.map((b, i) => (
-                            <li key={i} class="flex flex-col gap-0.5">
-                                <strong class="font-semibold">{b.title()}</strong>
-                                <span class="text-[15px] text-fg-3">{b.body()}</span>
-                            </li>
+                    <dl class="m-0 flex flex-wrap gap-3">
+                        {[
+                            { label: 'Areas', value: counts.areas, cls: 'border-line-2 bg-surface', dt: 'text-muted' },
+                            { label: 'Features', value: counts.features, cls: 'border-line-2 bg-surface', dt: 'text-muted' },
+                            { label: `New in ${NEW_IN}`, value: counts.isNew, cls: 'border-[#1D3A2E] bg-[#0C1512]', dt: 'text-green' },
+                        ].map((c) => (
+                            <div key={c.label} class={`flex min-w-[104px] flex-1 flex-col gap-0.5 rounded-[14px] border px-4 py-4 sm:min-w-[120px] sm:flex-none sm:px-5 ${c.cls}`}>
+                                <dt class={`text-[13px] ${c.dt}`}>{c.label}</dt>
+                                <dd class="m-0 font-display text-[32px] font-bold leading-[1.1]">{c.value}</dd>
+                            </div>
                         ))}
-                    </ul>
+                    </dl>
+                </div>
+
+                <BeyondExplorer client:visible areas={AREAS} />
+
+                <div class="flex flex-col gap-6">
+                    <div class="flex flex-wrap items-baseline justify-between gap-3">
+                        <h3 class="m-0 font-display text-[26px] font-bold tracking-[-0.02em]">Everything Velt adds</h3>
+                        <a href="/docs/book/ts-developers/" class="inline-flex min-h-11 items-center font-medium text-cyan hover:text-cyan-hover">
+                            Velt for TypeScript developers →
+                        </a>
+                    </div>
+                    <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-4">
+                        {AREAS.map((a) => (
+                            <div key={a.id} class="flex flex-col gap-3 rounded-2xl border border-card-line bg-card p-[22px]">
+                                <h4 class={`m-0 inline-flex items-center gap-2.5 text-base font-semibold ${TONE[a.tone].text}`}>
+                                    {pathIcon(a.icon)}
+                                    {a.title}
+                                </h4>
+                                <ul class="m-0 flex list-none flex-col p-0 text-sm">
+                                    {indexItems(a).map((it) => (
+                                        <li key={it.name}>
+                                            <a href={it.href} class="flex items-baseline gap-2 py-1 text-fg-3 hover:text-cyan">
+                                                <span class="flex-auto">{it.name}</span>
+                                                {it.isNew && newBadge(true)}
+                                            </a>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {/* Run anywhere */}
+        <section
+            id="anywhere"
+            class="scroll-mt-6"
+            style={{
+                background:
+                    'radial-gradient(70% 90% at 15% 0%, rgba(61,220,151,0.10), rgba(8,8,13,0) 60%), radial-gradient(60% 80% at 100% 100%, rgba(95,225,247,0.10), rgba(8,8,13,0) 60%), var(--color-bg)',
+            }}
+        >
+            <div class="mx-auto flex max-w-[1248px] flex-col gap-12 px-6 py-28">
+                <div class="flex max-w-[760px] flex-col gap-4">
+                    <span class={`${eyebrow} text-green`}>Run anywhere</span>
+                    <h2 class={`${h2} text-[clamp(34px,4.4vw,56px)] leading-[1.04]`}>
+                        One program.{' '}
+                        <span class="brand-text" style={{ backgroundImage: 'linear-gradient(90deg, var(--color-green), #22d8f5 55%, #8b6cff)' }}>
+                            Native, in the browser, or at the edge.
+                        </span>
+                    </h2>
+                    <p class="m-0 text-lg text-fg-3">
+                        The same Velt code compiles to a native executable, to WebAssembly for WASI runtimes and JavaScript hosts,
+                        or straight to a Cloudflare Worker. A server written with <C>http-server</C>'s <C>serve</C> runs natively
+                        and on Workers without a change.
+                    </p>
+                </div>
+
+                <TargetSwitcher client:visible targets={TARGETS} initial={DEFAULT_TARGET} />
+
+                <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4">
+                    <div class="flex flex-col gap-2 rounded-[18px] border border-card-line bg-card p-6">
+                        <h3 class="m-0 text-base font-semibold">Try it in the playground</h3>
+                        <p class="m-0 text-sm text-muted">
+                            <C>velt playground</C> opens an editor with examples. Your machine compiles, your browser runs the module
+                            in a Web Worker.
+                        </p>
+                        <a href="/docs/tooling/webassembly/#the-playground" class="mt-auto inline-flex min-h-11 items-center self-start text-sm font-medium text-cyan hover:text-cyan-hover">
+                            The playground →
+                        </a>
+                    </div>
+                    <div class="flex flex-col gap-2 rounded-[18px] border border-card-line bg-card p-6">
+                        <h3 class="m-0 text-base font-semibold">The whole language, one thread</h3>
+                        <p class="m-0 text-sm text-muted">
+                            <C>async</C>/<C>await</C>, <C>spawn</C> and <C>Promise.all</C> run on one thread in WebAssembly: tasks
+                            take turns at each <C>await</C>, and on a JavaScript host the program hands control back while it waits.
+                        </p>
+                        <a href="/docs/tooling/webassembly/#what-works" class="mt-auto inline-flex min-h-11 items-center self-start text-sm font-medium text-cyan hover:text-cyan-hover">
+                            What works →
+                        </a>
+                    </div>
+                    <div class="flex flex-col gap-2 rounded-[18px] border border-dashed border-[#3F2A1A] bg-[#17110C] p-6">
+                        <h3 class="m-0 text-base font-semibold text-peach">For now: build from a checkout</h3>
+                        <p class="m-0 text-sm text-fg-3">
+                            Release toolchains don't include the WebAssembly runtime yet. WebAssembly builds need a checkout of the
+                            Velt repository and the Rust toolchain.
+                        </p>
+                        <a href="/docs/tooling/webassembly/#setup" class="mt-auto inline-flex min-h-11 items-center self-start text-sm font-medium text-peach hover:text-orange">
+                            Setup →
+                        </a>
+                    </div>
                 </div>
             </div>
         </section>

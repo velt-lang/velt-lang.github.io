@@ -23,29 +23,6 @@ users.[[f:set]]([[s:"42"]], { id: [[s:"42"]], name: [[s:"Ada"]] });
   [[k:return]] [[t:Response]].[[f:json]](user);
 });`;
 
-export const BEYOND_VLT = `[[k:class]] [[t:NotFound]] [[k:extends]] [[t:Error]] {}
-
-[[c:// Errors are part of the type.]]
-[[k:function]] [[f:findUser]](id: [[t:string]]): [[t:string]] [[k:throws]] [[t:NotFound]] {
-  [[k:if]] (id !== [[s:"42"]]) [[k:throw new]] [[t:NotFound]]([[s:\`no user \${id}\`]]);
-  [[k:return]] [[s:"Ada"]];
-}
-
-[[c:// Real integer types: u32 wraps as in C or Rust.]]
-[[k:function]] [[f:fnv1a]](text: [[t:string]]): [[t:u32]] {
-  [[k:let]] hash: [[t:u32]] = [[n:2166136261]];
-  [[k:for]] ([[k:let]] i = [[n:0]]; i < text.length; i++) {
-    hash = (hash ^ (text.[[f:charCodeAt]](i) [[k:as]] [[t:u32]])) * [[n:16777619]];
-  }
-  [[k:return]] hash;
-}
-
-[[c:// Four tasks on four cores.]]
-[[k:const]] parts: [[t:Promise]]<[[t:i64]]>[] = [];
-[[k:for]] ([[k:let]] c = [[n:0]]; c < [[n:4]]; c++) {
-  parts.[[f:push]]([[f:spawn]]([[k:async]] () => [[f:sumOfSquares]](c * [[n:1_000_000]], (c + [[n:1]]) * [[n:1_000_000]])));
-}
-[[k:await]] [[t:Promise]].[[f:all]](parts);`;
 
 export const TERMINAL = `[[c:$]] velt new hello [[c:   # --template api | cli | websocket | lib]]
 [[c:$]] cd hello
