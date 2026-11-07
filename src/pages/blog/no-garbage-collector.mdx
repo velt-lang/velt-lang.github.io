@@ -1,0 +1,116 @@
+---
+title: "Why Velt has no garbage collector"
+description: "Memory is freed the moment the last reference goes away: no pauses, cleanup you can read off the page, weak references that let go at once, and the trade-offs."
+layout: "post"
+topic: "why"
+author: "Andreas Ekdahl"
+date: "2026-11-07"
+---
+
+import { Callout, Cards, Card } from '@/components/mdx';
+
+# Why Velt has no garbage collector
+
+Velt programs never stop to clean up. Memory is freed the moment the last reference to it goes
+away, and you never write an annotation to make that happen.
+
+If you've run a Node service under load, you've probably seen latency spikes, and some of them
+were the garbage collector: the runtime stops your code, finds what's still reachable and frees
+the rest. Usually that's quick. But it happens when the runtime decides, not when you do.
+
+Velt compiles TypeScript to a native executable, so it could choose differently. It does: there
+is no collector, and nothing ever pauses the program.
+
+## How memory gets freed instead
+
+The compiler works out who owns each value and when it changes. That gives every object one of
+two kinds of life:
+
+<Cards>
+  <Card eyebrow="Single owner" color="green" title="Moved">No count, no overhead. Freed at the end of its owner's scope.</Card>
+  <Card eyebrow="Shared" color="violet" title="Reference counted">One word in front of the object. Freed when the count reaches zero.</Card>
+  <Card eyebrow="Never" color="orange" title="Paused for a GC">Freeing is deterministic: no collector, no stop-the-world.</Card>
+</Cards>
+
+You don't choose between them, and there's no `mut`, borrow or lifetime syntax to learn. Objects
+behave as in JavaScript: assigning or passing one gives you the same object. The compiler picks
+the cheapest kind that's correct.
+
+## Cleanup you can read off the page
+
+Because freeing is deterministic, cleanup runs at a point you can see. Give a class a
+`[Symbol.dispose]()` method and it runs when the last reference goes away:
+
+```ts title="temp.velt"
+class TempFile {
+  path: string;
+
+  constructor(path: string) {
+    this.path = path;
+  }
+
+  [Symbol.dispose]() {
+    console.log("removing", this.path);
+  }
+}
+
+{
+  const t = new TempFile("a.tmp");
+  console.log("using", t.path);
+}                               // prints "removing a.tmp" here
+console.log("after");
+```
+
+In Node, that cleanup would wait for a finalizer at some unknown point later, if it ran at all.
+In Velt it runs on the closing brace, every time. TypeScript's `using` declarations work too.
+
+## Weak references, without waiting
+
+Caches and observers want to refer to an object without keeping it alive. `WeakRef`, `WeakMap`
+and `WeakSet` work as in JavaScript, with one difference you'll like: they let go the moment the
+last strong reference goes, not at the next garbage collection.
+
+```ts
+class Item {
+  name: string;
+
+  constructor(name: string) {
+    this.name = name;
+  }
+}
+
+const sizes = new WeakMap<Item, number>();
+let n: Item | null = new Item("a");
+sizes.set(n, 42);
+const ref = new WeakRef(n);
+
+n = null;                      // the last strong reference goes...
+console.log(ref.deref());      // ...and the WeakRef is empty right away: undefined
+```
+
+## What it costs
+
+Nothing is free, so here's the honest trade-off.
+
+| | Tracing GC (Node) | Velt |
+|---|---|---|
+| Pauses | Yes, when the runtime decides | Never |
+| When memory is freed | Some time later | When the last reference goes |
+| Per-object cost | Header plus heap headroom | None if single-owner; one word if shared |
+| Weak references | Let go at the next collection | Let go at once |
+| Reference cycles | Collected | Not freed: break them, or hold one side weakly |
+
+Cycles are the classic weak spot of reference counting: two objects that point at each other,
+or an object holding a closure that captured it, keep each other alive. Today you break the
+cycle when you're done (replace the field), or hold the back-pointer in a `WeakRef`. Next on
+the [roadmap](/roadmap/) are `weak` fields (`parent: weak Node | null`) and a compile-time
+warning when a type can form a cycle, still without a collector.
+
+## What it buys you
+
+The clearest result is memory. In our hello-world HTTP server benchmark under load (Apple M4,
+Node 24), Velt peaked at **20.7 MB** against Node's **130 MB**, taking the highest reading of
+the runs ([benchmarks](/benchmarks/)). And latency has no collector spikes, because nothing ever
+stops the program.
+
+<Callout>The details, including the order things are freed in and what `using` guarantees, are in the [memory model](/docs/reference/memory/). For a gentler start, read [Memory without a garbage collector](/docs/book/memory/) in the book.</Callout>

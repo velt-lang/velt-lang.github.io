@@ -1,0 +1,64 @@
+---
+title: "Help get Velt recognised on GitHub"
+description: "Why Velt files are .velt now, what GitHub needs before it lists Velt as a language, and the one line that highlights Velt code on GitHub today."
+layout: "post"
+topic: "progress"
+author: "Andreas Ekdahl"
+date: "2026-11-07"
+---
+
+import { Callout } from '@/components/mdx';
+
+# Help get Velt recognised on GitHub
+
+Velt 0.6 renamed every source file from `.vlt` to `.velt`. Here's why, what it takes for
+GitHub to show "Velt" in a repository's language bar, and how you can help get there.
+
+## Why `.velt`
+
+GitHub decides what language a file is written in with
+[Linguist](https://github.com/github-linguist/linguist), mostly from its extension. `.vlt` is
+already in wide use on GitHub, mostly by configuration files for Verilator, the Verilog
+simulator. Linguist adds a language when a search of GitHub shows its files in wide use, and a
+search for `.vlt` finds mostly Verilator's. As long as Velt files ended in `.vlt`, that search
+could never show Velt's own use.
+
+`.velt` is Velt's alone. In 0.6, `.vlt` files still build with a warning, and the next release
+stops reading them. [What's new in 0.6](/whats-new/) has the upgrade steps.
+
+## What GitHub needs
+
+Linguist adds a language only once it is used widely on GitHub, and it measures that with
+GitHub's code search. For an extension like `.velt`, which a project uses many times, the bar is:
+
+- **at least 2,000 `.velt` files** indexed in the last year, not counting forks;
+- **spread across many people's repositories**: the maintainers check the results by hand and
+  filter out the language owner's own repositories.
+
+Then someone opens a pull request with Velt's entry, a syntax-highlighting grammar and sample
+files. The editor grammar Velt already ships is a TextMate grammar, the format Linguist uses.
+
+So the step that matters is real Velt code in public repositories, from people other than us.
+
+## How you can help
+
+- **Put your Velt code on GitHub.** A tool, an experiment or a solution to a puzzle all count,
+  as long as the repository is public and isn't a fork.
+- **Keep the `.velt` extension** on every file, and `package.velt` for the manifest.
+- **Tell us about it** in an [issue](https://github.com/velt-lang/velt/issues): once the search
+  numbers are there, we'll open the Linguist pull request.
+
+## Highlighting today
+
+Until GitHub knows Velt, one line in your repository's `.gitattributes` makes GitHub highlight
+`.velt` files as TypeScript. Velt's syntax is TypeScript's, so it reads well:
+
+```gitattributes
+# GitHub has no Velt language yet: highlight .velt as TypeScript.
+*.velt linguist-language=TypeScript
+```
+
+The Velt repository itself does this. One side effect: the language bar counts those files as
+TypeScript until Velt has its own entry.
+
+<Callout>Editors already know Velt: the [VS Code extension](/docs/tooling/editors/) highlights `.velt` files, and any editor that can start `velt lsp` gets errors, completion and more.</Callout>

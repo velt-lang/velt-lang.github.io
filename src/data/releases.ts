@@ -64,7 +64,7 @@ export const RELEASES: Release[] = [
             'Use any C library straight from Velt (the packages already do), deploy the same server to Cloudflare Workers, and write default exports, decorators and operators as you would in TypeScript. Velt files are now `.velt`.',
         glance: [
             { title: 'Any C library', text: 'One `declare c` away, and the packages use it.', href: '#call-c' },
-            { title: '`.velt` files', text: 'So GitHub recognises and highlights Velt.', href: '#velt-files' },
+            { title: '`.velt` files', text: 'A name Velt can have to itself on GitHub.', href: '#velt-files' },
             { title: 'Cloudflare Workers', text: 'One `serve(...)` program, native or on a JS host.', href: '#js-hosts' },
             { title: 'More TypeScript', text: 'Default exports, decorators, operators.', href: '#typescript' },
         ],
@@ -96,7 +96,9 @@ export const RELEASES: Release[] = [
                 id: 'velt-files',
                 kind: 'breaking',
                 title: 'Velt files are `.velt` now',
-                body: 'Source files end in `.velt` and the manifest is `package.velt`. `.vlt` is already used by another language on GitHub, so Velt code was shown as the wrong language. With `.velt`, GitHub can recognise and highlight it.',
+                body: 'Source files end in `.velt` and the manifest is `package.velt`. `.vlt` is in wide use on GitHub, mostly by Verilator configuration files, which stood in the way of GitHub ever recognising Velt. `.velt` is Velt’s alone, so it can get its own language entry and highlighting.',
+                href: '/blog/velt-on-github/',
+                link: 'Help get Velt on GitHub',
                 aside: '`.vlt` sources still build for one more release, with a warning. `package.vlt` is no longer read: the error tells you to rename it.',
                 code: {
                     file: 'my-app/',

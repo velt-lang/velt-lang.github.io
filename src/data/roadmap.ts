@@ -12,6 +12,60 @@ export type RoadmapStatus = 'shipped' | 'planned' | 'gap';
 
 export type RoadmapArea = 'language' | 'std' | 'packages' | 'tooling' | 'platforms';
 
+/**
+ * Where Velt is heading: long-term goals, each with what is already in place.
+ * These are directions, not promises with dates: the Planned list below is
+ * what is decided.
+ */
+export interface Direction {
+    title: string;
+    why: string;
+    /** What already exists toward it, shipped and documented. */
+    inPlace: { text: string; href: string }[];
+    /** The issue or page that tracks it. */
+    track?: { label: string; href: string };
+}
+
+export const DIRECTIONS: Direction[] = [
+    {
+        title: 'Frontend frameworks, compiled',
+        why: 'Run the TypeScript UI frameworks people already use, starting with sigx (the framework this site is built with): server rendering compiled to native code, with the same components the browser runs.',
+        inPlace: [
+            { text: 'TSX with TypeScript’s automatic runtime', href: '/docs/reference/tsx/' },
+            { text: 'lib.dom’s types for code shared with the browser', href: '/docs/reference/types/#object-built-ins' },
+            { text: 'Default exports, decorators and operators', href: '/docs/reference/modules/#default-exports' },
+        ],
+        track: { label: 'velt-lang/velt#379', href: 'https://github.com/velt-lang/velt/issues/379' },
+    },
+    {
+        title: 'A standard library in pure Velt',
+        why: 'Move what is still written in Rust inside the runtime into Velt, on public APIs any package can use, so the standard library is readable, portable and as fast as what it replaces.',
+        inPlace: [
+            { text: 'Crypto, TLS and compression written in Velt', href: '/docs/std/crypto/' },
+            { text: 'WebSockets and BTreeMap in Velt', href: '/docs/std/collections/' },
+            { text: 'redis in plain Velt; sqlite through declare c', href: '/docs/packages/' },
+        ],
+    },
+    {
+        title: 'AI and numeric workloads',
+        why: 'Make Velt a good place to run models and number-heavy code: compact number types, SIMD that maps to the hardware, and C libraries when a kernel already exists.',
+        inPlace: [
+            { text: '`f16` and `bf16`, and `velt/half` for bulk conversion', href: '/docs/std/half/' },
+            { text: 'int8 and 16-bit dot products, fused multiply-add', href: '/docs/std/simd/' },
+            { text: 'Any C library through `declare c`', href: '/docs/reference/c-interop/' },
+        ],
+    },
+    {
+        title: 'GUIs and user interfaces',
+        why: 'Build interfaces in Velt, from the web to the desktop: the same components and TSX, rendered by a framework or a native toolkit.',
+        inPlace: [
+            { text: 'TSX and JSX providers', href: '/docs/std/jsx/' },
+            { text: 'WebAssembly for the browser and JavaScript hosts', href: '/docs/tooling/webassembly/' },
+            { text: 'C toolkits are one `declare c` away', href: '/docs/book/native-packages/' },
+        ],
+    },
+];
+
 export interface RoadmapItem {
     title: string;
     detail: string;
