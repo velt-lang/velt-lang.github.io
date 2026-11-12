@@ -32,8 +32,8 @@
         "@sigx/vite": "^1.0.1",
         "hast-util-to-string": "^3.0.1",
         "mdast-util-from-markdown": "^2.1.0",
-        "mermaid": "^12.2.0",
-        "shiki": "4.5.0",
+        "mermaid": "^12.3.0",
+        "shiki": "4.6.0",
         "sigx": "^1.0.1",
         "unist-util-visit": "^5.2.0"
     },
